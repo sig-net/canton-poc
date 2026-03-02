@@ -366,7 +366,6 @@ export async function getActiveContracts(
   const { data, error } = await client.POST("/v2/state/active-contracts", {
     body: {
       activeAtOffset: ledgerEnd,
-      verbose: true,
       eventFormat: {
         filtersByParty,
         verbose: true,

@@ -32,7 +32,7 @@ interface LedgerStreamOptions {
   pollingErrorBackoffMs?: number;
 }
 
-interface StreamHandle {
+export interface StreamHandle {
   close: () => void;
 }
 

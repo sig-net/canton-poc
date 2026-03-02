@@ -3,6 +3,7 @@ import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { computeRequestId, type EvmTransactionParams } from "../mpc/crypto.js";
 import { deriveChildPrivateKey, signEvmTxHash, signMpcResponse } from "../mpc-service/signer.js";
+import { KEY_DERIVATION_CAIP2 } from "../mpc/address-derivation.js";
 import { serializeUnsignedTx, type CantonEvmParams } from "../evm/tx-builder.js";
 import { keccak256, type Hex } from "viem";
 import {
@@ -132,7 +133,12 @@ describe("deposit e2e lifecycle", () => {
     expect(tsRequestId.slice(2)).toBe(requestId);
 
     // Step 3: MPC signs the EVM transaction
-    const childPrivateKey = deriveChildPrivateKey(MPC_ROOT_PRIVATE_KEY, depositor, PATH, caip2Id);
+    const childPrivateKey = deriveChildPrivateKey(
+      MPC_ROOT_PRIVATE_KEY,
+      depositor,
+      PATH,
+      KEY_DERIVATION_CAIP2,
+    );
     const evmParamsForTx: CantonEvmParams = sampleEvmParams;
     const serializedUnsigned = serializeUnsignedTx(evmParamsForTx);
     const txHash = keccak256(serializedUnsigned);

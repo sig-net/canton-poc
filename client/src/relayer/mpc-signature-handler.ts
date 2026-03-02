@@ -4,6 +4,7 @@ import {
   type CantonEvmParams,
 } from "../evm/tx-builder.js";
 import { getActiveContracts, type CreatedEvent } from "../infra/canton-client.js";
+import { PendingEvmDeposit } from "@daml.js/canton-mpc-poc-0.0.1/lib/Erc20Vault/module";
 
 export async function handleEcdsaSignature(params: {
   issuerParty: string;
@@ -19,7 +20,7 @@ export async function handleEcdsaSignature(params: {
 
   console.log(`[Relayer] EcdsaSignature created for requestId=${requestId}`);
 
-  const contracts = await getActiveContracts([issuerParty], "Erc20Vault:PendingEvmDeposit");
+  const contracts = await getActiveContracts([issuerParty], PendingEvmDeposit.templateId);
   const matching = contracts.find((c) => {
     const cArgs = c.createArgument as Record<string, unknown>;
     return cArgs.requestId === requestId;

@@ -13,7 +13,7 @@ const MPC_ROOT_PUBLIC_KEY =
 
 const PREDECESSOR_ID = "Issuer::1220abcdef";
 const PATH = "m/44/60/0/0";
-const CAIP2_ID = "eip155:11155111";
+const CAIP2_ID = "eip155:1";
 
 describe("deriveChildPrivateKey", () => {
   it("produces valid 32-byte hex", () => {
@@ -28,13 +28,11 @@ describe("deriveChildPrivateKey", () => {
   });
 
   it("matches deriveChildPublicKey", () => {
-    // signet.js v0.3.1-beta.4 only supports "eip155:1" — use it for interop test
-    const signetCaip2 = "eip155:1";
     const childPrivKey = deriveChildPrivateKey(
       MPC_ROOT_PRIVATE_KEY,
       PREDECESSOR_ID,
       PATH,
-      signetCaip2,
+      CAIP2_ID,
     );
 
     const privKeyBytes = toBytes(childPrivKey);
@@ -46,7 +44,7 @@ describe("deriveChildPrivateKey", () => {
       MPC_ROOT_PUBLIC_KEY as `04${string}`,
       PREDECESSOR_ID,
       PATH,
-      signetCaip2,
+      CAIP2_ID,
       1,
     );
 

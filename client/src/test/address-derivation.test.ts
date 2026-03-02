@@ -7,9 +7,6 @@ const MPC_ROOT_PUBLIC_KEY =
 
 const PREDECESSOR_ID = "Issuer::1220abcdef";
 const PATH = "m/44/60/0/0";
-// signet.js v0.3.1-beta.4 only supports "eip155:1" for EVM derivation
-const CAIP2_ID = "eip155:1";
-const KEY_VERSION = 1;
 
 describe("publicKeyToAddress", () => {
   it("produces valid 20-byte address", () => {
@@ -26,49 +23,19 @@ describe("publicKeyToAddress", () => {
 
 describe("deriveDepositAddress", () => {
   it("is deterministic", () => {
-    const a = deriveDepositAddress(
-      MPC_ROOT_PUBLIC_KEY,
-      PREDECESSOR_ID,
-      PATH,
-      CAIP2_ID,
-      KEY_VERSION,
-    );
-    const b = deriveDepositAddress(
-      MPC_ROOT_PUBLIC_KEY,
-      PREDECESSOR_ID,
-      PATH,
-      CAIP2_ID,
-      KEY_VERSION,
-    );
+    const a = deriveDepositAddress(MPC_ROOT_PUBLIC_KEY, PREDECESSOR_ID, PATH);
+    const b = deriveDepositAddress(MPC_ROOT_PUBLIC_KEY, PREDECESSOR_ID, PATH);
     expect(a).toBe(b);
   });
 
   it("produces different addresses for different paths", () => {
-    const addr1 = deriveDepositAddress(
-      MPC_ROOT_PUBLIC_KEY,
-      PREDECESSOR_ID,
-      "m/44/60/0/0",
-      CAIP2_ID,
-      KEY_VERSION,
-    );
-    const addr2 = deriveDepositAddress(
-      MPC_ROOT_PUBLIC_KEY,
-      PREDECESSOR_ID,
-      "m/44/60/0/1",
-      CAIP2_ID,
-      KEY_VERSION,
-    );
+    const addr1 = deriveDepositAddress(MPC_ROOT_PUBLIC_KEY, PREDECESSOR_ID, "m/44/60/0/0");
+    const addr2 = deriveDepositAddress(MPC_ROOT_PUBLIC_KEY, PREDECESSOR_ID, "m/44/60/0/1");
     expect(addr1).not.toBe(addr2);
   });
 
   it("produces valid 20-byte address", () => {
-    const address = deriveDepositAddress(
-      MPC_ROOT_PUBLIC_KEY,
-      PREDECESSOR_ID,
-      PATH,
-      CAIP2_ID,
-      KEY_VERSION,
-    );
+    const address = deriveDepositAddress(MPC_ROOT_PUBLIC_KEY, PREDECESSOR_ID, PATH);
     expect(address).toMatch(/^0x[0-9a-fA-F]{40}$/);
   });
 });

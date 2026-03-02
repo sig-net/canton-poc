@@ -6,12 +6,9 @@ import {
   allocateParty,
   createUser,
   getActiveContracts,
-  getLedgerEnd,
-  type JsGetUpdatesResponse,
 } from "../infra/canton-client.js";
-import { createLedgerStream } from "../infra/ledger-stream.js";
 import { VaultOrchestrator } from "@daml.js/canton-mpc-poc-0.0.1/lib/Erc20Vault/module";
-import { handlePendingEvmDeposit } from "./deposit-handler.js";
+import { MpcServer } from "./server.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DAR_PATH = resolve(__dirname, "../../../.daml/dist/canton-mpc-poc-0.0.1.dar");
@@ -38,40 +35,23 @@ async function main() {
   const orchCid = contracts[0]!.contractId;
   console.log(`[MPC] VaultOrchestrator CID: ${orchCid}`);
 
-  const offset = await getLedgerEnd();
-  console.log(`[MPC] Streaming from offset ${offset}`);
-
-  createLedgerStream({
+  const server = new MpcServer({
+    orchCid,
+    userId: USER_ID,
     parties: [issuer],
-    beginExclusive: offset,
-    onUpdate: (item: JsGetUpdatesResponse) => {
-      const update = item.update;
-      if (!("Transaction" in update)) return;
-
-      for (const event of update.Transaction.value.events ?? []) {
-        if (!("CreatedEvent" in event)) continue;
-        const created = event.CreatedEvent;
-        if (!created.templateId.includes("PendingEvmDeposit")) continue;
-
-        console.log(`[MPC] PendingEvmDeposit detected, contractId=${created.contractId}`);
-        handlePendingEvmDeposit({
-          orchCid,
-          userId: USER_ID,
-          actAs: [issuer],
-          rootPrivateKey: config.MPC_ROOT_PRIVATE_KEY,
-          rpcUrl: config.SEPOLIA_RPC_URL,
-          event: created,
-        }).catch((err) => {
-          console.error(
-            `[MPC] Failed to handle deposit: ${err instanceof Error ? err.message : String(err)}`,
-          );
-        });
-      }
-    },
-    onError: (err) => console.error("[MPC] Stream error:", err),
+    rootPrivateKey: config.MPC_ROOT_PRIVATE_KEY,
+    rpcUrl: config.SEPOLIA_RPC_URL,
   });
 
-  console.log("[MPC] Listening for PendingEvmDeposit events...");
+  await server.start();
+  await server.waitUntilReady();
+
+  const shutdown = () => {
+    server.shutdown();
+    process.exit(0);
+  };
+  process.on("SIGTERM", shutdown);
+  process.on("SIGINT", shutdown);
 }
 
 main().catch((err) => {
