@@ -1,6 +1,6 @@
 import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { DER } from "@noble/curves/abstract/weierstrass.js";
-import { keccak256, toBytes, type Hex } from "viem";
+import { keccak256, toBytes, toHex, numberToHex, hexToBigInt, type Hex } from "viem";
 
 const EPSILON_DERIVATION_PREFIX = "sig.network v2.0.0 epsilon derivation";
 
@@ -25,7 +25,7 @@ export function deriveChildPrivateKey(
   const eps = BigInt(epsilon);
   const childKey = (((rootKey + eps) % CURVE_ORDER) + CURVE_ORDER) % CURVE_ORDER;
 
-  return `0x${childKey.toString(16).padStart(64, "0")}`;
+  return numberToHex(childKey, { size: 32 });
 }
 
 /**
@@ -34,10 +34,7 @@ export function deriveChildPrivateKey(
  *
  * Uses @noble/curves v2.0 'recovered' format: [v, r_32bytes, s_32bytes].
  */
-export function signEvmTxHash(
-  privateKey: Hex,
-  txHash: Hex,
-): { r: string; s: string; v: number } {
+export function signEvmTxHash(privateKey: Hex, txHash: Hex): { r: string; s: string; v: number } {
   const msgHash = toBytes(txHash);
   const privKeyBytes = toBytes(privateKey);
 
@@ -49,8 +46,8 @@ export function signEvmTxHash(
   });
 
   const v = sig[0]!;
-  const r = Buffer.from(sig.slice(1, 33)).toString("hex");
-  const s = Buffer.from(sig.slice(33, 65)).toString("hex");
+  const r = toHex(sig.slice(1, 33)).slice(2);
+  const s = toHex(sig.slice(33, 65)).slice(2);
 
   return { r, s, v };
 }
@@ -60,11 +57,7 @@ export function signEvmTxHash(
  * responseHash = keccak256(requestId || mpcOutput)
  * Returns DER-encoded signature as bare hex without 0x prefix (Daml format).
  */
-export function signMpcResponse(
-  rootPrivateKey: Hex,
-  requestId: string,
-  mpcOutput: string,
-): string {
+export function signMpcResponse(rootPrivateKey: Hex, requestId: string, mpcOutput: string): string {
   // requestId and mpcOutput are bare hex (no 0x)
   const responseHash = keccak256(`0x${requestId}${mpcOutput}` as Hex);
   const msgHash = toBytes(responseHash);
@@ -72,8 +65,8 @@ export function signMpcResponse(
 
   // Default format: 'compact' (64 bytes = r || s), prehash: false
   const raw = secp256k1.sign(msgHash, privKeyBytes, { prehash: false });
-  const r = BigInt("0x" + Buffer.from(raw.slice(0, 32)).toString("hex"));
-  const s = BigInt("0x" + Buffer.from(raw.slice(32, 64)).toString("hex"));
+  const r = hexToBigInt(toHex(raw.slice(0, 32)));
+  const s = hexToBigInt(toHex(raw.slice(32, 64)));
 
   // DER-encode via @noble/curves
   return DER.hexFromSig({ r, s });

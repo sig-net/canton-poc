@@ -17,10 +17,6 @@ import Types (EvmTransactionParams(..))
 padHex : BytesHex -> Int -> BytesHex
 padHex hex width = fromSome (packHexBytes hex width)
 
--- | Convert Text to hex-encoded UTF-8 bytes.
-textToHex : Text -> BytesHex
-textToHex = toHex
-
 -- | Convert an Int to 4-byte (8 hex char) big-endian representation.
 uint32ToHex : Int -> BytesHex
 uint32ToHex n = fromSome (packHexBytes (toHex n) 4)

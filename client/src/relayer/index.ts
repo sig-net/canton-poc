@@ -51,16 +51,14 @@ async function main() {
       for (const event of update.Transaction.value.events ?? []) {
         if (!("CreatedEvent" in event)) continue;
         const created = event.CreatedEvent;
-        const templateId = created.templateId ?? "";
+        const templateId = created.templateId;
 
         if (templateId.includes("EcdsaSignature")) {
           handleEcdsaSignature({
             issuerParty,
             rpcUrl: config.SEPOLIA_RPC_URL,
             event: created,
-          }).catch((err) =>
-            console.error("[Relayer] EcdsaSignature handler failed:", err),
-          );
+          }).catch((err) => console.error("[Relayer] EcdsaSignature handler failed:", err));
         }
 
         if (templateId.includes("EvmTxOutcomeSignature")) {
@@ -70,9 +68,7 @@ async function main() {
             actAs: [issuerParty],
             issuerParty,
             event: created,
-          }).catch((err) =>
-            console.error("[Relayer] EvmTxOutcomeSignature handler failed:", err),
-          );
+          }).catch((err) => console.error("[Relayer] EvmTxOutcomeSignature handler failed:", err));
         }
       }
     },

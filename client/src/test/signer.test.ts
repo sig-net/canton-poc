@@ -38,9 +38,9 @@ describe("deriveChildPrivateKey", () => {
     );
 
     const privKeyBytes = toBytes(childPrivKey);
-    const childPubFromPriv = Buffer.from(
-      secp256k1.getPublicKey(privKeyBytes, false),
-    ).toString("hex");
+    const childPubFromPriv = Buffer.from(secp256k1.getPublicKey(privKeyBytes, false)).toString(
+      "hex",
+    );
 
     const childPubFromSignet = deriveChildPublicKey(
       MPC_ROOT_PUBLIC_KEY as `04${string}`,
@@ -77,9 +77,9 @@ describe("signEvmTxHash", () => {
     const recoveredPoint = signature.recoverPublicKey(msgHash);
     const recoveredHex = Buffer.from(recoveredPoint.toBytes(false)).toString("hex");
 
-    const childPubKey = Buffer.from(
-      secp256k1.getPublicKey(toBytes(childKey), false),
-    ).toString("hex");
+    const childPubKey = Buffer.from(secp256k1.getPublicKey(toBytes(childKey), false)).toString(
+      "hex",
+    );
 
     expect(recoveredHex).toBe(childPubKey);
   });

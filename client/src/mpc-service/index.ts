@@ -51,7 +51,7 @@ async function main() {
       for (const event of update.Transaction.value.events ?? []) {
         if (!("CreatedEvent" in event)) continue;
         const created = event.CreatedEvent;
-        if (!created.templateId?.includes("PendingEvmDeposit")) continue;
+        if (!created.templateId.includes("PendingEvmDeposit")) continue;
 
         console.log(`[MPC] PendingEvmDeposit detected, contractId=${created.contractId}`);
         handlePendingEvmDeposit({

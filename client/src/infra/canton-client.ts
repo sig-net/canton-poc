@@ -85,7 +85,7 @@ export async function allocateParty(hint: string): Promise<string> {
  */
 async function findPartyByHint(hint: string): Promise<string | undefined> {
   const { data } = await client.GET("/v2/parties");
-  const match = data?.partyDetails?.find((p) => p.party?.startsWith(`${hint}::`));
+  const match = data?.partyDetails?.find((p) => p.party.startsWith(`${hint}::`));
   return match?.party ?? undefined;
 }
 
@@ -264,10 +264,6 @@ export async function exerciseChoice(
 // Ledger state & updates
 // ---------------------------------------------------------------------------
 
-/** A single active contracts response item. */
-export type JsGetActiveContractsResponse =
-  components["schemas"]["JsGetActiveContractsResponse"];
-
 /** A single update item from the `POST /v2/updates` response. */
 export type JsGetUpdatesResponse = components["schemas"]["JsGetUpdatesResponse"];
 
@@ -377,8 +373,7 @@ export async function getActiveContracts(
       },
     } as components["schemas"]["GetActiveContractsRequest"],
   });
-  if (error)
-    throw new Error(`getActiveContracts failed: ${JSON.stringify(error)}`);
+  if (error) throw new Error(`getActiveContracts failed: ${JSON.stringify(error)}`);
 
   const results: CreatedEvent[] = [];
   for (const item of data ?? []) {

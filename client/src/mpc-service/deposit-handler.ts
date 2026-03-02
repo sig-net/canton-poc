@@ -1,14 +1,14 @@
-import { keccak256, createPublicClient, http, type Hex } from "viem";
+import { keccak256, hexToNumber, createPublicClient, http, type Hex } from "viem";
 import { sepolia } from "viem/chains";
-import { serializeUnsignedTx, reconstructSignedTx, type CantonEvmParams } from "../evm/tx-builder.js";
+import {
+  serializeUnsignedTx,
+  reconstructSignedTx,
+  type CantonEvmParams,
+} from "../evm/tx-builder.js";
 import { deriveChildPrivateKey, signEvmTxHash, signMpcResponse } from "./signer.js";
 import { exerciseChoice, type CreatedEvent } from "../infra/canton-client.js";
 
 const VAULT_ORCHESTRATOR = "Erc20Vault:VaultOrchestrator";
-
-function hexChainIdToDecimal(hexChainId: string): number {
-  return Number(BigInt("0x" + (hexChainId.replace(/^0+/, "") || "0")));
-}
 
 export async function handlePendingEvmDeposit(params: {
   orchCid: string;
@@ -28,7 +28,7 @@ export async function handlePendingEvmDeposit(params: {
   console.log(`[MPC] Processing PendingEvmDeposit requestId=${requestId}`);
 
   // Phase 1: Sign the EVM transaction
-  const caip2Id = "eip155:" + hexChainIdToDecimal(evmParams.chainId);
+  const caip2Id = "eip155:" + hexToNumber(`0x${evmParams.chainId}`);
   const serializedUnsigned = serializeUnsignedTx(evmParams);
   const txHash = keccak256(serializedUnsigned);
 
@@ -68,7 +68,9 @@ export async function handlePendingEvmDeposit(params: {
     mpcOutput = receipt.status === "success" ? "01" : "00";
     console.log(`[MPC] Receipt received, status=${receipt.status}`);
   } catch (err) {
-    console.error(`[MPC] Failed to get receipt: ${err instanceof Error ? err.message : String(err)}`);
+    console.error(
+      `[MPC] Failed to get receipt: ${err instanceof Error ? err.message : String(err)}`,
+    );
     mpcOutput = "00";
   }
 

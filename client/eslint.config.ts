@@ -23,6 +23,9 @@ export default defineConfig(
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
       ],
       "@typescript-eslint/restrict-template-expressions": ["error", { allowNumber: true }],
+      "@typescript-eslint/no-unnecessary-condition": "error",
+      "@typescript-eslint/no-useless-empty-export": "error",
+      "no-useless-return": "error",
     },
   },
 );

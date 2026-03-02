@@ -1,4 +1,4 @@
-import { keccak256, type Hex } from "viem";
+import { keccak256, stringToHex, numberToHex, type Hex } from "viem";
 
 export interface EvmTransactionParams {
   to: string; // 20 bytes hex, no 0x
@@ -13,47 +13,23 @@ export interface EvmTransactionParams {
 }
 
 /**
- * Convert a UTF-8 string to its hex encoding (no 0x prefix).
- */
-function textToHex(s: string): string {
-  return Buffer.from(s, "utf8").toString("hex");
-}
-
-/**
- * Encode a uint32 as 4 bytes hex (no 0x prefix).
- */
-function uint32ToHex(n: number): string {
-  return n.toString(16).padStart(8, "0");
-}
-
-/**
  * abi_encode_packed equivalent: concatenate all params at their canonical widths.
  * Mirrors Daml's packParams in Crypto.daml.
  *
- * to (20 bytes) + textToHex(functionSignature) + concat(args) + value (32)
+ * to (20 bytes) + stringToHex(functionSignature) + concat(args) + value (32)
  * + nonce (32) + gasLimit (32) + maxFeePerGas (32) + maxPriorityFee (32) + chainId (32)
  */
 export function packParams(p: EvmTransactionParams): string {
-  const to = p.to.padStart(40, "0"); // 20 bytes = 40 hex chars
-  const fnSig = textToHex(p.functionSignature);
-  const args = p.args.join("");
-  const value = p.value.padStart(64, "0");
-  const nonce = p.nonce.padStart(64, "0");
-  const gasLimit = p.gasLimit.padStart(64, "0");
-  const maxFeePerGas = p.maxFeePerGas.padStart(64, "0");
-  const maxPriorityFee = p.maxPriorityFee.padStart(64, "0");
-  const chainId = p.chainId.padStart(64, "0");
-
   return (
-    to +
-    fnSig +
-    args +
-    value +
-    nonce +
-    gasLimit +
-    maxFeePerGas +
-    maxPriorityFee +
-    chainId
+    p.to.padStart(40, "0") +
+    stringToHex(p.functionSignature).slice(2) +
+    p.args.join("") +
+    p.value.padStart(64, "0") +
+    p.nonce.padStart(64, "0") +
+    p.gasLimit.padStart(64, "0") +
+    p.maxFeePerGas.padStart(64, "0") +
+    p.maxPriorityFee.padStart(64, "0") +
+    p.chainId.padStart(64, "0")
   );
 }
 
@@ -82,13 +58,13 @@ export function computeRequestId(
   const payload = packParams(evmParams);
 
   const packed =
-    textToHex(sender) +
+    stringToHex(sender).slice(2) +
     payload +
-    textToHex(caip2Id) +
-    uint32ToHex(keyVersion) +
-    textToHex(path) +
-    textToHex("ECDSA") +
-    textToHex("ethereum");
+    stringToHex(caip2Id).slice(2) +
+    numberToHex(keyVersion, { size: 4 }).slice(2) +
+    stringToHex(path).slice(2) +
+    stringToHex("ECDSA").slice(2) +
+    stringToHex("ethereum").slice(2);
   // params = "" -> empty bytes
 
   return keccak256(`0x${packed}`);

@@ -19,18 +19,13 @@ export async function handleEcdsaSignature(params: {
 
   console.log(`[Relayer] EcdsaSignature created for requestId=${requestId}`);
 
-  const contracts = await getActiveContracts(
-    [issuerParty],
-    "Erc20Vault:PendingEvmDeposit",
-  );
+  const contracts = await getActiveContracts([issuerParty], "Erc20Vault:PendingEvmDeposit");
   const matching = contracts.find((c) => {
     const cArgs = c.createArgument as Record<string, unknown>;
     return cArgs.requestId === requestId;
   });
   if (!matching) {
-    console.log(
-      `[Relayer] No PendingEvmDeposit found for requestId=${requestId}, skipping`,
-    );
+    console.log(`[Relayer] No PendingEvmDeposit found for requestId=${requestId}, skipping`);
     return;
   }
 

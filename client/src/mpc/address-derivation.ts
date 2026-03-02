@@ -1,4 +1,5 @@
-import { keccak256, type Hex } from "viem";
+import { type Hex } from "viem";
+import { publicKeyToAddress } from "viem/accounts";
 import { utils } from "signet.js";
 
 const { deriveChildPublicKey } = utils.cryptography;
@@ -20,19 +21,5 @@ export function deriveDepositAddress(
     caip2Id,
     keyVersion,
   );
-  return publicKeyToEthAddress(childPubKey);
-}
-
-/**
- * Convert uncompressed public key to Ethereum address.
- * address = keccak256(pubkey_x || pubkey_y)[12..32]
- */
-export function publicKeyToEthAddress(uncompressedPubKey: string): Hex {
-  const stripped = uncompressedPubKey.startsWith("04")
-    ? uncompressedPubKey.slice(2)
-    : uncompressedPubKey;
-
-  const hash = keccak256(`0x${stripped}`);
-  // Take the last 20 bytes (last 40 hex chars)
-  return `0x${hash.slice(26)}`;
+  return publicKeyToAddress(`0x${childPubKey}`);
 }

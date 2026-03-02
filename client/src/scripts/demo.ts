@@ -95,7 +95,7 @@ async function main() {
         for (const event of update.Transaction.value.events ?? []) {
           if (!("CreatedEvent" in event)) continue;
           const created = event.CreatedEvent;
-          if (!created.templateId?.includes("PendingEvmDeposit")) continue;
+          if (!created.templateId.includes("PendingEvmDeposit")) continue;
 
           const args = created.createArgument as Record<string, string>;
           console.log(`[PendingEvmDeposit detected]`);

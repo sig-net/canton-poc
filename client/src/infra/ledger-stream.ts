@@ -11,7 +11,7 @@
 import WebSocket from "ws";
 import { BASE_URL, getUpdates, type JsGetUpdatesResponse } from "./canton-client.js";
 
-export interface LedgerStreamOptions {
+interface LedgerStreamOptions {
   /** Base URL of the Canton JSON Ledger API (e.g. "http://localhost:7575") */
   baseUrl?: string;
   /** Parties to filter updates for */
@@ -32,7 +32,7 @@ export interface LedgerStreamOptions {
   pollingErrorBackoffMs?: number;
 }
 
-export interface StreamHandle {
+interface StreamHandle {
   close: () => void;
 }
 
@@ -156,14 +156,17 @@ export function createLedgerStream(opts: LedgerStreamOptions): StreamHandle {
     if (closed) return;
     console.log("Starting HTTP polling fallback...");
 
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- closed is set by close() during async execution
     while (!closed) {
       try {
         const updates = await getUpdates(currentOffset, opts.parties, pollingIdleTimeoutMs);
         for (const item of updates) {
+          // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- closed is set by close() during async execution
           if (closed) break;
           handleUpdate(item);
         }
       } catch (err) {
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- closed is set by close() during async execution
         if (closed) break;
         opts.onError?.(err instanceof Error ? err : new Error(String(err)));
         await new Promise((r) => setTimeout(r, pollingErrorBackoffMs));

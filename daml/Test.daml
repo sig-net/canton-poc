@@ -149,15 +149,15 @@ test6_secp256k1Verification = do
   assertMsg "Wrong message must fail verification" (not invalid)
 
 ------------------------------------------------------------------------
--- Test 7: textToHex correctness
+-- Test 7: toHex correctness
 ------------------------------------------------------------------------
 
-test7_textToHex : Script ()
-test7_textToHex = do
-  assertMsg "ECDSA -> 4543445341" (textToHex "ECDSA" == "4543445341")
-  assertMsg "ethereum -> 657468657265756d" (textToHex "ethereum" == "657468657265756d")
-  assertMsg "eip155:1 -> 6569703135353a31" (textToHex "eip155:1" == "6569703135353a31")
-  assertMsg "empty string -> empty" (textToHex "" == "")
+test7_toHex : Script ()
+test7_toHex = do
+  assertMsg "ECDSA -> 4543445341" (toHex "ECDSA" == "4543445341")
+  assertMsg "ethereum -> 657468657265756d" (toHex "ethereum" == "657468657265756d")
+  assertMsg "eip155:1 -> 6569703135353a31" (toHex "eip155:1" == "6569703135353a31")
+  assertMsg "empty string -> empty" (toHex "" == "")
 
 ------------------------------------------------------------------------
 -- Test 8: chainIdToDecimalText correctness

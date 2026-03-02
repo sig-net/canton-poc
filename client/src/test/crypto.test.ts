@@ -32,7 +32,7 @@ function getArgs(event: CreatedEvent): Record<string, unknown> {
 function findCreated(res: TransactionResponse, templateFragment: string) {
   const event = res.transaction.events!.find((e) => {
     const created = getCreatedEvent(e);
-    return created?.templateId?.includes(templateFragment);
+    return created?.templateId.includes(templateFragment);
   });
   return event ? getCreatedEvent(event)! : undefined;
 }

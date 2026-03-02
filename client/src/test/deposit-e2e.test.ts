@@ -60,7 +60,7 @@ function getArgs(event: CreatedEvent): Record<string, unknown> {
 function findCreated(res: TransactionResponse, templateFragment: string) {
   const event = res.transaction.events!.find((e) => {
     const created = getCreatedEvent(e);
-    return created?.templateId?.includes(templateFragment);
+    return created?.templateId.includes(templateFragment);
   });
   return event ? getCreatedEvent(event)! : undefined;
 }
@@ -132,12 +132,7 @@ describe("deposit e2e lifecycle", () => {
     expect(tsRequestId.slice(2)).toBe(requestId);
 
     // Step 3: MPC signs the EVM transaction
-    const childPrivateKey = deriveChildPrivateKey(
-      MPC_ROOT_PRIVATE_KEY,
-      depositor,
-      PATH,
-      caip2Id,
-    );
+    const childPrivateKey = deriveChildPrivateKey(MPC_ROOT_PRIVATE_KEY, depositor, PATH, caip2Id);
     const evmParamsForTx: CantonEvmParams = sampleEvmParams;
     const serializedUnsigned = serializeUnsignedTx(evmParamsForTx);
     const txHash = keccak256(serializedUnsigned);
@@ -201,7 +196,10 @@ describe("deposit e2e lifecycle", () => {
     const activeHoldings = await getActiveContracts([issuer, depositor], ERC20_HOLDING);
     const matchingHolding = activeHoldings.find((c) => {
       const cArgs = c.createArgument as Record<string, unknown>;
-      return cArgs.owner === depositor && parseFloat(cArgs.amount as string) === parseFloat(amountFromArgs);
+      return (
+        cArgs.owner === depositor &&
+        parseFloat(cArgs.amount as string) === parseFloat(amountFromArgs)
+      );
     });
     expect(matchingHolding).toBeDefined();
   }, 30_000);
