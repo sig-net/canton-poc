@@ -238,14 +238,21 @@ nonconsuming choice RequestEvmDeposit : ContractId PendingEvmDeposit
 `keyVersion = 1` is hardcoded. `algo`, `dest`, `params` are hardcoded inside
 `computeRequestId` (`"ECDSA"`, `"ethereum"`, `""`).
 
-**PackageId in the derivation path:** The `sender` used above is `partyToText
-requester`. In production, both the user and MPC prepend the packageId:
-`sender = "{packageId}:{partyId}"`. The packageId is not accessible inside Daml
-(no built-in function exists), but every Canton ledger event includes it in the
-`templateId` field (`"{packageId}:{module}:{template}"`). Both sides extract it
-from the `PendingEvmDeposit` created event via `event.templateId.split(":")[0]`
-and inject it into the predecessorId automatically — no Daml contract changes
-needed. Validated in `PackageIdPoc.daml` and `package-id-poc.test.ts`.
+**Key derivation (predecessorId + path):** For `deriveChildPublicKey`, the MPC
+and user use:
+
+- **predecessorId** = packageId, extracted from the `PendingEvmDeposit` event's
+  `templateId` field (`event.templateId.split(":")[0]`)
+- **path** = `partyToText requester`
+
+The packageId is not accessible inside Daml (no built-in function). It comes from
+the `CreatedEvent.templateId` (`"{packageId}:{module}:{template}"`), a Required
+field in the Ledger API v2 spec set by the participant, not user-supplied.
+
+The packageId does not need to be included in `computeRequestId` because it is
+already implicit in the derived deposit address — the `from` address in the EVM
+transaction is derived using `(predecessorId=packageId, path=partyId)`, so the
+`evmParams` in the requestId already bind to a package-scoped key.
 
 **`SignEvmTx`** — MPC posts its EVM transaction signature.
 
@@ -360,13 +367,17 @@ state from Sepolia during signing. Only reads Sepolia for receipt verification.
 ```
 On PendingEvmDeposit created:
 
+  Phase 0: Extract key derivation params from event metadata
+    0. predecessorId = event.templateId.split(":")[0]  (packageId)
+       path = requester                                 (partyId string)
+       caip2Id = "eip155:" + decimal(evmParams.chainId)
+
   Phase 1: Sign the EVM transaction
-    1. Read: requester, path, evmParams, requestId, contractId
-       Derive: caip2Id = "eip155:" + decimal(evmParams.chainId)
+    1. Read: evmParams, requestId, contractId from event
     2. Reconstruct calldata: selector(functionSignature) || abiEncode(args)
     3. Serialize unsigned EVM tx from evmParams + calldata (viem serializeTransaction)
     4. Compute tx hash: keccak256(serializedUnsigned)
-    5. Derive child private key
+    5. Derive child private key using (predecessorId, path)
     6. Sign tx hash with child private key -> { r, s, v }
     7. Exercise SignEvmTx(requestId, r, s, v)
        -> creates EcdsaSignature on Canton
@@ -389,18 +400,20 @@ The user drives the deposit end-to-end: creates the request, submits
 the signed transaction to Sepolia, and claims the deposit on Canton.
 
 ```
-1. Derive deposit address from MPC public key + user path
-2. Derive vault (centralized) address from MPC public key + "root" path
-3. Build evmParams: to=ERC20 contract, args=[vaultAddr, amount] (transfer call)
-4. Exercise RequestEvmDeposit(requester, path, evmParams)
+1. predecessorId = packageId (from codegen export or prior event)
+   path = partyToText requester
+2. Derive deposit address from MPC public key + (predecessorId, path)
+3. Derive vault (centralized) address from MPC public key + (predecessorId, "root")
+4. Build evmParams: to=ERC20 contract, args=[vaultAddr, amount] (transfer call)
+5. Exercise RequestEvmDeposit(requester, path, evmParams)
    -> creates PendingEvmDeposit on Canton
-5. Observe EcdsaSignature (MPC signs autonomously)
-6. Reconstruct signed EVM tx from evmParams + (r, s, v)
-7. Submit to Sepolia: eth_sendRawTransaction
-8. Observe EvmTxOutcomeSignature (MPC verifies receipt autonomously)
-9. Exercise ClaimEvmDeposit(pendingCid, outcomeCid, ecdsaCid)
-   -> verifies MPC sig on-chain, archives all evidence, creates Erc20Holding
-10. Assert Erc20Holding balance matches deposit amount
+6. Observe EcdsaSignature (MPC signs autonomously)
+7. Reconstruct signed EVM tx from evmParams + (r, s, v)
+8. Submit to Sepolia: eth_sendRawTransaction
+9. Observe EvmTxOutcomeSignature (MPC verifies receipt autonomously)
+10. Exercise ClaimEvmDeposit(pendingCid, outcomeCid, ecdsaCid)
+    -> verifies MPC sig on-chain, archives all evidence, creates Erc20Holding
+11. Assert Erc20Holding balance matches deposit amount
 ```
 
 ## Design Decisions
