@@ -69,7 +69,7 @@ wrapped ERC-20 balance.
  |<-----------------------------|                              |                              |
  |                              |                              |                              |
  | ClaimEvmDeposit              |                              |                              |
- |-- pending, outcome, ecdsa ->|                              |                              |
+ |-- pending, outcome, ecdsa -->|                              |                              |
  |                              |                              |                              |
  |                              | verify MPC signature         |                              |
  |                              | archive PendingEvmDeposit    |                              |
