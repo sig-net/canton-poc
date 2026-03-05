@@ -384,6 +384,87 @@ prepare -> sign -> execute -> observe -> verify flow end-to-end.
 | `updateId` | Canton runtime | No (post-commit) | Yes | Yes | Yes |
 | `transaction_uuid` | Canton prepare | Yes (in blob) | Yes | No (not on Transaction) | Internal only |
 
+## Requiring Interactive Submission for All Deposit Requests
+
+`externalTransactionHash` is **only** populated when a transaction goes through
+the Interactive Submission flow (`prepare` → sign → `execute`). Transactions
+submitted via normal `submit-and-wait` always have an empty
+`externalTransactionHash` — regardless of time or polling. This is by design:
+the normal path skips `prepare`, so there is no `transaction_uuid` and no hash
+to propagate.
+
+If the system relies on `externalTransactionHash` for MPC verification, the
+client **must always** use the Interactive Submission path for deposit requests.
+
+**Source**: PoC test T4 in `client/src/scripts/tx-uuid-poc.ts` confirms
+`externalTransactionHash` is empty on `submit-and-wait`.
+
+### Why this is acceptable for a production product
+
+The Interactive Submission flow exists for **external parties** — parties that
+hold their own signing keys rather than delegating signing to the participant
+operator. For a financial product where users are distinct entities, this is the
+correct security model:
+
+- **Non-custodial**: the operator never holds user private keys
+- **User sovereignty**: each user signs their own transactions (Ed25519 or
+  ECDSA P-256), same UX model as MetaMask, hardware wallets, or any
+  non-custodial wallet
+- **Offline signing**: the prepare step returns a hash that can be passed to an
+  air-gapped signing device — the private key never touches the network
+
+The three-step flow (`prepare` → sign → `execute`) is wrapped in the client SDK
+once. From the end user's perspective, they "approve a transaction" — identical
+to any wallet interaction.
+
+**Source**: [External Signing Overview — Offline Signing](https://docs.digitalasset.com/build/3.4/explanations/external-signing/external_signing_overview.html),
+[Preparing and Signing Transactions](https://docs.digitalasset.com/integrate/devnet/preparing-and-signing-transactions/index.html)
+
+### Internal parties can also use it
+
+The Interactive Submission Service is not restricted to external parties. Any
+party hosted on the participant can call `prepare`. For internal parties it adds
+overhead (the participant already has signing authority), but there is no
+technical barrier. This means if the system needs `externalTransactionHash` on
+every deposit transaction uniformly, it can mandate the interactive path for all
+party types.
+
+**Source**: [Interactive Submission Service API](https://docs.digitalasset.com/build/3.4/explanations/external-signing/external_signing_overview.html) —
+the `PrepareSubmission` endpoint accepts any party with Ledger API access,
+not only external parties.
+
+### Separation of submission paths
+
+In practice, only the **depositor** (user) needs the interactive path. Operator-
+side operations use normal `submit-and-wait`:
+
+| Operation | Actor | Submission Path | `externalTransactionHash` |
+|---|---|---|---|
+| `RequestEvmDeposit` | Depositor (external) | Interactive | Populated |
+| `SignEvmTx` | Issuer (internal) | `submit-and-wait` | Empty |
+| `ProvideEvmOutcomeSig` | Issuer (internal) | `submit-and-wait` | Empty |
+| `ClaimEvmDeposit` | Issuer (internal) | `submit-and-wait` | Empty |
+
+The MPC only needs `externalTransactionHash` on `RequestEvmDeposit` transactions
+(where `PendingEvmDeposit` is created). Issuer-only operations don't need it.
+The MPC distinguishes the two by checking whether `externalTransactionHash` is
+populated — as proven by PoC test T4.
+
+**Source**: [Submit Externally Signed Transactions](https://docs.digitalasset.com/build/3.4/tutorials/app-dev/external_signing_submission.html),
+[JSON Ledger API — JsTransaction schema](https://docs.digitalasset.com/build/3.4/reference/json-api/openapi.html)
+(`externalTransactionHash` field on `JsTransaction`)
+
+### Onboarding considerations
+
+External party allocation (`generate-topology` → sign `multiHash` → `allocate`)
+is a **one-time setup cost** per user. For a widely used product, this
+onboarding flow should be optimized for smoothness (e.g., wrapped in a
+registration SDK call). The per-transaction interactive submission cost is
+minimal — one extra round-trip (`prepare`) before signing and executing.
+
+**Source**: [Onboard External Party — Ledger API (3.5)](https://docs.digitalasset.com/build/3.5/tutorials/app-dev/external_signing_onboarding_lapi.html),
+[Onboard External Party — Admin API (3.4)](https://docs.digitalasset.com/build/3.4/tutorials/app-dev/external_signing_onboarding.html)
+
 ## Official Documentation Links
 
 - [External Signing Overview](https://docs.digitalasset.com/build/3.4/explanations/external-signing/external_signing_overview.html)
