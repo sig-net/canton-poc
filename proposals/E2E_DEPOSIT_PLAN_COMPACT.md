@@ -123,7 +123,8 @@ wrapped ERC-20 balance.
 Singleton orchestrator contract. Hosts all choices that drive the deposit
 lifecycle. All evidence contracts (`EcdsaSignature`,
 `EvmTxOutcomeSignature`) and state contracts (`PendingEvmDeposit`,
-`Erc20Holding`) are created through its choices.
+`Erc20Holding`) are created through its choices. Its `created_event_blob`
+is disclosed off-chain so that users can attach it to command submissions
 
 ```daml
 template VaultOrchestrator
@@ -134,6 +135,7 @@ template VaultOrchestrator
     vaultAddress : BytesHex       -- centralized sweep address (derived from MPC root key + vault derivation path)
   where
     signatory issuer
+    observer mpc
 
     nonconsuming choice RequestDepositAuth   : ContractId DepositAuthProposal
     nonconsuming choice ApproveDepositAuth   : ContractId DepositAuthorization
@@ -268,7 +270,7 @@ template Erc20Holding
     issuer       : Party
     owner        : Party
     erc20Address : BytesHex
-    amount       : Decimal
+    amount       : BytesHex    -- raw uint256, e.g. 1e18 base units
   where
     signatory issuer
     observer owner
@@ -416,8 +418,6 @@ nonconsuming choice ClaimEvmDeposit : ContractId Erc20Holding
     assertMsg "Invalid MPC signature on deposit response"
       (secp256k1WithEcdsaOnly outcome.signature responseHash mpcPublicKey)
 
-    let amount = hexToDecimal ((pending.evmParams).args !! 1)
-
     archive pendingCid
     archive outcomeCid
     archive ecdsaCid
@@ -426,7 +426,7 @@ nonconsuming choice ClaimEvmDeposit : ContractId Erc20Holding
       issuer
       owner        = requester
       erc20Address = (pending.evmParams).to
-      amount
+      amount       = (pending.evmParams).args !! 1
 ```
 
 ### Crypto Functions (Crypto.daml)
@@ -471,8 +471,7 @@ computeResponseHash requestId output = keccak256 (requestId <> output)
 
 1. **Signatory / observer roles per choice — can the user act independently?**
    Can the user request and claim on their own (i.e., `controller requester`
-   without `issuer` as co-controller)? The MPC service only needs to be an
-   observer of `RequestEvmDeposit` (to react to `PendingEvmDeposit` creation)
+   without `issuer` as co-controller)?
 
 2. **Expected throughput per second on foreign chains?**
    What is the target transaction throughput per second on external chains
