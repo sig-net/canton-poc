@@ -439,6 +439,8 @@ the issuer creates a token with a hard use-limit per user. `RequestEvmDeposit`
 becomes `controller requester` only — the choice fetches the token, validates
 ownership, and burns one use. No token → tx fails → MPC never sees it.
 
+#### DepositAuthorization (Auth Card)
+
 ```daml
 template DepositAuthorization
   with
@@ -450,7 +452,25 @@ template DepositAuthorization
     observer owner
 ```
 
-Users request authorization via the orchestrator; the issuer approves or ignores:
+The auth card's `contractId` is globally unique (Canton assigns a hash-based ID
+at creation time). This contractId feeds into `computeRequestId` as the nonce,
+guaranteeing uniqueness of `requestId` on chain without any explicit nonce field
+or centralized registry:
+
+- **Two identical txs from different users** → different `requestId` (different `requester`).
+- **Two identical txs from the same user** → different `requestId` (different auth card `contractId`).
+- **Two identical txs from the same card** → impossible (each use consumes and recreates the card with a new `contractId`).
+
+The issuer can issue as many cards as they want to the same user. Each card is
+an independent contract with its own unique `contractId`, so multiple cards for
+the same user naturally produce distinct requestIds with zero coordination
+overhead.
+
+#### Card Lifecycle: Propose → Approve → Use → Expire
+
+Users request authorization via the orchestrator; the issuer approves or
+ignores — combining the Authorization Pattern with the [Propose and Accept
+Pattern](https://docs.digitalasset.com/build/3.4/sdlc-howtos/smart-contracts/develop/patterns/propose-accept.html):
 
 ```daml
 -- User requests an authorization card
@@ -472,19 +492,28 @@ nonconsuming choice ApproveDepositAuth : ContractId DepositAuthorization
       issuer; owner = proposal.owner; remainingUses
 ```
 
-`RequestEvmDeposit` validates and burns one use:
+#### RequestEvmDeposit: Validate & Burn
+
+The user provides the auth card's `contractId` as `Text` (same pattern as the
+VaultOrchestrator `contractId`). Each use archives the card and recreates it
+(new `contractId`), so every deposit request across the card's lifetime gets a
+unique `requestId`. The MPC independently fetches the `DepositAuthorization`
+contract from the ledger and verifies that the user-supplied `authContractId`
+matches the `CreatedEvent.contractId` — same trust model as the
+VaultOrchestrator `contractId` verification.
 
 ```daml
 nonconsuming choice RequestEvmDeposit : ContractId PendingEvmDeposit
   with
-    requester  : Party
-    path       : Text
-    evmParams  : EvmTransactionParams
-    contractId : Text
-    keyVersion : Int
-    algo       : Text
-    dest       : Text
-    authCid    : ContractId DepositAuthorization
+    requester      : Party
+    path           : Text
+    evmParams      : EvmTransactionParams
+    contractId     : Text       -- VaultOrchestrator's contractId
+    authContractId : Text       -- DepositAuthorization's contractId (serves as nonce)
+    keyVersion     : Int
+    algo           : Text
+    dest           : Text
+    authCid        : ContractId DepositAuthorization
   controller requester
   do
     auth <- fetch authCid
@@ -501,15 +530,41 @@ nonconsuming choice RequestEvmDeposit : ContractId PendingEvmDeposit
       (evmParams.args !! 0 == vaultAddress)
 
     let caip2Id = "eip155:" <> chainIdToDecimalText evmParams.chainId
-    let requestId = computeRequestId (partyToText requester) evmParams caip2Id keyVersion path algo dest contractId
-    create PendingEvmDeposit with issuer; requester; requestId; path; evmParams; contractId; keyVersion; algo; dest
+    let requestId = computeRequestId
+          (partyToText requester) evmParams caip2Id keyVersion
+          path algo dest contractId authContractId
+    create PendingEvmDeposit with
+      issuer; requester; requestId; path; evmParams
+      contractId; authContractId; keyVersion; algo; dest
 ```
 
-**Alternative: Propose and Accept.** Instead of the issuer pushing cards, the
-user creates a `DepositAuthProposal` and the issuer's backend accepts or ignores
-it — combining the Authorization Pattern with the [Propose and Accept
-Pattern](https://docs.digitalasset.com/build/3.4/sdlc-howtos/smart-contracts/develop/patterns/propose-accept.html).
+The MPC cross-checks `authContractId` the same way it cross-checks `contractId`:
+
+```
+On PendingEvmDeposit created:
+  Phase 0 (extended):
+    0b. Verify orchCid == pending.contractId           (existing check)
+    0c. Fetch DepositAuthorization by pending.authContractId
+        Verify CreatedEvent.contractId == pending.authContractId
+        If mismatch → DROP request, do not sign
+```
 
 **Properties:** unforgeable (`signatory issuer`), self-enforcing (counter
-decrements on-ledger), revocable (issuer archives the token), MPC-safe (only
-valid `PendingEvmDeposit` contracts reach the MPC).
+decrements on-ledger), revocable (issuer archives the card), MPC-safe (only
+valid `PendingEvmDeposit` contracts reach the MPC), unique `requestId` per
+auth card `contractId` with no centralized state or coordination.
+
+## Open Questions
+
+1. **Signatory / observer roles per choice — can the user act independently?**
+   Who should be the signatory and observer of each contract and choice?
+   Can the user request and claim on their own (i.e., `controller requester`
+   without `issuer` as co-controller)? The MPC service only needs to be an
+   observer of `RequestEvmDeposit` (to react to `PendingEvmDeposit` creation),
+   so should it be removed as a signatory from that choice?
+
+2. **Expected throughput per second on foreign chains?**
+   What is the target transaction throughput per second on external chains
+   (e.g., Sepolia / Ethereum mainnet)? This affects the auth-card scaling
+   model (number of parallel cards per user), MPC signing capacity, and
+   receipt-polling infrastructure sizing.
