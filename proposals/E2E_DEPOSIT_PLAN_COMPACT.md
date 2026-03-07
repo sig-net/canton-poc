@@ -406,6 +406,11 @@ nonconsuming choice ClaimEvmDeposit : ContractId Erc20Holding
     pending <- fetch pendingCid
     outcome <- fetch outcomeCid
 
+    assertMsg "Pending issuer mismatch"
+      (pending.issuer == issuer)
+    assertMsg "Outcome issuer mismatch"
+      (outcome.issuer == issuer)
+
     assertMsg "Requester mismatch"
       (pending.requester == requester)
 
