@@ -129,6 +129,7 @@ lifecycle. All evidence contracts (`EcdsaSignature`,
 template VaultOrchestrator
   with
     issuer       : Party          -- the party that operates the vault
+    mpc          : Party          -- the MPC signing service party
     mpcPublicKey : PublicKeyHex   -- MPC root public key for signature verification
     vaultAddress : BytesHex       -- centralized sweep address (derived from MPC root key + vault derivation path)
   where
@@ -205,6 +206,7 @@ Anchor contract for the deposit lifecycle.
 template PendingEvmDeposit
   with
     issuer         : Party        -- the party that operates the vault
+    mpc            : Party        -- the MPC signing service party
     requester      : Party        -- the user initiating the deposit
     requestId      : BytesHex
     path           : Text         -- user-supplied derivation sub-path
@@ -216,7 +218,7 @@ template PendingEvmDeposit
     dest           : Text         -- e.g., "ethereum"
   where
     signatory issuer
-    observer requester
+    observer mpc, requester
 ```
 
 ### `EcdsaSignature` (Erc20Vault.daml)
@@ -227,12 +229,14 @@ MPC's EVM transaction signature.
 template EcdsaSignature
   with
     issuer    : Party
+    requester : Party
     requestId : BytesHex
     r         : BytesHex              -- 32 bytes
     s         : BytesHex              -- 32 bytes
     v         : Int                   -- recovery id (0 or 1)
   where
     signatory issuer
+    observer requester
 ```
 
 ### `EvmTxOutcomeSignature` (Erc20Vault.daml)
@@ -245,11 +249,13 @@ cryptographically against `mpcPublicKey` in the `ClaimEvmDeposit` choice.
 template EvmTxOutcomeSignature
   with
     issuer    : Party
+    requester : Party
     requestId : BytesHex
     signature : SignatureHex   -- secp256k1 over keccak256(requestId || mpcOutput)
     mpcOutput : BytesHex       -- "01" = success
   where
     signatory issuer
+    observer requester
 ```
 
 ### `Erc20Holding` (Erc20Vault.daml)
@@ -331,7 +337,7 @@ nonconsuming choice RequestEvmDeposit : ContractId PendingEvmDeposit
           (partyToText requester) evmParams caip2Id keyVersion
           path algo dest contractId authContractId
     create PendingEvmDeposit with
-      issuer; requester; requestId; path; evmParams
+      issuer; mpc; requester; requestId; path; evmParams
       contractId; authContractId; keyVersion; algo; dest
 ```
 
@@ -355,6 +361,7 @@ and user use:
 ```daml
 nonconsuming choice SignEvmTx : ContractId EcdsaSignature
   with
+    requester : Party
     requestId : BytesHex
     r         : BytesHex
     s         : BytesHex
@@ -362,7 +369,7 @@ nonconsuming choice SignEvmTx : ContractId EcdsaSignature
   controller issuer
   do
     create EcdsaSignature with
-      issuer; requestId; r; s; v
+      issuer; requester; requestId; r; s; v
 ```
 
 **`ProvideEvmOutcomeSig`** — MPC posts the ETH receipt verification proof.
@@ -370,31 +377,34 @@ nonconsuming choice SignEvmTx : ContractId EcdsaSignature
 ```daml
 nonconsuming choice ProvideEvmOutcomeSig : ContractId EvmTxOutcomeSignature
   with
+    requester : Party
     requestId : BytesHex
     signature : SignatureHex
     mpcOutput : BytesHex
   controller issuer
   do
     create EvmTxOutcomeSignature with
-      issuer; requestId; signature; mpcOutput
+      issuer; requester; requestId; signature; mpcOutput
 ```
 
 **`ClaimEvmDeposit`** — user triggers claim after observing the outcome
 signature. Archives all evidence contracts (`PendingEvmDeposit`,
-`EvmTxOutcomeSignature`, `EcdsaSignature`). Since the MPC creates exactly one
-`EvmTxOutcomeSignature` per requestId, archiving it prevents double-claims —
-duplicate `PendingEvmDeposit` contracts become inert.
+`EvmTxOutcomeSignature`, `EcdsaSignature`).
 
 ```daml
 nonconsuming choice ClaimEvmDeposit : ContractId Erc20Holding
   with
+    requester   : Party
     pendingCid  : ContractId PendingEvmDeposit
     outcomeCid  : ContractId EvmTxOutcomeSignature
     ecdsaCid    : ContractId EcdsaSignature
-  controller issuer
+  controller requester
   do
     pending <- fetch pendingCid
     outcome <- fetch outcomeCid
+
+    assertMsg "Requester mismatch"
+      (pending.requester == requester)
 
     assertMsg "Request ID mismatch"
       (pending.requestId == outcome.requestId)
@@ -414,7 +424,7 @@ nonconsuming choice ClaimEvmDeposit : ContractId Erc20Holding
 
     create Erc20Holding with
       issuer
-      owner        = pending.requester
+      owner        = requester
       erc20Address = (pending.evmParams).to
       amount
 ```
@@ -456,3 +466,14 @@ computeRequestId sender evmParams caip2Id keyVersion path algo dest contractId a
 computeResponseHash : BytesHex -> BytesHex -> BytesHex
 computeResponseHash requestId output = keccak256 (requestId <> output)
 ```
+
+## Open Questions
+
+1. **Signatory / observer roles per choice — can the user act independently?**
+   Can the user request and claim on their own (i.e., `controller requester`
+   without `issuer` as co-controller)? The MPC service only needs to be an
+   observer of `RequestEvmDeposit` (to react to `PendingEvmDeposit` creation)
+
+2. **Expected throughput per second on foreign chains?**
+   What is the target transaction throughput per second on external chains
+   (e.g., Sepolia / Ethereum mainnet)?
