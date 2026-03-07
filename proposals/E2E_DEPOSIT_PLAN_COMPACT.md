@@ -193,11 +193,12 @@ to the same user enabling higher throughput; each is an independent contract.
 template DepositAuthorization
   with
     issuer        : Party
+    mpc           : Party
     owner         : Party
     remainingUses : Int
   where
     signatory issuer
-    observer owner
+    observer mpc, owner
 ```
 
 ### `PendingEvmDeposit` (Erc20Vault.daml)
@@ -300,7 +301,7 @@ nonconsuming choice ApproveDepositAuth : ContractId DepositAuthorization
     proposal <- fetch proposalCid
     archive proposalCid
     create DepositAuthorization with
-      issuer; owner = proposal.owner; remainingUses
+      issuer; mpc; owner = proposal.owner; remainingUses
 ```
 
 **`RequestEvmDeposit`** — user creates a deposit request. Validates the auth
