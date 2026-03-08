@@ -446,24 +446,7 @@ nonconsuming choice ClaimEvmDeposit : ContractId Erc20Holding
 ### Crypto Functions (Crypto.daml)
 
 Uses EIP-712-style domain-separated hashing to eliminate `abi.encodePacked`
-collision vectors. Every dynamic field (`Text`, variable-length `BytesHex`,
-lists) is `keccak256`-hashed first, producing a fixed 32-byte contribution.
-This prevents the classic boundary ambiguity where `("a","bc")` and `("ab","c")`
-pack to identical bytes.
-
-**Design rules:**
-
-1. **Domain tags** — each hash includes a versioned type tag
-   (`"EvmTransactionParamsV1"`, `"CantonMpcDepositRequestV1"`,
-   `"CantonMpcResponseV1"`) to prevent cross-protocol collisions.
-2. **Dynamic fields** — `hashText t = keccak256 (toHex t)` — always 32 bytes.
-3. **Lists** — `hashBytesList xs = keccak256 (foldl (<>) "" (map keccak256 xs))`
-   — each element hashed individually (32 bytes), then concatenation hashed.
-   Eliminates list-count and per-element length ambiguity.
-4. **Fixed-width fields** — `padHex` to 32 bytes (addresses left-padded to 32,
-   not 20, following EIP-712 convention).
-5. **Nested structs** — `EvmTransactionParams` is hashed separately with its
-   own type tag, producing a single 32-byte contribution to the outer hash.
+collision vectors.
 
 ```daml
 -- Domain tags
@@ -526,6 +509,12 @@ computeResponseHash requestId output =
    Can the user request and claim on their own (i.e., `controller requester`
    without `issuer` as co-controller)?
 
-2. **Expected throughput per second on foreign chains?**
+2. **VaultOrchestrator signatory model — single party or multi-party?**
+   Should `VaultOrchestrator` remain a single-signatory template (`signatory issuer`)
+   or become multi-party (e.g., `signatory issuer, mpc`)? A multi-party signatory
+   would require both parties to agree on creation and any consuming choices,
+   adding stronger trust guarantees but increasing coordination overhead.
+
+3. **Expected throughput per second on foreign chains?**
    What is the target transaction throughput per second on external chains
    (e.g., Sepolia / Ethereum mainnet)?
