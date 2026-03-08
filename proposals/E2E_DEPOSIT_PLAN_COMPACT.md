@@ -11,14 +11,14 @@ signing service, giving cryptographic proof of every step.
 2. Issuer approves via `ApproveDepositAuth`, creating a `DepositAuthorization`
    with a hard use-limit
 3. User sends ERC20 tokens to a **deposit address** on Sepolia
-   (derived from the MPC root public key + vault derivation path + user-specific derivation path)
+   (derived from MPC root public key, predecessorId=packageId+issuer, path=requester+userPath)
 4. User exercises `RequestEvmDeposit` on Canton to request a **sweep from the deposit address to the
    vault address**
-   (derived from the MPC root public key + vault derivation path)
+   (derived from MPC root public key, predecessorId=packageId+issuer, path="root")
    via an ERC20 `transfer` call. The choice validates the auth card, burns one
    use, and creates a `PendingEvmDeposit`.
-5. MPC Service observes the `PendingEvmDeposit`, verifies both the
-   VaultOrchestrator and DepositAuthorization `contractId`s against the ledger
+5. MPC Service observes the `PendingEvmDeposit`, verifies the
+   DepositAuthorization `authContractId` against the ledger
 6. MPC Service builds, serializes, and signs the EVM sweep transaction
 7. MPC Service exercises `SignEvmTx` on Canton, creating an `EcdsaSignature`
 8. User observes the `EcdsaSignature`, reconstructs the signed transaction,
@@ -55,7 +55,6 @@ wrapped ERC-20 balance.
  |                              |                              |                              |
  | 4. RequestEvmDeposit         |                              |                              |
  |    (evmParams, path,         |                              |                              |
- |     contractId,              |                              |                              |
  |     authContractId, authCid) |                              |                              |
  |----------------------------->|                              |                              |
  |                              | validates auth card,         |                              |
@@ -63,12 +62,11 @@ wrapped ERC-20 balance.
  |                              |                              |                              |
  |                              | 5. creates PendingEvmDeposit |                              |
  |                              |    (path, evmParams,         |                              |
- |                              |     requester, contractId,   |                              |
+ |                              |     requester,               |                              |
  |                              |     authContractId)          |                              |
  |                              |                              |                              |
  |                              |    observes PendingEvmDeposit|                              |
  |                              |----------------------------->|                              |
- |                              |                              | verify orchCid               |
  |                              |                              | verify authContractId        |
  |                              |                              |                              |
  |                              |                              | 6. buildCalldata             |
@@ -214,7 +212,6 @@ template PendingEvmDeposit
     requestId      : BytesHex
     path           : Text         -- user-supplied derivation sub-path
     evmParams      : EvmTransactionParams
-    contractId     : Text         -- VaultOrchestrator's contractId, MPC verifies against event
     authContractId : Text         -- DepositAuthorization's contractId (nonce), MPC verifies against event
     keyVersion     : Int          -- e.g., 1
     algo           : Text         -- e.g., "ECDSA"
@@ -315,7 +312,6 @@ nonconsuming choice RequestEvmDeposit : ContractId PendingEvmDeposit
     requester      : Party
     path           : Text
     evmParams      : EvmTransactionParams
-    contractId     : Text       -- VaultOrchestrator's contractId
     authContractId : Text       -- DepositAuthorization's contractId (nonce)
     keyVersion     : Int
     algo           : Text
@@ -343,26 +339,30 @@ nonconsuming choice RequestEvmDeposit : ContractId PendingEvmDeposit
     let caip2Id = "eip155:" <> chainIdToDecimalText evmParams.chainId
     let requestId = computeRequestId
           (partyToText requester) evmParams caip2Id keyVersion
-          path algo dest contractId authContractId
+          path algo dest authContractId
     create PendingEvmDeposit with
       issuer; requester; mpc; requestId; path; evmParams
-      contractId; authContractId; keyVersion; algo; dest
+      authContractId; keyVersion; algo; dest
 ```
 
-The MPC cross-checks both `contractId` and `authContractId` against
-`CreatedEvent.contractId` from the ledger; if either mismatches, the request is
-dropped. Since `contractId` is globally unique per VaultOrchestrator instance,
-it feeds into both key derivation and `computeRequestId` — different
-VaultOrchestrator instances produce unique deposit addresses and unique
-requestIds with no collision. The `authContractId` (auth card's `contractId`)
-serves as the nonce: globally unique, changes on every use (archive + recreate),
-guaranteeing `requestId` uniqueness without centralized state.
+The MPC cross-checks `authContractId` against `CreatedEvent.contractId` from
+the ledger; if it mismatches, the request is dropped. The `authContractId`
+(auth card's `contractId`) serves as the nonce: globally unique, changes on
+every use (archive + recreate), guaranteeing `requestId` uniqueness without
+centralized state.
 
-**Key derivation (predecessorId + path):** For `deriveChildPublicKey`, the MPC
-and user use:
+**Key derivation (predecessorId + path):** `predecessorId = packageId + issuer`
+(DAR package ID concatenated with the issuer party identifier). This ensures
+different issuers never control the same EVM address via the MPC KDF. For
+uniqueness per VaultOrchestrator under the same issuer, the issuer can embed a
+vault ID in their party identifier and it flows through the KDF automatically.
+The MPC extracts `packageId` from the `CreatedEvent.templateId` field
+(`packageId:Module:Entity`) and `issuer` from the contract's `createArgument`.
+Both vault and deposit addresses use the same predecessorId; the **path**
+differentiates them:
 
-- **predecessorId** = contractId (VaultOrchestrator's contractId)
-- **path** = requester + user-supplied `path` argument
+- **Vault address**: path = `"root"`
+- **Deposit address**: path = `requester + user-supplied path argument` (concatenated)
 
 **`SignEvmTx`** — MPC posts its EVM transaction signature.
 
@@ -483,8 +483,8 @@ hashEvmParams p =
 
 -- | Compute request_id using domain-separated hashing.
 -- Every field contributes exactly 32 bytes (or 4 bytes for keyVersion).
-computeRequestId : Text -> EvmTransactionParams -> Text -> Int -> Text -> Text -> Text -> Text -> Text -> BytesHex
-computeRequestId sender evmParams caip2Id keyVersion path algo dest contractId authContractId =
+computeRequestId : Text -> EvmTransactionParams -> Text -> Int -> Text -> Text -> Text -> Text -> BytesHex
+computeRequestId sender evmParams caip2Id keyVersion path algo dest authContractId =
   keccak256 $
        requestTypeHash
     <> hashText sender
@@ -494,7 +494,6 @@ computeRequestId sender evmParams caip2Id keyVersion path algo dest contractId a
     <> hashText path
     <> hashText algo
     <> hashText dest
-    <> hashText contractId
     <> hashText authContractId
 
 -- | Compute response_hash with domain separator.
