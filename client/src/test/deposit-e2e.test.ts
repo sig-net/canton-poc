@@ -115,7 +115,7 @@ describe("deposit e2e lifecycle", () => {
     const packageId = packageIdFromTemplateId(VaultOrchestrator.templateIdWithPackageId);
     const requesterPath = depositor;
     const caip2Id = chainIdHexToCaip2("0000000000000000000000000000000000000000000000000000000000aa36a7");
-    const vaultAddress = deriveDepositAddress(MPC_ROOT_PUBLIC_KEY, packageId, VAULT_PATH, caip2Id);
+    const vaultAddress = deriveDepositAddress(MPC_ROOT_PUBLIC_KEY, `${packageId}${issuer}`, VAULT_PATH, caip2Id);
     const sampleEvmParams = buildSampleEvmParams(vaultAddress);
 
     // Step 1: Create VaultOrchestrator
@@ -163,8 +163,7 @@ describe("deposit e2e lifecycle", () => {
         requester: depositor,
         path: requesterPath,
         evmParams: sampleEvmParams,
-        contractId: "",
-        authContractId: "",
+        authContractId: authCid,
         keyVersion: KEY_VERSION,
         algo: ALGO,
         dest: DEST,
@@ -186,17 +185,15 @@ describe("deposit e2e lifecycle", () => {
       requesterPath,
       ALGO,
       DEST,
-      "",
-      "",
+      authCid,
     );
     expect(tsRequestId.slice(2)).toBe(requestId);
 
     // Step 4: MPC signs the EVM transaction
-    const predecessorId = packageIdFromTemplateId(pending!.templateId);
     const childPrivateKey = deriveChildPrivateKey(
       MPC_ROOT_PRIVATE_KEY,
-      predecessorId,
-      depositor,
+      `${packageId}${issuer}`,
+      `${depositor}${requesterPath}`,
       chainIdHexToCaip2(sampleEvmParams.chainId),
     );
     const evmParamsForTx: CantonEvmParams = sampleEvmParams;

@@ -70,8 +70,8 @@ test2_requestIdDeterministic = do
   let sender = "Issuer::1220abcdef"
   let caip2Id = "eip155:11155111"
   let path = "m/44/60/0/0"
-  let id1 = computeRequestId sender sampleEvmParams caip2Id 1 path "ECDSA" "ethereum" "" ""
-  let id2 = computeRequestId sender sampleEvmParams caip2Id 1 path "ECDSA" "ethereum" "" ""
+  let id1 = computeRequestId sender sampleEvmParams caip2Id 1 path "ECDSA" "ethereum" ""
+  let id2 = computeRequestId sender sampleEvmParams caip2Id 1 path "ECDSA" "ethereum" ""
   assertMsg "request_id must be deterministic" (id1 == id2)
   assertMsg ("request_id wrong length: " <> show (byteCount id1)) (byteCount id1 == 32)
 
@@ -84,7 +84,7 @@ test3_responseHash = do
   let sender = "Issuer::1220abcdef"
   let caip2Id = "eip155:11155111"
   let path = "m/44/60/0/0"
-  let requestId = computeRequestId sender sampleEvmParams caip2Id 1 path "ECDSA" "ethereum" "" ""
+  let requestId = computeRequestId sender sampleEvmParams caip2Id 1 path "ECDSA" "ethereum" ""
   let output    = "00000000000000000000000000000000000000000000000000000000deadbeef"
   let hash1     = computeResponseHash requestId output
   let hash2     = computeResponseHash requestId output
@@ -144,7 +144,6 @@ test5_depositLifecycle = do
       requester = depositor
       path      = depositPath
       evmParams = sampleEvmParams
-      contractId = ""
       authContractId = ""
       keyVersion = 1
       algo = "ECDSA"
@@ -173,17 +172,6 @@ test6_secp256k1Verification = do
   assertMsg "Wrong message must fail verification" (not invalid)
 
 ------------------------------------------------------------------------
--- Test 7: toHex correctness
-------------------------------------------------------------------------
-
-test7_toHex : Script ()
-test7_toHex = do
-  assertMsg "ECDSA -> 4543445341" (toHex "ECDSA" == "4543445341")
-  assertMsg "ethereum -> 657468657265756d" (toHex "ethereum" == "657468657265756d")
-  assertMsg "eip155:1 -> 6569703135353a31" (toHex "eip155:1" == "6569703135353a31")
-  assertMsg "empty string -> empty" (toHex "" == "")
-
-------------------------------------------------------------------------
 -- Test 8: chainIdToDecimalText correctness
 ------------------------------------------------------------------------
 
@@ -205,74 +193,6 @@ test9_uint32ToHex = do
   assertMsg "0 -> 00000000" (uint32ToHex 0 == "00000000")
   assertMsg "255 -> 000000ff" (uint32ToHex 255 == "000000ff")
   assertMsg "65536 -> 00010000" (uint32ToHex 65536 == "00010000")
-
-------------------------------------------------------------------------
--- Test 10: full claim lifecycle with valid MPC signature
-------------------------------------------------------------------------
-
-test10_claimLifecycle : Script ()
-test10_claimLifecycle = do
-  issuer    <- allocateParty "Issuer"
-  depositor <- allocateParty "Depositor"
-  mpc       <- allocateParty "Mpc"
-
-  orchCid <- submit issuer do
-    createCmd VaultOrchestrator with
-      issuer
-      mpc
-      mpcPublicKey = testPubKeyHex
-      vaultAddress = sampleVaultAddress
-
-  -- Auth card flow
-  proposalCid <- submit (actAs depositor <> readAs issuer) do
-    exerciseCmd orchCid RequestDepositAuth with
-      requester = depositor
-
-  authCid <- submit issuer do
-    exerciseCmd orchCid ApproveDepositAuth with
-      proposalCid
-      remainingUses = 1
-
-  let depositPath = partyToText depositor
-  pendingCid <- submit (actAs depositor <> readAs issuer) do
-    exerciseCmd orchCid RequestEvmDeposit with
-      requester = depositor
-      path      = depositPath
-      evmParams = sampleEvmParams
-      contractId = ""
-      authContractId = ""
-      keyVersion = 1
-      algo = "ECDSA"
-      dest = "ethereum"
-      authCid
-
-  pending <- queryContractId depositor pendingCid
-  let pd = fromSome pending
-
-  ecdsaCid <- submit issuer do
-    exerciseCmd orchCid SignEvmTx with
-      requester = depositor
-      requestId = pd.requestId
-      r = "00"
-      s = "00"
-      v = 0
-
-  let mpcOutput = "01"
-  outcomeCid <- submit issuer do
-    exerciseCmd orchCid ProvideEvmOutcomeSig with
-      requester = depositor
-      requestId = pd.requestId
-      signature = testSignatureHex
-      mpcOutput
-
-  submitMustFail (actAs depositor <> readAs issuer) do
-    exerciseCmd orchCid ClaimEvmDeposit with
-      requester = depositor
-      pendingCid
-      outcomeCid
-      ecdsaCid
-
-  pure ()
 
 ------------------------------------------------------------------------
 -- Test 11: built-in toHex / fromHex round-trips
@@ -380,7 +300,6 @@ testRequestEvmDepositBurnsAuthCard = do
       requester = depositor
       path      = depositPath
       evmParams = sampleEvmParams
-      contractId = ""
       authContractId = ""
       keyVersion = 1
       algo = "ECDSA"
@@ -426,7 +345,6 @@ testClaimAsRequester = do
       requester = depositor
       path      = depositPath
       evmParams = sampleEvmParams
-      contractId = ""
       authContractId = ""
       keyVersion = 1
       algo = "ECDSA"
@@ -502,7 +420,6 @@ testClaimRequesterMismatchFails = do
       requester = depositor
       path      = depositPath
       evmParams = sampleEvmParams
-      contractId = ""
       authContractId = ""
       keyVersion = 1
       algo = "ECDSA"
@@ -562,7 +479,6 @@ testAuthCardNoRemainingUsesFails = do
       requester = depositor
       path      = depositPath
       evmParams = sampleEvmParams
-      contractId = ""
       authContractId = ""
       keyVersion = 1
       algo = "ECDSA"
@@ -570,3 +486,377 @@ testAuthCardNoRemainingUsesFails = do
       authCid
 
   pure ()
+
+------------------------------------------------------------------------
+-- Test 18: EIP-712 domain tags are deterministic and 32 bytes
+------------------------------------------------------------------------
+
+testDomainTags : Script ()
+testDomainTags = do
+  assertMsg "evmParamsTypeHash is 32 bytes" (byteCount evmParamsTypeHash == 32)
+  assertMsg "requestTypeHash is 32 bytes" (byteCount requestTypeHash == 32)
+  assertMsg "responseTypeHash is 32 bytes" (byteCount responseTypeHash == 32)
+  -- Tags must be distinct
+  assertMsg "evmParams vs request" (evmParamsTypeHash /= requestTypeHash)
+  assertMsg "evmParams vs response" (evmParamsTypeHash /= responseTypeHash)
+  assertMsg "request vs response" (requestTypeHash /= responseTypeHash)
+
+------------------------------------------------------------------------
+-- Test 19: hashText produces 32 bytes
+------------------------------------------------------------------------
+
+testHashText : Script ()
+testHashText = do
+  let h1 = hashText "hello"
+  let h2 = hashText "hello"
+  assertMsg "hashText is deterministic" (h1 == h2)
+  assertMsg "hashText is 32 bytes" (byteCount h1 == 32)
+  let h3 = hashText "world"
+  assertMsg "different input -> different hash" (h1 /= h3)
+  let h4 = hashText ""
+  assertMsg "empty string produces 32 bytes" (byteCount h4 == 32)
+
+------------------------------------------------------------------------
+-- Test 20: hashBytesList produces 32 bytes
+------------------------------------------------------------------------
+
+testHashBytesList : Script ()
+testHashBytesList = do
+  let h1 = hashBytesList ["aa", "bb"]
+  let h2 = hashBytesList ["aa", "bb"]
+  assertMsg "hashBytesList is deterministic" (h1 == h2)
+  assertMsg "hashBytesList is 32 bytes" (byteCount h1 == 32)
+  let h3 = hashBytesList ["aa", "cc"]
+  assertMsg "different elements -> different hash" (h1 /= h3)
+  -- Different list lengths must differ (boundary safety)
+  let h4 = hashBytesList ["aabb"]
+  assertMsg "different list structure -> different hash" (h1 /= h4)
+
+------------------------------------------------------------------------
+-- Test 21: hashEvmParams produces 32 bytes and is deterministic
+------------------------------------------------------------------------
+
+testHashEvmParams : Script ()
+testHashEvmParams = do
+  let h1 = hashEvmParams sampleEvmParams
+  let h2 = hashEvmParams sampleEvmParams
+  assertMsg "hashEvmParams is deterministic" (h1 == h2)
+  assertMsg "hashEvmParams is 32 bytes" (byteCount h1 == 32)
+  -- Different params must give different hash
+  let modified = sampleEvmParams with nonce = "0000000000000000000000000000000000000000000000000000000000000002"
+  let h3 = hashEvmParams modified
+  assertMsg "different params -> different hash" (h1 /= h3)
+
+------------------------------------------------------------------------
+-- Test 22: domain separation prevents cross-context collisions
+------------------------------------------------------------------------
+
+testDomainSeparation : Script ()
+testDomainSeparation = do
+  let sender = "Issuer::1220abcdef"
+  let caip2Id = "eip155:11155111"
+  let path = "m/44/60/0/0"
+  let requestId = computeRequestId sender sampleEvmParams caip2Id 1 path "ECDSA" "ethereum" ""
+  let responseHash = computeResponseHash requestId "01"
+  -- requestId and responseHash must never collide
+  assertMsg "requestId != responseHash" (requestId /= responseHash)
+
+------------------------------------------------------------------------
+-- Test vectors for happy-path claim (generated from TS crypto)
+------------------------------------------------------------------------
+
+-- SPKI-encoded secp256k1 public key matching the TS test private key
+claimTestPubKey : Text
+claimTestPubKey = "3056301006072a8648ce3d020106052b8104000a03420004bb50e2d89a4ed70663d080659fe0ad4b9bc3e06c17a227433966cb59ceee020decddbf6e00192011648d13b1c00af770c0c1bb609d4d3a5c98a43772e0e18ef4"
+
+-- DER signature over computeResponseHash(claimTestRequestId, "01")
+claimTestSignature : Text
+claimTestSignature = "3045022100bfe88285a8cfa920ede813a9995bdff7365533c69af875cfce69fffd64c840b50220588f69b88c2d21e74a2f02028d2d429ac5c822f89b9b40e2b637cb63dab6f9ca"
+
+claimTestRequestId : Text
+claimTestRequestId = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+------------------------------------------------------------------------
+-- Test 23: Happy-path ClaimEvmDeposit produces Erc20Holding
+------------------------------------------------------------------------
+
+testClaimHappyPath : Script ()
+testClaimHappyPath = do
+  issuer    <- allocateParty "Issuer"
+  depositor <- allocateParty "Depositor"
+  mpc       <- allocateParty "Mpc"
+
+  orchCid <- submit issuer do
+    createCmd VaultOrchestrator with
+      issuer; mpc; mpcPublicKey = claimTestPubKey; vaultAddress = sampleVaultAddress
+
+  -- Directly create the evidence contracts with known test vectors
+  pendingCid <- submit issuer do
+    createCmd PendingEvmDeposit with
+      issuer; requester = depositor; mpc
+      requestId = claimTestRequestId
+      path = "test"; evmParams = sampleEvmParams
+      authContractId = ""; keyVersion = 1; algo = "ECDSA"; dest = "ethereum"
+
+  ecdsaCid <- submit issuer do
+    createCmd EcdsaSignature with
+      issuer; requester = depositor
+      requestId = claimTestRequestId; r = "00"; s = "00"; v = 0
+
+  outcomeCid <- submit issuer do
+    createCmd EvmTxOutcomeSignature with
+      issuer; requester = depositor
+      requestId = claimTestRequestId
+      signature = claimTestSignature; mpcOutput = "01"
+
+  holdingCid <- submit (actAs depositor <> readAs issuer) do
+    exerciseCmd orchCid ClaimEvmDeposit with
+      requester = depositor; pendingCid; outcomeCid; ecdsaCid
+
+  holding <- queryContractId depositor holdingCid
+  let h = fromSome holding
+  assertMsg "holding owner" (h.owner == depositor)
+  assertMsg "holding issuer" (h.issuer == issuer)
+  assertMsg "holding erc20Address" (h.erc20Address == sampleEvmParams.to)
+  assertMsg "holding amount" (h.amount == "0000000000000000000000000000000000000000000000000000000005f5e100")
+
+  -- Evidence contracts must be archived
+  oldPending <- queryContractId depositor pendingCid
+  assertMsg "pending archived" (oldPending == None)
+  oldEcdsa <- queryContractId depositor ecdsaCid
+  assertMsg "ecdsa archived" (oldEcdsa == None)
+  oldOutcome <- queryContractId depositor outcomeCid
+  assertMsg "outcome archived" (oldOutcome == None)
+
+------------------------------------------------------------------------
+-- Test 24: ApproveDepositAuth can't be exercised by depositor
+------------------------------------------------------------------------
+
+testApproveDepositAuthWrongController : Script ()
+testApproveDepositAuthWrongController = do
+  issuer    <- allocateParty "Issuer"
+  depositor <- allocateParty "Depositor"
+  mpc       <- allocateParty "Mpc"
+
+  orchCid <- submit issuer do
+    createCmd VaultOrchestrator with
+      issuer; mpc; mpcPublicKey = testPubKeyHex; vaultAddress = sampleVaultAddress
+
+  proposalCid <- submit (actAs depositor <> readAs issuer) do
+    exerciseCmd orchCid RequestDepositAuth with
+      requester = depositor
+
+  submitMustFail depositor do
+    exerciseCmd orchCid ApproveDepositAuth with
+      proposalCid; remainingUses = 1
+
+------------------------------------------------------------------------
+-- Test 25: SignEvmTx can't be exercised by depositor
+------------------------------------------------------------------------
+
+testSignEvmTxWrongController : Script ()
+testSignEvmTxWrongController = do
+  issuer    <- allocateParty "Issuer"
+  depositor <- allocateParty "Depositor"
+  mpc       <- allocateParty "Mpc"
+
+  orchCid <- submit issuer do
+    createCmd VaultOrchestrator with
+      issuer; mpc; mpcPublicKey = testPubKeyHex; vaultAddress = sampleVaultAddress
+
+  submitMustFail depositor do
+    exerciseCmd orchCid SignEvmTx with
+      requester = depositor; requestId = "aa"; r = "00"; s = "00"; v = 0
+
+------------------------------------------------------------------------
+-- Test 26: ProvideEvmOutcomeSig can't be exercised by depositor
+------------------------------------------------------------------------
+
+testProvideOutcomeSigWrongController : Script ()
+testProvideOutcomeSigWrongController = do
+  issuer    <- allocateParty "Issuer"
+  depositor <- allocateParty "Depositor"
+  mpc       <- allocateParty "Mpc"
+
+  orchCid <- submit issuer do
+    createCmd VaultOrchestrator with
+      issuer; mpc; mpcPublicKey = testPubKeyHex; vaultAddress = sampleVaultAddress
+
+  submitMustFail depositor do
+    exerciseCmd orchCid ProvideEvmOutcomeSig with
+      requester = depositor; requestId = "aa"
+      signature = testSignatureHex; mpcOutput = "01"
+
+------------------------------------------------------------------------
+-- Test 27: RequestEvmDeposit rejects auth card from wrong issuer
+------------------------------------------------------------------------
+
+testAuthCardWrongIssuer : Script ()
+testAuthCardWrongIssuer = do
+  issuer    <- allocateParty "Issuer"
+  depositor <- allocateParty "Depositor"
+  mpc       <- allocateParty "Mpc"
+  rogue     <- allocateParty "Rogue"
+
+  orchCid <- submit issuer do
+    createCmd VaultOrchestrator with
+      issuer; mpc; mpcPublicKey = testPubKeyHex; vaultAddress = sampleVaultAddress
+
+  -- Auth card signed by rogue, not issuer
+  authCid <- submit rogue do
+    createCmd DepositAuthorization with
+      issuer = rogue; mpc; owner = depositor; remainingUses = 1
+
+  submitMustFail (actAs depositor <> readAs issuer) do
+    exerciseCmd orchCid RequestEvmDeposit with
+      requester = depositor; path = "test"; evmParams = sampleEvmParams
+      authContractId = ""; keyVersion = 1; algo = "ECDSA"; dest = "ethereum"
+      authCid
+
+------------------------------------------------------------------------
+-- Test 28: RequestEvmDeposit rejects auth card owned by wrong party
+------------------------------------------------------------------------
+
+testAuthCardWrongOwner : Script ()
+testAuthCardWrongOwner = do
+  issuer    <- allocateParty "Issuer"
+  depositor <- allocateParty "Depositor"
+  otherUser <- allocateParty "OtherUser"
+  mpc       <- allocateParty "Mpc"
+
+  orchCid <- submit issuer do
+    createCmd VaultOrchestrator with
+      issuer; mpc; mpcPublicKey = testPubKeyHex; vaultAddress = sampleVaultAddress
+
+  -- Auth card owned by otherUser, not depositor
+  authCid <- submit issuer do
+    createCmd DepositAuthorization with
+      issuer; mpc; owner = otherUser; remainingUses = 1
+
+  submitMustFail (actAs depositor <> readAs issuer) do
+    exerciseCmd orchCid RequestEvmDeposit with
+      requester = depositor; path = "test"; evmParams = sampleEvmParams
+      authContractId = ""; keyVersion = 1; algo = "ECDSA"; dest = "ethereum"
+      authCid
+
+------------------------------------------------------------------------
+-- Test 29: RequestEvmDeposit rejects wrong functionSignature
+------------------------------------------------------------------------
+
+testWrongFunctionSignature : Script ()
+testWrongFunctionSignature = do
+  issuer    <- allocateParty "Issuer"
+  depositor <- allocateParty "Depositor"
+  mpc       <- allocateParty "Mpc"
+
+  orchCid <- submit issuer do
+    createCmd VaultOrchestrator with
+      issuer; mpc; mpcPublicKey = testPubKeyHex; vaultAddress = sampleVaultAddress
+
+  proposalCid <- submit (actAs depositor <> readAs issuer) do
+    exerciseCmd orchCid RequestDepositAuth with requester = depositor
+  authCid <- submit issuer do
+    exerciseCmd orchCid ApproveDepositAuth with proposalCid; remainingUses = 1
+
+  let badParams = sampleEvmParams with functionSignature = "approve(address,uint256)"
+  submitMustFail (actAs depositor <> readAs issuer) do
+    exerciseCmd orchCid RequestEvmDeposit with
+      requester = depositor; path = "test"; evmParams = badParams
+      authContractId = ""; keyVersion = 1; algo = "ECDSA"; dest = "ethereum"
+      authCid
+
+------------------------------------------------------------------------
+-- Test 30: RequestEvmDeposit rejects wrong recipient (not vaultAddress)
+------------------------------------------------------------------------
+
+testWrongRecipient : Script ()
+testWrongRecipient = do
+  issuer    <- allocateParty "Issuer"
+  depositor <- allocateParty "Depositor"
+  mpc       <- allocateParty "Mpc"
+
+  orchCid <- submit issuer do
+    createCmd VaultOrchestrator with
+      issuer; mpc; mpcPublicKey = testPubKeyHex; vaultAddress = sampleVaultAddress
+
+  proposalCid <- submit (actAs depositor <> readAs issuer) do
+    exerciseCmd orchCid RequestDepositAuth with requester = depositor
+  authCid <- submit issuer do
+    exerciseCmd orchCid ApproveDepositAuth with proposalCid; remainingUses = 1
+
+  let badParams = sampleEvmParams with
+        args = [ "0000000000000000000000001111111111111111111111111111111111111111"
+               , "0000000000000000000000000000000000000000000000000000000005f5e100"
+               ]
+  submitMustFail (actAs depositor <> readAs issuer) do
+    exerciseCmd orchCid RequestEvmDeposit with
+      requester = depositor; path = "test"; evmParams = badParams
+      authContractId = ""; keyVersion = 1; algo = "ECDSA"; dest = "ethereum"
+      authCid
+
+------------------------------------------------------------------------
+-- Test 31: ClaimEvmDeposit rejects mpcOutput != "01" (ETH failure)
+------------------------------------------------------------------------
+
+testClaimRejectsMpcFailure : Script ()
+testClaimRejectsMpcFailure = do
+  issuer    <- allocateParty "Issuer"
+  depositor <- allocateParty "Depositor"
+  mpc       <- allocateParty "Mpc"
+
+  orchCid <- submit issuer do
+    createCmd VaultOrchestrator with
+      issuer; mpc; mpcPublicKey = testPubKeyHex; vaultAddress = sampleVaultAddress
+
+  pendingCid <- submit issuer do
+    createCmd PendingEvmDeposit with
+      issuer; requester = depositor; mpc
+      requestId = "bb"; path = "test"; evmParams = sampleEvmParams
+      authContractId = ""; keyVersion = 1; algo = "ECDSA"; dest = "ethereum"
+
+  ecdsaCid <- submit issuer do
+    createCmd EcdsaSignature with
+      issuer; requester = depositor; requestId = "bb"; r = "00"; s = "00"; v = 0
+
+  outcomeCid <- submit issuer do
+    createCmd EvmTxOutcomeSignature with
+      issuer; requester = depositor; requestId = "bb"
+      signature = testSignatureHex; mpcOutput = "00"
+
+  submitMustFail (actAs depositor <> readAs issuer) do
+    exerciseCmd orchCid ClaimEvmDeposit with
+      requester = depositor; pendingCid; outcomeCid; ecdsaCid
+
+------------------------------------------------------------------------
+-- Test 32: ClaimEvmDeposit rejects mismatched requestId
+------------------------------------------------------------------------
+
+testClaimRejectsRequestIdMismatch : Script ()
+testClaimRejectsRequestIdMismatch = do
+  issuer    <- allocateParty "Issuer"
+  depositor <- allocateParty "Depositor"
+  mpc       <- allocateParty "Mpc"
+
+  orchCid <- submit issuer do
+    createCmd VaultOrchestrator with
+      issuer; mpc; mpcPublicKey = testPubKeyHex; vaultAddress = sampleVaultAddress
+
+  pendingCid <- submit issuer do
+    createCmd PendingEvmDeposit with
+      issuer; requester = depositor; mpc
+      requestId = "aa"; path = "test"; evmParams = sampleEvmParams
+      authContractId = ""; keyVersion = 1; algo = "ECDSA"; dest = "ethereum"
+
+  ecdsaCid <- submit issuer do
+    createCmd EcdsaSignature with
+      issuer; requester = depositor; requestId = "aa"; r = "00"; s = "00"; v = 0
+
+  -- Outcome has different requestId
+  outcomeCid <- submit issuer do
+    createCmd EvmTxOutcomeSignature with
+      issuer; requester = depositor; requestId = "bb"
+      signature = testSignatureHex; mpcOutput = "01"
+
+  submitMustFail (actAs depositor <> readAs issuer) do
+    exerciseCmd orchCid ClaimEvmDeposit with
+      requester = depositor; pendingCid; outcomeCid; ecdsaCid

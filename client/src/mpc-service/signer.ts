@@ -1,6 +1,7 @@
 import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { DER } from "@noble/curves/abstract/weierstrass.js";
 import { keccak256, toBytes, toHex, numberToHex, hexToBigInt, type Hex } from "viem";
+import { computeResponseHash } from "../mpc/crypto.js";
 
 const EPSILON_DERIVATION_PREFIX = "sig.network v2.0.0 epsilon derivation";
 
@@ -54,12 +55,12 @@ export function signEvmTxHash(privateKey: Hex, txHash: Hex): { r: string; s: str
 
 /**
  * Sign the MPC response for Canton's EvmTxOutcomeSignature.
- * responseHash = keccak256(requestId || mpcOutput)
+ * responseHash = keccak256(RESPONSE_TYPE_HASH || requestId || mpcOutput)
  * Returns DER-encoded signature as bare hex without 0x prefix (Daml format).
  */
 export function signMpcResponse(rootPrivateKey: Hex, requestId: string, mpcOutput: string): string {
   // requestId and mpcOutput are bare hex (no 0x)
-  const responseHash = keccak256(`0x${requestId}${mpcOutput}` as Hex);
+  const responseHash = computeResponseHash(requestId, mpcOutput);
   const msgHash = toBytes(responseHash);
   const privKeyBytes = toBytes(rootPrivateKey);
 

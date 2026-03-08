@@ -1,5 +1,13 @@
 import { describe, it, expect } from "vitest";
-import { computeRequestId, packParams, type EvmTransactionParams } from "../mpc/crypto.js";
+import {
+  computeRequestId,
+  computeResponseHash,
+  hashEvmParams,
+  EVM_PARAMS_TYPE_HASH,
+  REQUEST_TYPE_HASH,
+  RESPONSE_TYPE_HASH,
+  type EvmTransactionParams,
+} from "../mpc/crypto.js";
 
 const sampleEvmParams: EvmTransactionParams = {
   to: "a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
@@ -22,24 +30,44 @@ const KEY_VERSION = 1;
 const PATH = "m/44/60/0/0";
 
 // ---------------------------------------------------------------------------
-// Unit tests: packParams
+// Unit tests: domain tags
 // ---------------------------------------------------------------------------
-describe("packParams", () => {
-  it("produces correct byte layout", () => {
-    const packed = packParams(sampleEvmParams);
+describe("domain tags", () => {
+  it("are 32-byte hex strings (64 chars)", () => {
+    expect(EVM_PARAMS_TYPE_HASH).toMatch(/^[0-9a-f]{64}$/);
+    expect(REQUEST_TYPE_HASH).toMatch(/^[0-9a-f]{64}$/);
+    expect(RESPONSE_TYPE_HASH).toMatch(/^[0-9a-f]{64}$/);
+  });
 
-    expect(packed).toContain(sampleEvmParams.to);
-    expect(packed).toContain(sampleEvmParams.args.join(""));
-    expect(packed).toContain(sampleEvmParams.value);
-    expect(packed).toContain(sampleEvmParams.nonce);
-    expect(packed).toContain(sampleEvmParams.gasLimit);
-    expect(packed).toContain(sampleEvmParams.maxFeePerGas);
-    expect(packed).toContain(sampleEvmParams.maxPriorityFee);
-    expect(packed).toContain(sampleEvmParams.chainId);
+  it("are all distinct", () => {
+    expect(EVM_PARAMS_TYPE_HASH).not.toBe(REQUEST_TYPE_HASH);
+    expect(EVM_PARAMS_TYPE_HASH).not.toBe(RESPONSE_TYPE_HASH);
+    expect(REQUEST_TYPE_HASH).not.toBe(RESPONSE_TYPE_HASH);
+  });
+});
 
-    const fnSigHex = Buffer.from(sampleEvmParams.functionSignature, "utf8").toString("hex");
-    expect(packed.startsWith(sampleEvmParams.to + fnSigHex)).toBe(true);
-    expect(packed.endsWith(sampleEvmParams.chainId)).toBe(true);
+// ---------------------------------------------------------------------------
+// Unit tests: hashEvmParams
+// ---------------------------------------------------------------------------
+describe("hashEvmParams", () => {
+  it("produces 32-byte hex (64 chars)", () => {
+    const hash = hashEvmParams(sampleEvmParams);
+    expect(hash).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it("is deterministic", () => {
+    const a = hashEvmParams(sampleEvmParams);
+    const b = hashEvmParams(sampleEvmParams);
+    expect(a).toBe(b);
+  });
+
+  it("changes when params change", () => {
+    const original = hashEvmParams(sampleEvmParams);
+    const modified = hashEvmParams({
+      ...sampleEvmParams,
+      nonce: "0000000000000000000000000000000000000000000000000000000000000002",
+    });
+    expect(original).not.toBe(modified);
   });
 });
 
@@ -48,13 +76,44 @@ describe("packParams", () => {
 // ---------------------------------------------------------------------------
 describe("computeRequestId", () => {
   it("is deterministic", () => {
-    const a = computeRequestId(SENDER, sampleEvmParams, CAIP2_ID, KEY_VERSION, PATH, "ECDSA", "ethereum", "", "");
-    const b = computeRequestId(SENDER, sampleEvmParams, CAIP2_ID, KEY_VERSION, PATH, "ECDSA", "ethereum", "", "");
+    const a = computeRequestId(SENDER, sampleEvmParams, CAIP2_ID, KEY_VERSION, PATH, "ECDSA", "ethereum", "");
+    const b = computeRequestId(SENDER, sampleEvmParams, CAIP2_ID, KEY_VERSION, PATH, "ECDSA", "ethereum", "");
     expect(a).toBe(b);
   });
 
   it("produces 32-byte hash", () => {
-    const hash = computeRequestId(SENDER, sampleEvmParams, CAIP2_ID, KEY_VERSION, PATH, "ECDSA", "ethereum", "", "");
+    const hash = computeRequestId(SENDER, sampleEvmParams, CAIP2_ID, KEY_VERSION, PATH, "ECDSA", "ethereum", "");
     expect(hash).toMatch(/^0x[0-9a-f]{64}$/);
+  });
+
+  it("changes with different authContractId", () => {
+    const a = computeRequestId(SENDER, sampleEvmParams, CAIP2_ID, KEY_VERSION, PATH, "ECDSA", "ethereum", "auth1");
+    const b = computeRequestId(SENDER, sampleEvmParams, CAIP2_ID, KEY_VERSION, PATH, "ECDSA", "ethereum", "auth2");
+    expect(a).not.toBe(b);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Unit tests: computeResponseHash
+// ---------------------------------------------------------------------------
+describe("computeResponseHash", () => {
+  it("produces 32-byte hash", () => {
+    const requestId = "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890";
+    const hash = computeResponseHash(requestId, "01");
+    expect(hash).toMatch(/^0x[0-9a-f]{64}$/);
+  });
+
+  it("is deterministic", () => {
+    const requestId = "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890";
+    const a = computeResponseHash(requestId, "01");
+    const b = computeResponseHash(requestId, "01");
+    expect(a).toBe(b);
+  });
+
+  it("changes with different output", () => {
+    const requestId = "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890";
+    const a = computeResponseHash(requestId, "01");
+    const b = computeResponseHash(requestId, "00");
+    expect(a).not.toBe(b);
   });
 });

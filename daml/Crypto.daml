@@ -37,12 +37,47 @@ chainIdToDecimalText : BytesHex -> Text
 chainIdToDecimalText hex =
   show (hexToInt hex)
 
--- | abi_encode_packed: concatenate all EVM params at canonical widths.
-packParams : EvmTransactionParams -> BytesHex
-packParams p =
-  padHex p.to 20
-    <> toHex p.functionSignature
-    <> foldl (\acc a -> acc <> a) "" p.args
+-- ---------------------------------------------------------------------------
+-- EIP-712-style domain-separated hashing
+-- ---------------------------------------------------------------------------
+
+-- | Domain tag for EvmTransactionParams struct hash.
+evmParamsTypeHash : BytesHex
+evmParamsTypeHash = keccak256 (toHex "EvmTransactionParamsV1")
+
+-- | Domain tag for deposit request hash.
+requestTypeHash : BytesHex
+requestTypeHash = keccak256 (toHex "CantonMpcDepositRequestV1")
+
+-- | Domain tag for MPC response hash.
+responseTypeHash : BytesHex
+responseTypeHash = keccak256 (toHex "CantonMpcResponseV1")
+
+-- | keccak256 of empty input (zero bytes).
+-- The Daml built-in rejects empty hex strings, so we hardcode the well-known constant.
+keccak256Empty : BytesHex
+keccak256Empty = "c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470"
+
+-- | keccak256 that handles empty hex input.
+safeKeccak256 : BytesHex -> BytesHex
+safeKeccak256 hex = if hex == "" then keccak256Empty else keccak256 hex
+
+-- | Hash a Text value to 32 bytes.
+hashText : Text -> BytesHex
+hashText t = safeKeccak256 (toHex t)
+
+-- | Hash a list of BytesHex values.
+hashBytesList : [BytesHex] -> BytesHex
+hashBytesList xs = safeKeccak256 (foldl (<>) "" (map keccak256 xs))
+
+-- | EIP-712-style struct hash for EvmTransactionParams.
+hashEvmParams : EvmTransactionParams -> BytesHex
+hashEvmParams p =
+  keccak256 $
+       evmParamsTypeHash
+    <> padHex p.to 32
+    <> hashText p.functionSignature
+    <> hashBytesList p.args
     <> padHex p.value          32
     <> padHex p.nonce          32
     <> padHex p.gasLimit       32
@@ -50,22 +85,21 @@ packParams p =
     <> padHex p.maxPriorityFee 32
     <> padHex p.chainId        32
 
--- | Compute request_id per 9-field layout.
-computeRequestId : Text -> EvmTransactionParams -> Text -> Int -> Text -> Text -> Text -> Text -> Text -> BytesHex
-computeRequestId sender evmParams caip2Id keyVersion path algo dest contractId authContractId =
-  let payload = packParams evmParams
-  in keccak256
-    ( toHex sender
-      <> payload
-      <> toHex caip2Id
-      <> uint32ToHex keyVersion
-      <> toHex path
-      <> toHex algo
-      <> toHex dest
-      <> toHex contractId
-      <> toHex authContractId
-    )
+-- | Compute request_id using domain-separated hashing.
+computeRequestId : Text -> EvmTransactionParams -> Text -> Int -> Text -> Text -> Text -> Text -> BytesHex
+computeRequestId sender evmParams caip2Id keyVersion path algo dest authContractId =
+  keccak256 $
+       requestTypeHash
+    <> hashText sender
+    <> hashEvmParams evmParams
+    <> hashText caip2Id
+    <> uint32ToHex keyVersion
+    <> hashText path
+    <> hashText algo
+    <> hashText dest
+    <> hashText authContractId
 
--- | Compute response_hash = keccak256(request_id || serialized_output).
+-- | Compute response_hash with domain separator.
 computeResponseHash : BytesHex -> BytesHex -> BytesHex
-computeResponseHash requestId output = keccak256 (requestId <> output)
+computeResponseHash requestId output =
+  keccak256 (responseTypeHash <> requestId <> output)

@@ -1,5 +1,4 @@
 import { describe, it, expect } from "vitest";
-import { publicKeyToAddress } from "viem/accounts";
 import { deriveDepositAddress } from "../mpc/address-derivation.js";
 
 const MPC_ROOT_PUBLIC_KEY =
@@ -8,19 +7,6 @@ const MPC_ROOT_PUBLIC_KEY =
 const PREDECESSOR_ID = "Issuer::1220abcdef";
 const PATH = "m/44/60/0/0";
 const CAIP2_ID = "eip155:11155111";
-
-describe("publicKeyToAddress", () => {
-  it("produces valid 20-byte address", () => {
-    const address = publicKeyToAddress(`0x${MPC_ROOT_PUBLIC_KEY}`);
-    expect(address).toMatch(/^0x[0-9a-fA-F]{40}$/);
-  });
-
-  it("produces consistent result for known vector", () => {
-    const a = publicKeyToAddress(`0x${MPC_ROOT_PUBLIC_KEY}`);
-    const b = publicKeyToAddress(`0x${MPC_ROOT_PUBLIC_KEY}`);
-    expect(a).toBe(b);
-  });
-});
 
 describe("deriveDepositAddress", () => {
   it("is deterministic", () => {

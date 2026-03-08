@@ -27,16 +27,19 @@ export async function handlePendingEvmDeposit(params: {
   const requestPath = args.path as string;
   const contractRequestId = args.requestId as string;
   const evmParams = args.evmParams as CantonEvmParams;
-  const contractId = args.contractId as string;
+  const issuer = args.issuer as string;
   const authContractId = args.authContractId as string;
   const keyVersion = args.keyVersion as number;
   const algo = args.algo as string;
   const dest = args.dest as string;
-  const predecessorId = event.templateId.split(":")[0];
-  if (!predecessorId) {
+  const packageId = event.templateId.split(":")[0];
+  if (!packageId) {
     throw new Error(`Invalid templateId format: ${event.templateId}`);
   }
-  const keyDerivationPath = requester;
+  // packageId + issuer ensures different issuers never control the same EVM
+  // address via MPC KDF. For per-vault uniqueness, embed an ID in the issuer.
+  const predecessorId = `${packageId}${issuer}`;
+  const keyDerivationPath = `${requester}${requestPath}`;
 
   // Independently derive requestId — never trust on-chain data blindly
   const caip2Id = chainIdHexToCaip2(evmParams.chainId);
@@ -48,7 +51,6 @@ export async function handlePendingEvmDeposit(params: {
     requestPath,
     algo,
     dest,
-    contractId,
     authContractId,
   );
   if (computedRequestId.slice(2) !== contractRequestId) {

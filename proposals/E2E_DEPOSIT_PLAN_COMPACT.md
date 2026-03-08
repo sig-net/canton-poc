@@ -514,6 +514,16 @@ computeResponseHash requestId output =
    would require both parties to agree on creation and any consuming choices,
    adding stronger trust guarantees but increasing coordination overhead.
 
-3. **Expected throughput per second on foreign chains?**
+3. **ERC20 `transfer` only, or other EVM call types?**
+   The current design restricts `RequestEvmDeposit` to `transfer(address,uint256)`
+   and treats `mpcOutput` as a simple status byte (`"01"` = success). Supporting
+   other function signatures (e.g., `swap`, `mint`, arbitrary contract calls)
+   would require Daml to interpret structured return values — which means either
+   an ABI decoder in Daml or EIP-712-style hashing of the decoded output fields
+   (see `computeRequestId` for the existing pattern). Is ERC20 transfer
+   sufficient for the foreseeable scope, and if not, when are other call types
+   expected?
+
+4. **Expected throughput per second on foreign chains?**
    What is the target transaction throughput per second on external chains
    (e.g., Sepolia / Ethereum mainnet)?

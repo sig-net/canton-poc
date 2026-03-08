@@ -43,7 +43,6 @@ template PendingEvmDeposit
     requestId      : BytesHex
     path           : Text
     evmParams      : EvmTransactionParams
-    contractId     : Text
     authContractId : Text
     keyVersion     : Int
     algo           : Text
@@ -114,7 +113,6 @@ template VaultOrchestrator
         requester      : Party
         path           : Text
         evmParams      : EvmTransactionParams
-        contractId     : Text
         authContractId : Text
         keyVersion     : Int
         algo           : Text
@@ -141,10 +139,10 @@ template VaultOrchestrator
 
         let sender = partyToText requester
         let caip2Id = "eip155:" <> chainIdToDecimalText evmParams.chainId
-        let requestId = computeRequestId sender evmParams caip2Id keyVersion path algo dest contractId authContractId
+        let requestId = computeRequestId sender evmParams caip2Id keyVersion path algo dest authContractId
         create PendingEvmDeposit with
           issuer; requester; mpc; requestId; path; evmParams
-          contractId; authContractId; keyVersion; algo; dest
+          authContractId; keyVersion; algo; dest
 
     nonconsuming choice SignEvmTx : ContractId EcdsaSignature
       with

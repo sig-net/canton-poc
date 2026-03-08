@@ -118,7 +118,7 @@ describeIf("sepolia e2e deposit lifecycle", () => {
     const chainIdHex = toCantonHex(BigInt(SEPOLIA_CHAIN_ID), 32);
     packageId = packageIdFromTemplateId(VaultOrchestrator.templateIdWithPackageId);
     caip2Id = chainIdHexToCaip2(chainIdHex);
-    const vaultAddress = deriveDepositAddress(env!.MPC_ROOT_PUBLIC_KEY, packageId, "root", caip2Id);
+    const vaultAddress = deriveDepositAddress(env!.MPC_ROOT_PUBLIC_KEY, `${packageId}${issuer}`, "root", caip2Id);
     vaultAddressPadded = vaultAddress.slice(2).padStart(64, "0");
 
     const mpcPubKeySpki = toSpkiPublicKey(env!.MPC_ROOT_PUBLIC_KEY);
@@ -152,8 +152,8 @@ describeIf("sepolia e2e deposit lifecycle", () => {
     const requesterPath = depositor;
     const depositAddress = deriveDepositAddress(
       env!.MPC_ROOT_PUBLIC_KEY,
-      packageId,
-      requesterPath,
+      `${packageId}${issuer}`,
+      `${depositor}${requesterPath}`,
       caip2Id,
     );
     console.log(`[e2e] Deposit address derived: ${depositAddress}`);
@@ -232,8 +232,7 @@ describeIf("sepolia e2e deposit lifecycle", () => {
         requester: depositor,
         path: requesterPath,
         evmParams,
-        contractId: "",
-        authContractId: "",
+        authContractId: authCid,
         keyVersion: KEY_VERSION,
         algo: ALGO,
         dest: DEST,
