@@ -9,9 +9,9 @@ import {
   exerciseChoice,
   getActiveContracts,
   getDisclosedContract,
-  type Event,
   type CreatedEvent,
 } from "../infra/canton-client.js";
+import { findCreated, firstCreated, packageIdFromTemplateId } from "../infra/canton-helpers.js";
 import {
   VaultOrchestrator,
   Erc20Holding,
@@ -20,9 +20,9 @@ import {
 } from "@daml.js/canton-mpc-poc-0.0.1/lib/Erc20Vault/module";
 import { MpcServer } from "../mpc-service/server.js";
 import { chainIdHexToCaip2, deriveDepositAddress } from "../mpc/address-derivation.js";
-import { computeRequestId } from "../mpc/crypto.js";
+import { computeRequestId, toSpkiPublicKey } from "../mpc/crypto.js";
 import { reconstructSignedTx, submitRawTransaction } from "../evm/tx-builder.js";
-import { loadSepoliaE2eEnv, toSpkiPublicKey } from "./helpers/e2e-env.js";
+import { loadEnv } from "../config/env.js";
 import {
   DEPOSIT_AMOUNT,
   fetchNonce,
@@ -48,36 +48,6 @@ const KEY_VERSION = 1;
 const ALGO = "ECDSA";
 const DEST = "ethereum";
 
-function getCreatedEvent(event: Event): CreatedEvent | undefined {
-  if ("CreatedEvent" in event) return event.CreatedEvent;
-  return undefined;
-}
-
-function findCreated(
-  events: Event[] | undefined,
-  templateFragment: string,
-): CreatedEvent | undefined {
-  const event = events?.find((e) => {
-    const created = getCreatedEvent(e);
-    return created?.templateId.includes(templateFragment);
-  });
-  return event ? getCreatedEvent(event) : undefined;
-}
-
-function firstCreatedCid(events: Event[] | undefined): string {
-  const first = events?.[0];
-  if (!first) throw new Error("No events in transaction");
-  const created = getCreatedEvent(first);
-  if (!created) throw new Error("First event is not a CreatedEvent");
-  return created.contractId;
-}
-
-function packageIdFromTemplateId(templateId: string): string {
-  const packageId = templateId.split(":")[0];
-  if (!packageId) throw new Error(`Invalid templateId: ${templateId}`);
-  return packageId;
-}
-
 async function pollForContract(
   parties: string[],
   templateId: string,
@@ -94,7 +64,7 @@ async function pollForContract(
   throw new Error(`Timed out waiting for ${label} (${POLL_TIMEOUT / 1000}s)`);
 }
 
-const env = loadSepoliaE2eEnv();
+const env = process.env.SEPOLIA_RPC_URL ? loadEnv() : null;
 const describeIf = env ? describe : describe.skip;
 
 describeIf("sepolia e2e deposit lifecycle", () => {
@@ -133,7 +103,7 @@ describeIf("sepolia e2e deposit lifecycle", () => {
       vaultAddress: vaultAddressPadded,
     });
     const orchEvent = findCreated(orchResult.transaction.events, "VaultOrchestrator");
-    orchCid = orchEvent!.contractId;
+    orchCid = orchEvent.contractId;
     orchDisclosure = await getDisclosedContract([issuer], VAULT_ORCHESTRATOR, orchCid);
 
     mpcServer = new MpcServer({
@@ -211,7 +181,7 @@ describeIf("sepolia e2e deposit lifecycle", () => {
       undefined,
       [orchDisclosure],
     );
-    const proposalCid = firstCreatedCid(proposalResult.transaction.events);
+    const proposalCid = firstCreated(proposalResult.transaction.events).contractId;
 
     console.log("[e2e] Issuer → Canton: ApproveDepositAuth");
     const approveResult = await exerciseChoice(
@@ -223,7 +193,7 @@ describeIf("sepolia e2e deposit lifecycle", () => {
       { proposalCid, remainingUses: 1 },
     );
     const authEvent = findCreated(approveResult.transaction.events, "DepositAuthorization");
-    const authCid = authEvent!.contractId;
+    const authCid = authEvent.contractId;
 
     // ── User → Canton: RequestEvmDeposit (evmParams, path=requesterParty) ──
     console.log("[e2e] User → Canton: RequestEvmDeposit");
@@ -248,9 +218,8 @@ describeIf("sepolia e2e deposit lifecycle", () => {
     );
 
     const pending = findCreated(depositResult.transaction.events, "PendingEvmDeposit");
-    expect(pending).toBeDefined();
-    const pendingCid = pending!.contractId;
-    const pendingArgs = pending!.createArgument as Record<string, unknown>;
+    const pendingCid = pending.contractId;
+    const pendingArgs = pending.createArgument as Record<string, unknown>;
     const requestId = pendingArgs.requestId as string;
 
     const caip2Id = chainIdHexToCaip2(evmParams.chainId);
@@ -318,8 +287,7 @@ describeIf("sepolia e2e deposit lifecycle", () => {
     );
 
     const holding = findCreated(claimResult.transaction.events, "Erc20Holding");
-    expect(holding).toBeDefined();
-    const holdingArgs = holding!.createArgument as Record<string, unknown>;
+    const holdingArgs = holding.createArgument as Record<string, unknown>;
     expect(holdingArgs.owner).toBe(requester);
     expect(holdingArgs.issuer).toBe(issuer);
     expect(holdingArgs.amount).toBe(amountPadded);

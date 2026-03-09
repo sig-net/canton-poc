@@ -20,6 +20,7 @@ import { createPublicClient, http, parseAbi, type Hex } from "viem";
 import { sepolia } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
 import { uploadDar, allocateParty } from "../infra/canton-client.js";
+import { packageIdFromTemplateId } from "../infra/canton-helpers.js";
 import { deriveDepositAddress } from "../mpc/address-derivation.js";
 import { DEPOSIT_AMOUNT } from "../test/helpers/sepolia-helpers.js";
 import { VaultOrchestrator } from "@daml.js/canton-mpc-poc-0.0.1/lib/Erc20Vault/module";
@@ -35,12 +36,6 @@ const FAUCET_PRIVATE_KEY = (process.env.FAUCET_PRIVATE_KEY ?? MPC_ROOT_PRIVATE_K
 const SEPOLIA_RPC_URL = process.env.SEPOLIA_RPC_URL;
 const ERC20_ADDRESS = (process.env.ERC20_ADDRESS ??
   "0xB4F1737Af37711e9A5890D9510c9bB60e170CB0D") as Hex;
-
-function packageIdFromTemplateId(templateId: string): string {
-  const packageId = templateId.split(":")[0];
-  if (!packageId) throw new Error(`Invalid templateId: ${templateId}`);
-  return packageId;
-}
 
 async function main() {
   if (!MPC_ROOT_PUBLIC_KEY) {

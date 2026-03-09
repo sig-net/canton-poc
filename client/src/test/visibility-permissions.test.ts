@@ -12,9 +12,8 @@ import {
   uploadDar,
   type CreatedEvent,
   type DisclosedContract,
-  type Event,
-  type TransactionResponse,
 } from "../infra/canton-client.js";
+import { findCreated, firstCreated, packageIdFromTemplateId } from "../infra/canton-helpers.js";
 import {
   VaultOrchestrator,
   DepositAuthProposal,
@@ -64,34 +63,6 @@ function buildSampleEvmParams(vaultAddress: Hex) {
     maxPriorityFee: "000000000000000000000000000000000000000000000000000000003b9aca00",
     chainId: "0000000000000000000000000000000000000000000000000000000000aa36a7",
   };
-}
-
-function getCreatedEvent(event: Event): CreatedEvent | undefined {
-  if ("CreatedEvent" in event) return event.CreatedEvent;
-  return undefined;
-}
-
-function firstCreated(res: TransactionResponse): CreatedEvent {
-  const first = res.transaction.events?.[0];
-  if (!first) throw new Error("No events in transaction");
-  const created = getCreatedEvent(first);
-  if (!created) throw new Error("First event is not a CreatedEvent");
-  return created;
-}
-
-function findCreated(res: TransactionResponse, templateFragment: string): CreatedEvent {
-  const event = res.transaction.events?.find((e) =>
-    getCreatedEvent(e)?.templateId.includes(templateFragment),
-  );
-  const created = event ? getCreatedEvent(event) : undefined;
-  if (!created) throw new Error(`CreatedEvent ${templateFragment} not found`);
-  return created;
-}
-
-function packageIdFromTemplateId(templateId: string): string {
-  const packageId = templateId.split(":")[0];
-  if (!packageId) throw new Error(`Invalid templateId: ${templateId}`);
-  return packageId;
 }
 
 function hasContract(contracts: CreatedEvent[], cid: string): boolean {
@@ -148,7 +119,7 @@ describe("ledger visibility + permission model", () => {
       mpcPublicKey: MPC_PUB_KEY_SPKI,
       vaultAddress: vaultAddress.slice(2).padStart(64, "0"),
     });
-    orchCid = firstCreated(orchResult).contractId;
+    orchCid = firstCreated(orchResult.transaction.events).contractId;
 
     // Issuer fetches the createdEventBlob and shares it off-chain with requesters
     orchDisclosure = await getDisclosedContract([issuer], VAULT_ORCHESTRATOR, orchCid);
@@ -178,7 +149,7 @@ describe("ledger visibility + permission model", () => {
       undefined,
       [orchDisclosure],
     );
-    const proposal = findCreated(requestResult, "DepositAuthProposal");
+    const proposal = findCreated(requestResult.transaction.events, "DepositAuthProposal");
     const proposalArgs = proposal.createArgument as Record<string, unknown>;
     expect(proposalArgs.issuer).toBe(issuer);
     expect(proposalArgs.owner).toBe(requester);
@@ -227,7 +198,7 @@ describe("ledger visibility + permission model", () => {
       undefined,
       [orchDisclosure],
     );
-    const proposalCid = findCreated(proposalResult, "DepositAuthProposal").contractId;
+    const proposalCid = findCreated(proposalResult.transaction.events, "DepositAuthProposal").contractId;
 
     // DepositAuthProposal: signatory=issuer, observer=owner(requester)
     await assertVisibility(
@@ -245,7 +216,7 @@ describe("ledger visibility + permission model", () => {
       "ApproveDepositAuth",
       { proposalCid, remainingUses: 2 },
     );
-    const authCid = findCreated(approveResult, "DepositAuthorization").contractId;
+    const authCid = findCreated(approveResult.transaction.events, "DepositAuthorization").contractId;
 
     // DepositAuthorization: signatory=issuer, observer=mpc,owner
     await assertVisibility(
@@ -275,7 +246,7 @@ describe("ledger visibility + permission model", () => {
       undefined,
       [orchDisclosure],
     );
-    const pending = findCreated(pendingResult, "PendingEvmDeposit");
+    const pending = findCreated(pendingResult.transaction.events, "PendingEvmDeposit");
     const pendingCid = pending.contractId;
     const pendingArgs = pending.createArgument as Record<string, unknown>;
     const requestId = pendingArgs.requestId as string;
@@ -310,7 +281,7 @@ describe("ledger visibility + permission model", () => {
       "SignEvmTx",
       { requester, requestId, r: "00", s: "00", v: 0 },
     );
-    const ecdsaCid = findCreated(signResult, "EcdsaSignature").contractId;
+    const ecdsaCid = findCreated(signResult.transaction.events, "EcdsaSignature").contractId;
 
     // EcdsaSignature: signatory=issuer, observer=requester
     await assertVisibility(
@@ -343,7 +314,7 @@ describe("ledger visibility + permission model", () => {
       "ProvideEvmOutcomeSig",
       { requester, requestId, signature: mpcSignature, mpcOutput },
     );
-    const outcomeCid = findCreated(outcomeResult, "EvmTxOutcomeSignature").contractId;
+    const outcomeCid = findCreated(outcomeResult.transaction.events, "EvmTxOutcomeSignature").contractId;
 
     // EvmTxOutcomeSignature: signatory=issuer, observer=requester
     await assertVisibility(
@@ -376,7 +347,7 @@ describe("ledger visibility + permission model", () => {
       undefined,
       [orchDisclosure],
     );
-    const holding = findCreated(claimResult, "Erc20Holding");
+    const holding = findCreated(claimResult.transaction.events, "Erc20Holding");
     const holdingArgs = holding.createArgument as Record<string, unknown>;
     expect(holdingArgs.owner).toBe(requester);
     expect(holdingArgs.issuer).toBe(issuer);

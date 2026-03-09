@@ -1,4 +1,5 @@
-import { hashTypedData, type Hex } from "viem";
+import { hashTypedData, toHex, toBytes, type Hex } from "viem";
+import { secp256k1 } from "@noble/curves/secp256k1.js";
 
 export interface EvmTransactionParams {
   to: string;
@@ -113,4 +114,42 @@ export function computeResponseHash(requestId: string, mpcOutput: string): Hex {
       mpcOutput: `0x${mpcOutput}` as const,
     },
   });
+}
+
+// ---------------------------------------------------------------------------
+// Key encoding
+// ---------------------------------------------------------------------------
+
+/**
+ * Derive the SPKI-encoded public key from an uncompressed secp256k1 public key.
+ * Matches the format used by Canton's VaultOrchestrator.mpcPublicKey field.
+ */
+export function toSpkiPublicKey(uncompressedPubKey: string): string {
+  const pubKeyBytes = toBytes(`0x${uncompressedPubKey}`);
+
+  // secp256k1 SPKI header: SEQUENCE { SEQUENCE { OID ecPublicKey, OID secp256k1 }, BIT STRING }
+  const spkiHeader = new Uint8Array([
+    0x30, 0x56, // SEQUENCE (86 bytes)
+    0x30, 0x10, // SEQUENCE (16 bytes)
+    0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01, // OID ecPublicKey
+    0x06, 0x05, 0x2b, 0x81, 0x04, 0x00, 0x0a, // OID secp256k1
+    0x03, 0x42, 0x00, // BIT STRING (66 bytes, 0 unused bits)
+    0x04, // uncompressed point marker
+  ]);
+
+  // Remove the 0x04 prefix from pubKeyBytes since spkiHeader already includes it
+  const rawPoint = pubKeyBytes.slice(1);
+  const spki = new Uint8Array(spkiHeader.length + rawPoint.length);
+  spki.set(spkiHeader);
+  spki.set(rawPoint, spkiHeader.length);
+
+  return toHex(spki).slice(2);
+}
+
+/**
+ * Derive the uncompressed public key from a private key.
+ */
+export function derivePublicKey(privateKey: Hex): string {
+  const pubKeyBytes = secp256k1.getPublicKey(toBytes(privateKey), false);
+  return toHex(pubKeyBytes).slice(2);
 }

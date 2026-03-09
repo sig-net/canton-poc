@@ -1,6 +1,6 @@
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadMpcEnvConfig } from "../config/env.js";
+import { loadEnv } from "../config/env.js";
 import {
   uploadDar,
   allocateParty,
@@ -16,7 +16,7 @@ const VAULT_ORCHESTRATOR = VaultOrchestrator.templateId;
 const USER_ID = "mpc-service";
 
 async function main() {
-  const config = loadMpcEnvConfig();
+  const config = loadEnv();
   console.log("[MPC] Starting MPC service");
 
   await uploadDar(DAR_PATH);
