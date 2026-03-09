@@ -246,8 +246,8 @@ template EcdsaSignature
 ### `EvmTxOutcomeSignature` (Erc20Vault.daml)
 
 MPC's attestation of the ETH transaction outcome. Contains a
-`secp256k1` signature over `keccak256(requestId || mpcOutput)` — verified
-cryptographically against `mpcPublicKey` in the `ClaimEvmDeposit` choice.
+`secp256k1` signature over the EIP-712 response hash of `(requestId, mpcOutput)`
+— verified cryptographically against `mpcPublicKey` in the `ClaimEvmDeposit` choice.
 
 ```daml
 template EvmTxOutcomeSignature
@@ -255,7 +255,7 @@ template EvmTxOutcomeSignature
     issuer    : Party
     requester : Party
     requestId : BytesHex
-    signature : SignatureHex   -- secp256k1 over keccak256(requestId || mpcOutput)
+    signature : SignatureHex   -- secp256k1 over EIP-712 response hash of (requestId, mpcOutput)
     mpcOutput : BytesHex       -- "01" = success
   where
     signatory issuer
@@ -454,27 +454,9 @@ nonconsuming choice ClaimEvmDeposit : ContractId Erc20Holding
 
 ### Crypto Functions (Crypto.daml)
 
-Uses EIP-712-style domain-separated hashing to eliminate collision vectors.
+All hashing uses EIP-712 typed data (domain `"CantonMpc"`, version `"1"`).
 
 ```daml
--- Domain tags
-evmParamsTypeHash : BytesHex
-evmParamsTypeHash = keccak256 (toHex "EvmTransactionParamsV1")
-
-requestTypeHash : BytesHex
-requestTypeHash = keccak256 (toHex "CantonMpcDepositRequestV1")
-
-responseTypeHash : BytesHex
-responseTypeHash = keccak256 (toHex "CantonMpcResponseV1")
-
--- Helpers
-hashText : Text -> BytesHex
-hashText t = keccak256 (toHex t)
-
-hashBytesList : [BytesHex] -> BytesHex
-hashBytesList xs = keccak256 (foldl (<>) "" (map keccak256 xs))
-
--- | EIP-712-style struct hash for EvmTransactionParams.
 hashEvmParams : EvmTransactionParams -> BytesHex
 hashEvmParams p =
   keccak256 $
@@ -489,25 +471,22 @@ hashEvmParams p =
     <> padHex p.maxPriorityFee 32
     <> padHex p.chainId        32
 
--- | Compute request_id using domain-separated hashing.
--- Every field contributes exactly 32 bytes (or 4 bytes for keyVersion).
 computeRequestId : Text -> EvmTransactionParams -> Text -> Int -> Text -> Text -> Text -> Text -> BytesHex
 computeRequestId sender evmParams caip2Id keyVersion path algo dest authCidText =
-  keccak256 $
+  eip712Hash $ keccak256 $
        requestTypeHash
     <> hashText sender
     <> hashEvmParams evmParams
     <> hashText caip2Id
-    <> uint32ToHex keyVersion
+    <> padHex (toHex keyVersion) 32
     <> hashText path
     <> hashText algo
     <> hashText dest
     <> hashText authCidText
 
--- | Compute response_hash with domain separator.
 computeResponseHash : BytesHex -> BytesHex -> BytesHex
 computeResponseHash requestId output =
-  keccak256 (responseTypeHash <> requestId <> output)
+  eip712Hash $ keccak256 (responseTypeHash <> padHex requestId 32 <> safeKeccak256 output)
 ```
 
 ## Open Questions
