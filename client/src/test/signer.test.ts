@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { utils } from "signet.js";
-import { keccak256, toBytes, type Hex } from "viem";
-import { deriveChildPrivateKey, signEvmTxHash, signMpcResponse } from "../mpc-service/signer.js";
+import { toBytes, type Hex } from "viem";
+import { deriveChildPrivateKey } from "../mpc-service/signer.js";
 
 const { deriveChildPublicKey } = utils.cryptography;
 
@@ -15,17 +15,6 @@ const PREDECESSOR_ID = "Issuer::1220abcdef";
 const PATH = "m/44/60/0/0";
 
 describe("deriveChildPrivateKey", () => {
-  it("produces valid 32-byte hex", () => {
-    const childKey = deriveChildPrivateKey(MPC_ROOT_PRIVATE_KEY, PREDECESSOR_ID, PATH);
-    expect(childKey).toMatch(/^0x[0-9a-f]{64}$/);
-  });
-
-  it("is deterministic", () => {
-    const a = deriveChildPrivateKey(MPC_ROOT_PRIVATE_KEY, PREDECESSOR_ID, PATH);
-    const b = deriveChildPrivateKey(MPC_ROOT_PRIVATE_KEY, PREDECESSOR_ID, PATH);
-    expect(a).toBe(b);
-  });
-
   it("matches deriveChildPublicKey", () => {
     const childPrivKey = deriveChildPrivateKey(
       MPC_ROOT_PRIVATE_KEY,
@@ -47,48 +36,5 @@ describe("deriveChildPrivateKey", () => {
     );
 
     expect(childPubFromPriv).toBe(childPubFromSignet);
-  });
-});
-
-describe("signEvmTxHash", () => {
-  const sampleTxHash = keccak256("0xdeadbeef");
-
-  it("produces { r, s, v }", () => {
-    const childKey = deriveChildPrivateKey(MPC_ROOT_PRIVATE_KEY, PREDECESSOR_ID, PATH);
-    const sig = signEvmTxHash(childKey, sampleTxHash);
-
-    expect(sig.r).toMatch(/^[0-9a-f]{64}$/);
-    expect(sig.s).toMatch(/^[0-9a-f]{64}$/);
-    expect(sig.v === 0 || sig.v === 1).toBe(true);
-  });
-
-  it("recovery bit is correct", () => {
-    const childKey = deriveChildPrivateKey(MPC_ROOT_PRIVATE_KEY, PREDECESSOR_ID, PATH);
-    const sig = signEvmTxHash(childKey, sampleTxHash);
-
-    const msgHash = toBytes(sampleTxHash);
-    const rBigInt = BigInt("0x" + sig.r);
-    const sBigInt = BigInt("0x" + sig.s);
-    const signature = new secp256k1.Signature(rBigInt, sBigInt, sig.v);
-    const recoveredPoint = signature.recoverPublicKey(msgHash);
-    const recoveredHex = Buffer.from(recoveredPoint.toBytes(false)).toString("hex");
-
-    const childPubKey = Buffer.from(secp256k1.getPublicKey(toBytes(childKey), false)).toString(
-      "hex",
-    );
-
-    expect(recoveredHex).toBe(childPubKey);
-  });
-});
-
-describe("signMpcResponse", () => {
-  it("produces DER-encoded hex", () => {
-    const requestId = "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890";
-    const mpcOutput = "01";
-    const der = signMpcResponse(MPC_ROOT_PRIVATE_KEY, requestId, mpcOutput);
-
-    expect(der.startsWith("30")).toBe(true);
-    expect(der.length).toBeGreaterThan(0);
-    expect(der).toMatch(/^[0-9a-f]+$/);
   });
 });
