@@ -1,11 +1,11 @@
 import { describe, it, expect } from "vitest";
+import { hashTypedData, keccak256, stringToHex } from "viem";
 import {
   computeRequestId,
   computeResponseHash,
   hashEvmParams,
-  EVM_PARAMS_TYPE_HASH,
-  REQUEST_TYPE_HASH,
-  RESPONSE_TYPE_HASH,
+  eip712Types,
+  eip712Domain,
   type EvmTransactionParams,
 } from "../mpc/crypto.js";
 
@@ -30,35 +30,45 @@ const KEY_VERSION = 1;
 const PATH = "m/44/60/0/0";
 
 // ---------------------------------------------------------------------------
-// Unit tests: domain tags
+// Cross-language vectors (must match Daml Test.daml)
 // ---------------------------------------------------------------------------
-describe("domain tags", () => {
-  it("are 32-byte hex strings (64 chars)", () => {
-    expect(EVM_PARAMS_TYPE_HASH).toMatch(/^[0-9a-f]{64}$/);
-    expect(REQUEST_TYPE_HASH).toMatch(/^[0-9a-f]{64}$/);
-    expect(RESPONSE_TYPE_HASH).toMatch(/^[0-9a-f]{64}$/);
-  });
+const VECTORS = {
+  domainSeparator: "6399709c8eafb86e7ba1529eaf5519bf2667716e3c694e7868b652b7245ca80f",
+  hashEvmParams: "d0764d6b66fc548fadceced13b66ed3b6c3737c020d116fb80d0dce85568613f",
+  requestIdKv1: "0x767d52078eb4f558d2ad22df5c3daf3045fbaf96c4a18400357adbfdd25a8972",
+  requestIdKv256: "0x82becb6d088e399f2d92095d993890eaa548a9ce6338bd102eaf599b6aaed489",
+  requestIdKv0: "0x43d221a4edee57c6a6f0c4606fd14b7fb73300be41e6a1ea09db42f6772699f3",
+  hashEvmParamsEmptyArgs: "6e2af85ef5f8770dc382c8fa9a1cdbb4560c6e18a4d14ec9d266af538f2a37bc",
+  requestIdEmptyArgs: "0x0892f934734c6280aa92fdf8d8ff9bf7edb918f748c1833cc6fc15e96c0da1ab",
+  responseHash01: "0x5773f12bd1f9c7a760461812f7a3fc96a2f5a0f041258dfa8feb43f7f8b3ebe2",
+  responseHashEmpty: "0xaf2ff87730133736cd5ad11131445277ced38a0762eaa9e62320a1ffc49de8da",
+};
 
-  it("are all distinct", () => {
-    expect(EVM_PARAMS_TYPE_HASH).not.toBe(REQUEST_TYPE_HASH);
-    expect(EVM_PARAMS_TYPE_HASH).not.toBe(RESPONSE_TYPE_HASH);
-    expect(REQUEST_TYPE_HASH).not.toBe(RESPONSE_TYPE_HASH);
+const KNOWN_REQUEST_ID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+// ---------------------------------------------------------------------------
+// Domain separator
+// ---------------------------------------------------------------------------
+describe("EIP-712 domain separator", () => {
+  it("matches cross-language vector", () => {
+    const domainTypeHash = keccak256(stringToHex("EIP712Domain(string name,string version)"));
+    const computed = keccak256(
+      `0x${domainTypeHash.slice(2)}${keccak256(stringToHex("CantonMpc")).slice(2)}${keccak256(stringToHex("1")).slice(2)}` as `0x${string}`,
+    );
+    expect(computed.slice(2)).toBe(VECTORS.domainSeparator);
   });
 });
 
 // ---------------------------------------------------------------------------
-// Unit tests: hashEvmParams
+// hashEvmParams
 // ---------------------------------------------------------------------------
 describe("hashEvmParams", () => {
-  it("produces 32-byte hex (64 chars)", () => {
-    const hash = hashEvmParams(sampleEvmParams);
-    expect(hash).toMatch(/^[0-9a-f]{64}$/);
+  it("matches cross-language vector", () => {
+    expect(hashEvmParams(sampleEvmParams)).toBe(VECTORS.hashEvmParams);
   });
 
   it("is deterministic", () => {
-    const a = hashEvmParams(sampleEvmParams);
-    const b = hashEvmParams(sampleEvmParams);
-    expect(a).toBe(b);
+    expect(hashEvmParams(sampleEvmParams)).toBe(hashEvmParams(sampleEvmParams));
   });
 
   it("changes when params change", () => {
@@ -72,18 +82,35 @@ describe("hashEvmParams", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Unit tests: computeRequestId
+// computeRequestId
 // ---------------------------------------------------------------------------
 describe("computeRequestId", () => {
+  it("matches cross-language vector (keyVersion=1)", () => {
+    const hash = computeRequestId(SENDER, sampleEvmParams, CAIP2_ID, 1, PATH, "ECDSA", "ethereum", "");
+    expect(hash).toBe(VECTORS.requestIdKv1);
+  });
+
+  it("matches cross-language vector (keyVersion=256)", () => {
+    const hash = computeRequestId(SENDER, sampleEvmParams, CAIP2_ID, 256, PATH, "ECDSA", "ethereum", "");
+    expect(hash).toBe(VECTORS.requestIdKv256);
+  });
+
+  it("matches cross-language vector (keyVersion=0)", () => {
+    const hash = computeRequestId(SENDER, sampleEvmParams, CAIP2_ID, 0, PATH, "ECDSA", "ethereum", "");
+    expect(hash).toBe(VECTORS.requestIdKv0);
+  });
+
+  it("matches cross-language vector (empty args)", () => {
+    const emptyArgsParams = { ...sampleEvmParams, args: [] as string[] };
+    expect(hashEvmParams(emptyArgsParams)).toBe(VECTORS.hashEvmParamsEmptyArgs);
+    const hash = computeRequestId(SENDER, emptyArgsParams, CAIP2_ID, 1, PATH, "ECDSA", "ethereum", "");
+    expect(hash).toBe(VECTORS.requestIdEmptyArgs);
+  });
+
   it("is deterministic", () => {
     const a = computeRequestId(SENDER, sampleEvmParams, CAIP2_ID, KEY_VERSION, PATH, "ECDSA", "ethereum", "");
     const b = computeRequestId(SENDER, sampleEvmParams, CAIP2_ID, KEY_VERSION, PATH, "ECDSA", "ethereum", "");
     expect(a).toBe(b);
-  });
-
-  it("produces 32-byte hash", () => {
-    const hash = computeRequestId(SENDER, sampleEvmParams, CAIP2_ID, KEY_VERSION, PATH, "ECDSA", "ethereum", "");
-    expect(hash).toMatch(/^0x[0-9a-f]{64}$/);
   });
 
   it("changes with different authCidText", () => {
@@ -91,29 +118,59 @@ describe("computeRequestId", () => {
     const b = computeRequestId(SENDER, sampleEvmParams, CAIP2_ID, KEY_VERSION, PATH, "ECDSA", "ethereum", "auth2");
     expect(a).not.toBe(b);
   });
+
+  it("matches viem hashTypedData directly", () => {
+    const manual = computeRequestId(SENDER, sampleEvmParams, CAIP2_ID, 1, PATH, "ECDSA", "ethereum", "");
+    const viem = hashTypedData({
+      domain: eip712Domain,
+      types: eip712Types,
+      primaryType: "CantonMpcDepositRequest",
+      message: {
+        sender: SENDER,
+        evmParams: {
+          to: `0x${sampleEvmParams.to}`,
+          functionSignature: sampleEvmParams.functionSignature,
+          args: sampleEvmParams.args.map((a): `0x${string}` => `0x${a}`),
+          value: BigInt(`0x${sampleEvmParams.value}`),
+          nonce: BigInt(`0x${sampleEvmParams.nonce}`),
+          gasLimit: BigInt(`0x${sampleEvmParams.gasLimit}`),
+          maxFeePerGas: BigInt(`0x${sampleEvmParams.maxFeePerGas}`),
+          maxPriorityFee: BigInt(`0x${sampleEvmParams.maxPriorityFee}`),
+          chainId: BigInt(`0x${sampleEvmParams.chainId}`),
+        },
+        caip2Id: CAIP2_ID,
+        keyVersion: 1,
+        path: PATH,
+        algo: "ECDSA",
+        dest: "ethereum",
+        authCidText: "",
+      },
+    });
+    expect(manual).toBe(viem);
+  });
 });
 
 // ---------------------------------------------------------------------------
-// Unit tests: computeResponseHash
+// computeResponseHash
 // ---------------------------------------------------------------------------
 describe("computeResponseHash", () => {
-  it("produces 32-byte hash", () => {
-    const requestId = "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890";
-    const hash = computeResponseHash(requestId, "01");
-    expect(hash).toMatch(/^0x[0-9a-f]{64}$/);
+  it("matches cross-language vector (mpcOutput=01)", () => {
+    expect(computeResponseHash(KNOWN_REQUEST_ID, "01")).toBe(VECTORS.responseHash01);
+  });
+
+  it("matches cross-language vector (empty mpcOutput)", () => {
+    expect(computeResponseHash(KNOWN_REQUEST_ID, "")).toBe(VECTORS.responseHashEmpty);
   });
 
   it("is deterministic", () => {
-    const requestId = "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890";
-    const a = computeResponseHash(requestId, "01");
-    const b = computeResponseHash(requestId, "01");
+    const a = computeResponseHash(KNOWN_REQUEST_ID, "01");
+    const b = computeResponseHash(KNOWN_REQUEST_ID, "01");
     expect(a).toBe(b);
   });
 
   it("changes with different output", () => {
-    const requestId = "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890";
-    const a = computeResponseHash(requestId, "01");
-    const b = computeResponseHash(requestId, "00");
+    const a = computeResponseHash(KNOWN_REQUEST_ID, "01");
+    const b = computeResponseHash(KNOWN_REQUEST_ID, "00");
     expect(a).not.toBe(b);
   });
 });

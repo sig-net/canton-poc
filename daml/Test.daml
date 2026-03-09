@@ -184,17 +184,6 @@ test8_chainIdToDecimalText = do
   assertMsg "single 1 -> 1" (chainIdToDecimalText "1" == "1")
 
 ------------------------------------------------------------------------
--- Test 9: uint32ToHex correctness
-------------------------------------------------------------------------
-
-test9_uint32ToHex : Script ()
-test9_uint32ToHex = do
-  assertMsg "1 -> 00000001" (uint32ToHex 1 == "00000001")
-  assertMsg "0 -> 00000000" (uint32ToHex 0 == "00000000")
-  assertMsg "255 -> 000000ff" (uint32ToHex 255 == "000000ff")
-  assertMsg "65536 -> 00010000" (uint32ToHex 65536 == "00010000")
-
-------------------------------------------------------------------------
 -- Test 11: built-in toHex / fromHex round-trips
 ------------------------------------------------------------------------
 
@@ -488,14 +477,16 @@ testAuthCardNoRemainingUsesFails = do
   pure ()
 
 ------------------------------------------------------------------------
--- Test 18: EIP-712 domain tags are deterministic and 32 bytes
+-- Test 18: EIP-712 type hashes are deterministic and 32 bytes
 ------------------------------------------------------------------------
 
-testDomainTags : Script ()
-testDomainTags = do
+testTypeHashes : Script ()
+testTypeHashes = do
   assertMsg "evmParamsTypeHash is 32 bytes" (byteCount evmParamsTypeHash == 32)
   assertMsg "requestTypeHash is 32 bytes" (byteCount requestTypeHash == 32)
   assertMsg "responseTypeHash is 32 bytes" (byteCount responseTypeHash == 32)
+  assertMsg "domainTypeHash is 32 bytes" (byteCount domainTypeHash == 32)
+  assertMsg "domainSeparator is 32 bytes" (byteCount domainSeparator == 32)
   -- Tags must be distinct
   assertMsg "evmParams vs request" (evmParamsTypeHash /= requestTypeHash)
   assertMsg "evmParams vs response" (evmParamsTypeHash /= responseTypeHash)
@@ -562,6 +553,57 @@ testDomainSeparation = do
   assertMsg "requestId != responseHash" (requestId /= responseHash)
 
 ------------------------------------------------------------------------
+-- Cross-language test vectors (oracle: viem hashTypedData)
+------------------------------------------------------------------------
+
+testCrossLanguageVectors : Script ()
+testCrossLanguageVectors = do
+  -- Domain separator
+  assertMsg "domainSeparator matches TS"
+    (domainSeparator == "6399709c8eafb86e7ba1529eaf5519bf2667716e3c694e7868b652b7245ca80f")
+
+  -- hashEvmParams
+  assertMsg "hashEvmParams matches TS"
+    (hashEvmParams sampleEvmParams == "d0764d6b66fc548fadceced13b66ed3b6c3737c020d116fb80d0dce85568613f")
+
+  -- computeRequestId with keyVersion=1
+  let sender = "Issuer::1220abcdef"
+  let caip2Id = "eip155:11155111"
+  let path = "m/44/60/0/0"
+  assertMsg "computeRequestId(kv=1) matches TS"
+    (computeRequestId sender sampleEvmParams caip2Id 1 path "ECDSA" "ethereum" ""
+      == "767d52078eb4f558d2ad22df5c3daf3045fbaf96c4a18400357adbfdd25a8972")
+
+  -- computeRequestId with keyVersion=256 (uint32 boundary)
+  assertMsg "computeRequestId(kv=256) matches TS"
+    (computeRequestId sender sampleEvmParams caip2Id 256 path "ECDSA" "ethereum" ""
+      == "82becb6d088e399f2d92095d993890eaa548a9ce6338bd102eaf599b6aaed489")
+
+  -- computeResponseHash
+  let knownId = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  assertMsg "computeResponseHash(knownId, 01) matches TS"
+    (computeResponseHash knownId "01"
+      == "5773f12bd1f9c7a760461812f7a3fc96a2f5a0f041258dfa8feb43f7f8b3ebe2")
+
+  -- computeResponseHash with empty mpcOutput
+  assertMsg "computeResponseHash(knownId, empty) matches TS"
+    (computeResponseHash knownId ""
+      == "af2ff87730133736cd5ad11131445277ced38a0762eaa9e62320a1ffc49de8da")
+
+  -- Edge case: keyVersion=0
+  assertMsg "computeRequestId(kv=0) matches TS"
+    (computeRequestId sender sampleEvmParams caip2Id 0 path "ECDSA" "ethereum" ""
+      == "43d221a4edee57c6a6f0c4606fd14b7fb73300be41e6a1ea09db42f6772699f3")
+
+  -- Edge case: empty args list
+  let emptyArgsParams = sampleEvmParams with args = []
+  assertMsg "hashEvmParams(emptyArgs) matches TS"
+    (hashEvmParams emptyArgsParams == "6e2af85ef5f8770dc382c8fa9a1cdbb4560c6e18a4d14ec9d266af538f2a37bc")
+  assertMsg "computeRequestId(emptyArgs) matches TS"
+    (computeRequestId sender emptyArgsParams caip2Id 1 path "ECDSA" "ethereum" ""
+      == "0892f934734c6280aa92fdf8d8ff9bf7edb918f748c1833cc6fc15e96c0da1ab")
+
+------------------------------------------------------------------------
 -- Test vectors for happy-path claim (generated from TS crypto)
 ------------------------------------------------------------------------
 
@@ -571,7 +613,7 @@ claimTestPubKey = "3056301006072a8648ce3d020106052b8104000a03420004bb50e2d89a4ed
 
 -- DER signature over computeResponseHash(claimTestRequestId, "01")
 claimTestSignature : Text
-claimTestSignature = "3045022100bfe88285a8cfa920ede813a9995bdff7365533c69af875cfce69fffd64c840b50220588f69b88c2d21e74a2f02028d2d429ac5c822f89b9b40e2b637cb63dab6f9ca"
+claimTestSignature = "3045022100bdf1263e14358fa90f636b570e067988cd98e70666b58b57ad2b37242500e9fe022050699bef9115090a147a479ab5baa28b7600e8079cfb93d627d90d0d542b1b05"
 
 claimTestRequestId : Text
 claimTestRequestId = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
