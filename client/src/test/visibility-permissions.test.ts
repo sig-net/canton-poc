@@ -6,25 +6,26 @@ import {
   allocateParty,
   createContract,
   createUser,
-  createUserWithRights,
-  canActAsRight,
-  canReadAsRight,
   exerciseChoice,
   getActiveContracts,
-  listUserRights,
+  getDisclosedContract,
   uploadDar,
   type CreatedEvent,
+  type DisclosedContract,
   type Event,
   type TransactionResponse,
-  type UserRight,
 } from "../infra/canton-client.js";
 import {
   VaultOrchestrator,
   DepositAuthProposal,
   DepositAuthorization,
   PendingEvmDeposit,
+  EcdsaSignature,
+  EvmTxOutcomeSignature,
+  Erc20Holding,
 } from "@daml.js/canton-mpc-poc-0.0.1/lib/Erc20Vault/module";
 import { deriveDepositAddress } from "../mpc/address-derivation.js";
+import { signMpcResponse } from "../mpc-service/signer.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DAR_PATH = resolve(__dirname, "../../../.daml/dist/canton-mpc-poc-0.0.1.dar");
@@ -33,7 +34,12 @@ const VAULT_ORCHESTRATOR = VaultOrchestrator.templateId;
 const DEPOSIT_AUTH_PROPOSAL = DepositAuthProposal.templateId;
 const DEPOSIT_AUTHORIZATION = DepositAuthorization.templateId;
 const PENDING_EVM_DEPOSIT = PendingEvmDeposit.templateId;
+const ECDSA_SIGNATURE = EcdsaSignature.templateId;
+const EVM_TX_OUTCOME_SIG = EvmTxOutcomeSignature.templateId;
+const ERC20_HOLDING = Erc20Holding.templateId;
 
+const MPC_ROOT_PRIVATE_KEY =
+  "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef" as Hex;
 const MPC_ROOT_PUBLIC_KEY =
   "04bb50e2d89a4ed70663d080659fe0ad4b9bc3e06c17a227433966cb59ceee020decddbf6e00192011648d13b1c00af770c0c1bb609d4d3a5c98a43772e0e18ef4";
 const MPC_PUB_KEY_SPKI =
@@ -92,28 +98,35 @@ function hasContract(contracts: CreatedEvent[], cid: string): boolean {
   return contracts.some((c) => c.contractId === cid);
 }
 
-function hasRight(rights: UserRight[], kind: "CanActAs" | "CanReadAs", party: string): boolean {
-  return rights.some((right) => {
-    const rightKind = right.kind as Record<string, unknown>;
-    if (!(kind in rightKind)) return false;
-    const entry = rightKind[kind] as { value?: { party?: string } };
-    return entry.value?.party === party;
+async function assertVisibility(
+  templateId: string,
+  contractId: string,
+  visible: string[],
+  notVisible: string[],
+) {
+  const checks = [...visible, ...notVisible].map(async (party) => {
+    const contracts = await getActiveContracts([party], templateId);
+    return { party, found: hasContract(contracts, contractId) };
   });
+  const results = await Promise.all(checks);
+  for (const { party, found } of results) {
+    if (visible.includes(party)) {
+      expect(found, `${party} should see contract`).toBe(true);
+    } else {
+      expect(found, `${party} should NOT see contract`).toBe(false);
+    }
+  }
 }
 
 describe("ledger visibility + permission model", () => {
   const RUN_ID = Math.random().toString(36).slice(2, 8);
   const ISSUER_USER = `issuer-user-${RUN_ID}`;
-  const REQUESTER_ONLY_USER = `requester-only-user-${RUN_ID}`;
-  const REQUESTER_READ_ISSUER_USER = `requester-read-issuer-user-${RUN_ID}`;
-  const MPC_USER = `mpc-user-${RUN_ID}`;
-  const OUTSIDER_USER = `outsider-user-${RUN_ID}`;
-
+  const REQUESTER_USER = `requester-user-${RUN_ID}`;
   let issuer: string;
   let requester: string;
   let mpc: string;
-  let outsider: string;
   let orchCid: string;
+  let orchDisclosure: DisclosedContract;
   let vaultAddress: Hex;
 
   beforeAll(async () => {
@@ -122,17 +135,9 @@ describe("ledger visibility + permission model", () => {
     issuer = await allocateParty(`IssuerPerm_${RUN_ID}`);
     requester = await allocateParty(`RequesterPerm_${RUN_ID}`);
     mpc = await allocateParty(`MpcPerm_${RUN_ID}`);
-    outsider = await allocateParty(`OutsiderPerm_${RUN_ID}`);
 
     await createUser(ISSUER_USER, issuer);
-    await createUser(REQUESTER_ONLY_USER, requester);
-    await createUser(MPC_USER, mpc);
-    await createUser(OUTSIDER_USER, outsider);
-    await createUserWithRights(REQUESTER_READ_ISSUER_USER, requester, [
-      canActAsRight(requester),
-      canReadAsRight(requester),
-      canReadAsRight(issuer),
-    ]);
+    await createUser(REQUESTER_USER, requester);
 
     const packageId = packageIdFromTemplateId(VaultOrchestrator.templateIdWithPackageId);
     vaultAddress = deriveDepositAddress(MPC_ROOT_PUBLIC_KEY, `${packageId}${issuer}`, "root");
@@ -144,18 +149,16 @@ describe("ledger visibility + permission model", () => {
       vaultAddress: vaultAddress.slice(2).padStart(64, "0"),
     });
     orchCid = firstCreated(orchResult).contractId;
+
+    // Issuer fetches the createdEventBlob and shares it off-chain with requesters
+    orchDisclosure = await getDisclosedContract([issuer], VAULT_ORCHESTRATOR, orchCid);
   }, 40_000);
 
-  it("enforces least-privilege actAs/readAs for requester-controlled choices", async () => {
-    const rights = await listUserRights(REQUESTER_READ_ISSUER_USER);
-    expect(hasRight(rights, "CanActAs", requester)).toBe(true);
-    expect(hasRight(rights, "CanReadAs", requester)).toBe(true);
-    expect(hasRight(rights, "CanReadAs", issuer)).toBe(true);
-    expect(hasRight(rights, "CanActAs", issuer)).toBe(false);
-
+  it("disclosure grants visibility without authorization", async () => {
+    // Without disclosure, requester has no visibility into VaultOrchestrator
     await expect(
       exerciseChoice(
-        REQUESTER_ONLY_USER,
+        REQUESTER_USER,
         [requester],
         VAULT_ORCHESTRATOR,
         orchCid,
@@ -164,87 +167,76 @@ describe("ledger visibility + permission model", () => {
       ),
     ).rejects.toThrow();
 
+    // With disclosed blob, requester can exercise requester-controlled choices
     const requestResult = await exerciseChoice(
-      REQUESTER_READ_ISSUER_USER,
+      REQUESTER_USER,
       [requester],
       VAULT_ORCHESTRATOR,
       orchCid,
       "RequestDepositAuth",
       { requester },
-      [issuer],
+      undefined,
+      [orchDisclosure],
     );
-
     const proposal = findCreated(requestResult, "DepositAuthProposal");
-    const proposalCid = proposal.contractId;
     const proposalArgs = proposal.createArgument as Record<string, unknown>;
-    expect(proposal.templateId).toContain("DepositAuthProposal");
     expect(proposalArgs.issuer).toBe(issuer);
     expect(proposalArgs.owner).toBe(requester);
-    expect(typeof proposal.createdEventBlob).toBe("string");
 
+    // Disclosure does NOT grant authorization — requester cannot exercise issuer-controlled choices
     await expect(
       exerciseChoice(
-        REQUESTER_READ_ISSUER_USER,
-        [issuer],
-        VAULT_ORCHESTRATOR,
-        orchCid,
-        "RequestDepositAuth",
-        { requester },
-        [issuer],
-      ),
-    ).rejects.toThrow();
-
-    await expect(
-      exerciseChoice(
-        REQUESTER_READ_ISSUER_USER,
+        REQUESTER_USER,
         [requester],
         VAULT_ORCHESTRATOR,
         orchCid,
         "ApproveDepositAuth",
-        { proposalCid, remainingUses: 1 },
-        [issuer],
+        { proposalCid: proposal.contractId, remainingUses: 1 },
+        undefined,
+        [orchDisclosure],
       ),
     ).rejects.toThrow();
 
-    const approveResult = await exerciseChoice(
+    // Issuer approves (signatory, no disclosure needed)
+    await exerciseChoice(
       ISSUER_USER,
       [issuer],
       VAULT_ORCHESTRATOR,
       orchCid,
       "ApproveDepositAuth",
-      { proposalCid, remainingUses: 1 },
+      { proposalCid: proposal.contractId, remainingUses: 1 },
     );
-    const auth = findCreated(approveResult, "DepositAuthorization");
-    const authArgs = auth.createArgument as Record<string, unknown>;
-    expect(authArgs.owner).toBe(requester);
-    expect(authArgs.issuer).toBe(issuer);
-    expect(authArgs.mpc).toBe(mpc);
-    expect(typeof auth.createdEventBlob).toBe("string");
   });
 
-  it("returns party-scoped active contracts and correct create payload fields", async () => {
+  it("full lifecycle: controller permissions and observer visibility", async () => {
+    // -- VaultOrchestrator visibility: signatory=issuer, observer=mpc
+    await assertVisibility(
+      VAULT_ORCHESTRATOR, orchCid,
+      [issuer, mpc],
+      [requester],
+    );
+
+    // -- Step 1: RequestDepositAuth (controller=requester)
     const proposalResult = await exerciseChoice(
-      REQUESTER_READ_ISSUER_USER,
+      REQUESTER_USER,
       [requester],
       VAULT_ORCHESTRATOR,
       orchCid,
       "RequestDepositAuth",
       { requester },
-      [issuer],
+      undefined,
+      [orchDisclosure],
     );
-    const proposal = findCreated(proposalResult, "DepositAuthProposal");
-    const proposalCid = proposal.contractId;
+    const proposalCid = findCreated(proposalResult, "DepositAuthProposal").contractId;
 
-    const issuerProposals = await getActiveContracts([issuer], DEPOSIT_AUTH_PROPOSAL);
-    const requesterProposals = await getActiveContracts([requester], DEPOSIT_AUTH_PROPOSAL);
-    const mpcProposals = await getActiveContracts([mpc], DEPOSIT_AUTH_PROPOSAL);
-    const outsiderProposals = await getActiveContracts([outsider], DEPOSIT_AUTH_PROPOSAL);
+    // DepositAuthProposal: signatory=issuer, observer=owner(requester)
+    await assertVisibility(
+      DEPOSIT_AUTH_PROPOSAL, proposalCid,
+      [issuer, requester],
+      [mpc],
+    );
 
-    expect(hasContract(issuerProposals, proposalCid)).toBe(true);
-    expect(hasContract(requesterProposals, proposalCid)).toBe(true);
-    expect(hasContract(mpcProposals, proposalCid)).toBe(false);
-    expect(hasContract(outsiderProposals, proposalCid)).toBe(false);
-
+    // -- Step 2: ApproveDepositAuth (controller=issuer)
     const approveResult = await exerciseChoice(
       ISSUER_USER,
       [issuer],
@@ -253,43 +245,19 @@ describe("ledger visibility + permission model", () => {
       "ApproveDepositAuth",
       { proposalCid, remainingUses: 2 },
     );
-    const auth = findCreated(approveResult, "DepositAuthorization");
-    const authCid = auth.contractId;
+    const authCid = findCreated(approveResult, "DepositAuthorization").contractId;
 
-    const issuerAuths = await getActiveContracts([issuer], DEPOSIT_AUTHORIZATION);
-    const requesterAuths = await getActiveContracts([requester], DEPOSIT_AUTHORIZATION);
-    const mpcAuths = await getActiveContracts([mpc], DEPOSIT_AUTHORIZATION);
-    const outsiderAuths = await getActiveContracts([outsider], DEPOSIT_AUTHORIZATION);
+    // DepositAuthorization: signatory=issuer, observer=mpc,owner
+    await assertVisibility(
+      DEPOSIT_AUTHORIZATION, authCid,
+      [issuer, requester, mpc],
+      [],
+    );
 
-    expect(hasContract(issuerAuths, authCid)).toBe(true);
-    expect(hasContract(requesterAuths, authCid)).toBe(true);
-    expect(hasContract(mpcAuths, authCid)).toBe(true);
-    expect(hasContract(outsiderAuths, authCid)).toBe(false);
-
+    // -- Step 4: RequestEvmDeposit (controller=requester)
     const evmParams = buildSampleEvmParams(vaultAddress);
-    await expect(
-      exerciseChoice(
-        REQUESTER_ONLY_USER,
-        [issuer],
-        VAULT_ORCHESTRATOR,
-        orchCid,
-        "RequestEvmDeposit",
-        {
-          requester,
-          path: requester,
-          evmParams,
-          authCidText: authCid,
-          keyVersion: KEY_VERSION,
-          algo: ALGO,
-          dest: DEST,
-          authCid,
-        },
-        [issuer],
-      ),
-    ).rejects.toThrow();
-
     const pendingResult = await exerciseChoice(
-      REQUESTER_READ_ISSUER_USER,
+      REQUESTER_USER,
       [requester],
       VAULT_ORCHESTRATOR,
       orchCid,
@@ -304,28 +272,128 @@ describe("ledger visibility + permission model", () => {
         dest: DEST,
         authCid,
       },
-      [issuer],
+      undefined,
+      [orchDisclosure],
     );
     const pending = findCreated(pendingResult, "PendingEvmDeposit");
     const pendingCid = pending.contractId;
     const pendingArgs = pending.createArgument as Record<string, unknown>;
+    const requestId = pendingArgs.requestId as string;
 
-    expect(pending.templateId).toContain("PendingEvmDeposit");
-    expect(pendingArgs.requester).toBe(requester);
-    expect(pendingArgs.issuer).toBe(issuer);
-    expect(pendingArgs.mpc).toBe(mpc);
-    expect(pendingArgs.authCid).toBe(authCid);
-    expect(pendingArgs.authCidText).toBe(authCid);
-    expect(typeof pending.createdEventBlob).toBe("string");
+    // PendingEvmDeposit: signatory=issuer, observer=mpc,requester
+    await assertVisibility(
+      PENDING_EVM_DEPOSIT, pendingCid,
+      [issuer, requester, mpc],
+      [],
+    );
 
-    const issuerPending = await getActiveContracts([issuer], PENDING_EVM_DEPOSIT);
-    const requesterPending = await getActiveContracts([requester], PENDING_EVM_DEPOSIT);
-    const mpcPending = await getActiveContracts([mpc], PENDING_EVM_DEPOSIT);
-    const outsiderPending = await getActiveContracts([outsider], PENDING_EVM_DEPOSIT);
+    // -- Step 7: SignEvmTx (controller=issuer)
+    // Requester cannot exercise issuer-controlled choices
+    await expect(
+      exerciseChoice(
+        REQUESTER_USER,
+        [requester],
+        VAULT_ORCHESTRATOR,
+        orchCid,
+        "SignEvmTx",
+        { requester, requestId, r: "00", s: "00", v: 0 },
+        undefined,
+        [orchDisclosure],
+      ),
+    ).rejects.toThrow();
 
-    expect(hasContract(issuerPending, pendingCid)).toBe(true);
-    expect(hasContract(requesterPending, pendingCid)).toBe(true);
-    expect(hasContract(mpcPending, pendingCid)).toBe(true);
-    expect(hasContract(outsiderPending, pendingCid)).toBe(false);
-  }, 40_000);
+    const signResult = await exerciseChoice(
+      ISSUER_USER,
+      [issuer],
+      VAULT_ORCHESTRATOR,
+      orchCid,
+      "SignEvmTx",
+      { requester, requestId, r: "00", s: "00", v: 0 },
+    );
+    const ecdsaCid = findCreated(signResult, "EcdsaSignature").contractId;
+
+    // EcdsaSignature: signatory=issuer, observer=requester
+    await assertVisibility(
+      ECDSA_SIGNATURE, ecdsaCid,
+      [issuer, requester],
+      [mpc],
+    );
+
+    // -- Step 10: ProvideEvmOutcomeSig (controller=issuer)
+    await expect(
+      exerciseChoice(
+        REQUESTER_USER,
+        [requester],
+        VAULT_ORCHESTRATOR,
+        orchCid,
+        "ProvideEvmOutcomeSig",
+        { requester, requestId, signature: "00", mpcOutput: "01" },
+        undefined,
+        [orchDisclosure],
+      ),
+    ).rejects.toThrow();
+
+    const mpcOutput = "01";
+    const mpcSignature = signMpcResponse(MPC_ROOT_PRIVATE_KEY, requestId, mpcOutput);
+    const outcomeResult = await exerciseChoice(
+      ISSUER_USER,
+      [issuer],
+      VAULT_ORCHESTRATOR,
+      orchCid,
+      "ProvideEvmOutcomeSig",
+      { requester, requestId, signature: mpcSignature, mpcOutput },
+    );
+    const outcomeCid = findCreated(outcomeResult, "EvmTxOutcomeSignature").contractId;
+
+    // EvmTxOutcomeSignature: signatory=issuer, observer=requester
+    await assertVisibility(
+      EVM_TX_OUTCOME_SIG, outcomeCid,
+      [issuer, requester],
+      [mpc],
+    );
+
+    // -- Step 11: ClaimEvmDeposit (controller=requester)
+    // Issuer cannot claim (controller is requester, not issuer)
+    await expect(
+      exerciseChoice(
+        ISSUER_USER,
+        [issuer],
+        VAULT_ORCHESTRATOR,
+        orchCid,
+        "ClaimEvmDeposit",
+        { requester, pendingCid, outcomeCid, ecdsaCid },
+      ),
+    ).rejects.toThrow();
+
+    // Requester claims via disclosure
+    const claimResult = await exerciseChoice(
+      REQUESTER_USER,
+      [requester],
+      VAULT_ORCHESTRATOR,
+      orchCid,
+      "ClaimEvmDeposit",
+      { requester, pendingCid, outcomeCid, ecdsaCid },
+      undefined,
+      [orchDisclosure],
+    );
+    const holding = findCreated(claimResult, "Erc20Holding");
+    const holdingArgs = holding.createArgument as Record<string, unknown>;
+    expect(holdingArgs.owner).toBe(requester);
+    expect(holdingArgs.issuer).toBe(issuer);
+
+    // Erc20Holding: signatory=issuer, observer=owner(requester)
+    await assertVisibility(
+      ERC20_HOLDING, holding.contractId,
+      [issuer, requester],
+      [mpc],
+    );
+
+    // Evidence contracts must be archived after claim
+    const remainingPending = await getActiveContracts([issuer], PENDING_EVM_DEPOSIT);
+    expect(hasContract(remainingPending, pendingCid)).toBe(false);
+    const remainingEcdsa = await getActiveContracts([issuer], ECDSA_SIGNATURE);
+    expect(hasContract(remainingEcdsa, ecdsaCid)).toBe(false);
+    const remainingOutcome = await getActiveContracts([issuer], EVM_TX_OUTCOME_SIG);
+    expect(hasContract(remainingOutcome, outcomeCid)).toBe(false);
+  }, 60_000);
 });

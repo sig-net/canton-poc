@@ -118,7 +118,11 @@ describeIf("sepolia e2e deposit lifecycle", () => {
     await createUser(USER_ID, issuer, [requester, mpc]);
 
     packageId = packageIdFromTemplateId(VaultOrchestrator.templateIdWithPackageId);
-    const vaultAddress = deriveDepositAddress(env!.MPC_ROOT_PUBLIC_KEY, `${packageId}${issuer}`, "root");
+    const vaultAddress = deriveDepositAddress(
+      env!.MPC_ROOT_PUBLIC_KEY,
+      `${packageId}${issuer}`,
+      "root",
+    );
     vaultAddressPadded = vaultAddress.slice(2).padStart(64, "0");
 
     const mpcPubKeySpki = toSpkiPublicKey(env!.MPC_ROOT_PUBLIC_KEY);
@@ -321,9 +325,9 @@ describeIf("sepolia e2e deposit lifecycle", () => {
     expect(holdingArgs.amount).toBe(amountPadded);
 
     const activeHoldings = await getActiveContracts([issuer, requester], ERC20_HOLDING);
-    expect(activeHoldings.some((c) => (c.createArgument as Record<string, unknown>).owner === requester)).toBe(
-      true,
-    );
+    expect(
+      activeHoldings.some((c) => (c.createArgument as Record<string, unknown>).owner === requester),
+    ).toBe(true);
     console.log("[e2e] All assertions passed");
   }, 300_000);
 });
