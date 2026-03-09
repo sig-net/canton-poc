@@ -259,7 +259,7 @@ describeIf("sepolia e2e deposit lifecycle", () => {
       evmParams,
       caip2Id,
       KEY_VERSION,
-      requesterPath,
+      pendingArgs.path as string,
       ALGO,
       DEST,
       authCid,

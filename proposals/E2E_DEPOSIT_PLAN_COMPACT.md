@@ -11,7 +11,7 @@ signing service, giving cryptographic proof of every step.
 2. Issuer approves via `ApproveDepositAuth`, creating a `DepositAuthorization`
    with a hard use-limit
 3. User sends ERC20 tokens to a **deposit address** on Sepolia
-   (derived from MPC root public key, predecessorId=packageId+issuer, path=requester+userPath)
+   (derived from MPC root public key, predecessorId=packageId+issuer, path=sender+","+userPath)
 4. User exercises `RequestEvmDeposit` on Canton to request a **sweep from the deposit address to the
    vault address**
    (derived from MPC root public key, predecessorId=packageId+issuer, path="root")
@@ -340,12 +340,12 @@ nonconsuming choice RequestEvmDeposit : ContractId PendingEvmDeposit
     assertMsg "Transfer recipient must be vault address"
       (recipientArg == vaultAddress)
 
+    let sender = partyToText requester
+    let fullPath = sender <> "," <> path
     let caip2Id = "eip155:" <> chainIdToDecimalText evmParams.chainId
-    let requestId = computeRequestId
-          (partyToText requester) evmParams caip2Id keyVersion
-          path algo dest authCidText
+    let requestId = computeRequestId sender evmParams caip2Id keyVersion fullPath algo dest authCidText
     create PendingEvmDeposit with
-      issuer; requester; mpc; requestId; path; evmParams
+      issuer; requester; mpc; requestId; path = fullPath; evmParams
       authCidText; authCid; keyVersion; algo; dest
 ```
 
@@ -371,7 +371,7 @@ Both vault and deposit addresses use the same predecessorId; the **path**
 differentiates them:
 
 - **Vault address**: path = `"root"`
-- **Deposit address**: path = `requester + user-supplied path argument` (concatenated)
+- **Deposit address**: path = `sender + "," + user-supplied path argument`
 
 **`SignEvmTx`** — MPC posts its EVM transaction signature.
 

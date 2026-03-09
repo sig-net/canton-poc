@@ -153,7 +153,7 @@ test5_depositLifecycle = do
   pending <- queryContractId depositor pendingCid
   let pd = fromSome pending
   assertMsg "requestId must be 32 bytes" (byteCount pd.requestId == 32)
-  assertMsg "path must match" (pd.path == depositPath)
+  assertMsg "path must match" (pd.path == partyToText depositor <> "," <> depositPath)
   assertMsg "evmParams must match" (pd.evmParams == sampleEvmParams)
 
   pure ()

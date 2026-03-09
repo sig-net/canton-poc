@@ -139,10 +139,11 @@ template VaultOrchestrator
           (recipientArg == vaultAddress)
 
         let sender = partyToText requester
+        let fullPath = sender <> "," <> path
         let caip2Id = "eip155:" <> chainIdToDecimalText evmParams.chainId
-        let requestId = computeRequestId sender evmParams caip2Id keyVersion path algo dest authCidText
+        let requestId = computeRequestId sender evmParams caip2Id keyVersion fullPath algo dest authCidText
         create PendingEvmDeposit with
-          issuer; requester; mpc; requestId; path; evmParams
+          issuer; requester; mpc; requestId; path = fullPath; evmParams
           authCidText; authCid; keyVersion; algo; dest
 
     nonconsuming choice SignEvmTx : ContractId EcdsaSignature
