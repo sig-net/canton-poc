@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "cd .. && dpm build && dpm test && cd client && vitest run",
+    "test": "vitest run",
     "mpc-service": "tsx src/mpc-service/index.ts",
     "sepolia:preflight": "tsx src/scripts/sepolia-preflight.ts",
     "daml:build": "cd .. && dpm build",
