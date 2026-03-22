@@ -35,11 +35,11 @@ jobs:
           if [ ! -f "$HOME/.dpm/bin/dpm" ]; then
             curl -sSL https://get.digitalasset.com/install/install.sh | sh
           fi
+          echo "$HOME/.dpm/bin" >> "$GITHUB_PATH"
 
       - name: Build DAR, run Daml tests & generate codegen
         working-directory: .
         run: |
-          export PATH="$HOME/.dpm/bin:$PATH"
           dpm build
           dpm test
           dpm codegen-js .daml/dist/canton-mpc-poc-0.0.1.dar -o client/generated/model -s daml.js
@@ -64,7 +64,6 @@ jobs:
       - name: Start Canton sandbox
         working-directory: .
         run: |
-          export PATH="$HOME/.dpm/bin:$PATH"
           dpm sandbox --json-api-port 7575 --dar .daml/dist/canton-mpc-poc-0.0.1.dar &
 
       - name: Wait for Canton JSON API
@@ -79,4 +78,4 @@ jobs:
           echo "Canton sandbox failed to start within 120s"
           exit 1
 
-      - run: pnpm test
+      - run: pnpm exec vitest run
