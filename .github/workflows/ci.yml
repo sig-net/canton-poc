@@ -23,11 +23,21 @@ jobs:
           distribution: temurin
           java-version: 17
 
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: client/pnpm-lock.yaml
+
       - name: Cache Daml SDK
         uses: actions/cache@v4
         with:
           path: ~/.dpm
-          key: dpm-3.4.11
+          key: dpm-${{ hashFiles('daml.yaml') }}
 
       - name: Install Daml SDK
         working-directory: .
@@ -44,27 +54,16 @@ jobs:
           dpm test
           dpm codegen-js .daml/dist/canton-mpc-poc-0.0.1.dar -o client/generated/model -s daml.js
 
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: pnpm
-          cache-dependency-path: client/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
 
       - name: Generate OpenAPI types
-        run: pnpx openapi-typescript openapi.yaml -o generated/api/ledger-api.ts
-
-      - run: pnpm install --frozen-lockfile
+        run: pnpm exec openapi-typescript openapi.yaml -o generated/api/ledger-api.ts
 
       - run: pnpm check
 
       - name: Start Canton sandbox
         working-directory: .
-        run: |
-          dpm sandbox --json-api-port 7575 --dar .daml/dist/canton-mpc-poc-0.0.1.dar &
+        run: dpm sandbox --json-api-port 7575 --dar .daml/dist/canton-mpc-poc-0.0.1.dar &
 
       - name: Wait for Canton JSON API
         run: |
@@ -78,4 +77,4 @@ jobs:
           echo "Canton sandbox failed to start within 120s"
           exit 1
 
-      - run: pnpm exec vitest run
+      - run: pnpm test
