@@ -3,9 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "test:e2e:sepolia": "vitest run src/test/sepolia-e2e.test.ts",
+    "test": "cd .. && dpm build && dpm test && cd client && vitest run",
     "mpc-service": "tsx src/mpc-service/index.ts",
     "sepolia:preflight": "tsx src/scripts/sepolia-preflight.ts",
     "daml:build": "cd .. && dpm build",
@@ -16,11 +14,6 @@
     "codegen": "pnpm run codegen:daml && pnpm run codegen:api",
     "clean": "rm -rf generated ../.daml",
     "generate": "pnpm run clean && pnpm run daml:build && pnpm run codegen && pnpm install",
-    "lint": "eslint .",
-    "lint:fix": "eslint . --fix",
-    "format": "prettier --write .",
-    "format:check": "prettier --check .",
-    "typecheck": "tsc --noEmit",
     "check": "tsc --noEmit && eslint . && knip && prettier --check .",
     "fix": "eslint . --fix && prettier --write ."
   },

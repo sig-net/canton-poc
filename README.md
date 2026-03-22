@@ -117,15 +117,18 @@ Send to the faucet address:
 pnpm test:e2e:sepolia
 ```
 
+## Design
+
+- [Deposit flow](proposals/E2E_DEPOSIT_PLAN_COMPACT.md) — end-to-end deposit lifecycle: auth cards, MPC signing, Sepolia submission, and Canton claim
+- [Withdrawal flow](proposals/E2E_WITHDRAWAL_PLAN_COMPACT.md) — end-to-end withdrawal lifecycle: holding burn, MPC signing, Sepolia submission, and refund-on-failure
+
 ## Available Scripts
 
 From `client/`:
 
 | Script | Description |
 |--------|-------------|
-| `pnpm test` | Run all tests (unit + integration) |
-| `pnpm test:watch` | Run tests in watch mode |
-| `pnpm test:e2e:sepolia` | Run Sepolia deposit e2e test |
+| `pnpm test` | Run all tests (unit + integration, Sepolia e2e if env is set) |
 | `pnpm daml:build` | Build the DAR |
 | `pnpm daml:test` | Run Daml Script tests |
 | `pnpm daml:sandbox` | Start Canton sandbox with JSON API on :7575 |
