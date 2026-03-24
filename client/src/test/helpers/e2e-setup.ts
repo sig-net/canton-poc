@@ -1,19 +1,23 @@
-import { resolve, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
-import { CantonClient, type CreatedEvent } from "../../infra/canton-client.js";
-import { findCreated, firstCreated } from "../../infra/canton-helpers.js";
 import {
+  CantonClient,
+  type CreatedEvent,
+  MpcServer,
+  findCreated,
+  firstCreated,
+  chainIdHexToCaip2,
+  deriveDepositAddress,
+  computeRequestId,
+  toSpkiPublicKey,
+  reconstructSignedTx,
+  submitRawTransaction,
+  loadEnv,
+  DAR_PATH,
   VaultOrchestrator,
   Erc20Holding,
   EcdsaSignature,
   EvmTxOutcomeSignature,
   PendingEvmTx,
-} from "@daml.js/canton-mpc-poc-0.0.1/lib/Erc20Vault/module";
-import { MpcServer } from "../../mpc-service/server.js";
-import { chainIdHexToCaip2, deriveDepositAddress } from "../../mpc/address-derivation.js";
-import { computeRequestId, toSpkiPublicKey } from "../../mpc/crypto.js";
-import { reconstructSignedTx, submitRawTransaction } from "../../evm/tx-builder.js";
-import { loadEnv } from "../../config/env.js";
+} from "@signet/canton-mpc";
 import {
   DEPOSIT_AMOUNT,
   fetchNonce,
@@ -22,8 +26,7 @@ import {
   fundFromFaucet,
 } from "./sepolia-helpers.js";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-export const DAR_PATH = resolve(__dirname, "../../../../.daml/dist/canton-mpc-poc-0.0.1.dar");
+export { DAR_PATH };
 
 export const VAULT_ORCHESTRATOR = VaultOrchestrator.templateId;
 export const ECDSA_SIGNATURE = EcdsaSignature.templateId;

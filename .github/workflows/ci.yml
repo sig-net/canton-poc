@@ -6,10 +6,6 @@ on:
   pull_request:
     branches: [main]
 
-defaults:
-  run:
-    working-directory: client
-
 jobs:
   ci:
     name: Check & Test
@@ -31,7 +27,6 @@ jobs:
         with:
           node-version: 20
           cache: pnpm
-          cache-dependency-path: client/pnpm-lock.yaml
 
       - name: Cache Daml SDK
         uses: actions/cache@v4
@@ -40,7 +35,6 @@ jobs:
           key: dpm-${{ hashFiles('daml.yaml') }}
 
       - name: Install Daml SDK
-        working-directory: .
         run: |
           if [ ! -f "$HOME/.dpm/bin/dpm" ]; then
             curl -sSL https://get.digitalasset.com/install/install.sh | sh
@@ -48,21 +42,32 @@ jobs:
           echo "$HOME/.dpm/bin" >> "$GITHUB_PATH"
 
       - name: Build DAR, run Daml tests & generate codegen
-        working-directory: .
         run: |
           dpm build
           dpm test
-          dpm codegen-js .daml/dist/canton-mpc-poc-0.0.1.dar -o client/generated/model -s daml.js
+          dpm codegen-js .daml/dist/canton-mpc-poc-0.0.1.dar -o packages/canton-mpc/generated/model -s daml.js
 
       - run: pnpm install --frozen-lockfile
 
-      - name: Generate OpenAPI types
-        run: pnpm exec openapi-typescript openapi.yaml -o generated/api/ledger-api.ts
+      - name: Build library
+        working-directory: packages/canton-mpc
+        run: pnpm build
 
-      - run: pnpm check
+      - name: Generate OpenAPI types
+        working-directory: client
+        run: |
+          curl -sf http://localhost:7575/docs/openapi -o openapi.yaml && \
+          pnpm exec openapi-typescript openapi.yaml -o ../packages/canton-mpc/generated/api/ledger-api.ts || true
+
+      - name: Check library
+        working-directory: packages/canton-mpc
+        run: pnpm check
+
+      - name: Check client
+        working-directory: client
+        run: pnpm check
 
       - name: Start Canton sandbox
-        working-directory: .
         run: dpm sandbox --json-api-port 7575 --dar .daml/dist/canton-mpc-poc-0.0.1.dar &
 
       - name: Wait for Canton JSON API
@@ -77,4 +82,12 @@ jobs:
           echo "Canton sandbox failed to start within 120s"
           exit 1
 
-      - run: pnpm test
+      - name: Generate OpenAPI types
+        working-directory: client
+        run: |
+          curl -sf http://localhost:7575/docs/openapi -o openapi.yaml
+          pnpm exec openapi-typescript openapi.yaml -o ../packages/canton-mpc/generated/api/ledger-api.ts
+
+      - name: Test
+        working-directory: client
+        run: pnpm test

@@ -2,6 +2,6 @@
   "$schema": "https://unpkg.com/knip@5/schema.json",
   "entry": ["src/**/*.ts"],
   "project": ["src/**/*.ts"],
-  "ignoreDependencies": ["@daml/types", "@mojotech/json-type-validation"],
+  "ignoreDependencies": ["@signet/canton-mpc"],
   "ignoreBinaries": ["dpm"]
 }

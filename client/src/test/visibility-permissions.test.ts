@@ -1,10 +1,14 @@
 import { describe, it, expect, beforeAll } from "vitest";
-import { resolve, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
 import { type Hex } from "viem";
-import { CantonClient, type CreatedEvent, type DisclosedContract } from "../infra/canton-client.js";
-import { findCreated, firstCreated } from "../infra/canton-helpers.js";
 import {
+  CantonClient,
+  type CreatedEvent,
+  type DisclosedContract,
+  findCreated,
+  firstCreated,
+  deriveDepositAddress,
+  signMpcResponse,
+  DAR_PATH,
   VaultOrchestrator,
   DepositAuthProposal,
   DepositAuthorization,
@@ -12,14 +16,10 @@ import {
   EcdsaSignature,
   EvmTxOutcomeSignature,
   Erc20Holding,
-} from "@daml.js/canton-mpc-poc-0.0.1/lib/Erc20Vault/module";
-import { deriveDepositAddress } from "../mpc/address-derivation.js";
-import { signMpcResponse } from "../mpc-service/signer.js";
+} from "@signet/canton-mpc";
 
 const VAULT_ID = "test-vault";
 const canton = new CantonClient();
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const DAR_PATH = resolve(__dirname, "../../../.daml/dist/canton-mpc-poc-0.0.1.dar");
 
 const VAULT_ORCHESTRATOR = VaultOrchestrator.templateId;
 const DEPOSIT_AUTH_PROPOSAL = DepositAuthProposal.templateId;

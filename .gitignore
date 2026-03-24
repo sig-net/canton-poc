@@ -5,11 +5,16 @@
 log/
 
 # TypeScript
-client/node_modules/
-client/generated/
+node_modules/
+client/dist/
+packages/canton-mpc/dist/
+packages/canton-mpc/generated/
 
 # Secrets
-.env
+**/.env
 
 # OS
 .DS_Store
+
+# npm
+*.tgz

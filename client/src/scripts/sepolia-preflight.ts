@@ -11,18 +11,11 @@
  *   - .env with MPC_ROOT_PUBLIC_KEY, SEPOLIA_RPC_URL, etc.
  */
 
-import { resolve, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
 import { createPublicClient, http, parseAbi } from "viem";
 import { sepolia } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
-import { loadEnv } from "../config/env.js";
-import { CantonClient } from "../infra/canton-client.js";
-import { deriveDepositAddress } from "../mpc/address-derivation.js";
+import { loadEnv, CantonClient, deriveDepositAddress, DAR_PATH } from "@signet/canton-mpc";
 import { DEPOSIT_AMOUNT } from "../test/helpers/sepolia-helpers.js";
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const DAR_PATH = resolve(__dirname, "../../../.daml/dist/canton-mpc-poc-0.0.1.dar");
 
 const env = loadEnv();
 const canton = new CantonClient(env.CANTON_JSON_API_URL);

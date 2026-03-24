@@ -1,0 +1,7 @@
+.daml/
+.git/
+log/
+client/node_modules/
+client/generated/
+**/.env
+.DS_Store

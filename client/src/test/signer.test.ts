@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { utils } from "signet.js";
 import { toBytes, type Hex } from "viem";
-import { deriveChildPrivateKey } from "../mpc-service/signer.js";
+import { deriveChildPrivateKey } from "@signet/canton-mpc";
 
 const { deriveChildPublicKey } = utils.cryptography;
 

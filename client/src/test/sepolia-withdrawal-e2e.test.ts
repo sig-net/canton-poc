@@ -2,11 +2,14 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { createPublicClient, createWalletClient, http } from "viem";
 import { privateKeyToAddress, privateKeyToAccount } from "viem/accounts";
 import { sepolia } from "viem/chains";
-import { findCreated } from "../infra/canton-helpers.js";
-import { chainIdHexToCaip2 } from "../mpc/address-derivation.js";
-import { computeRequestId } from "../mpc/crypto.js";
-import { reconstructSignedTx, submitRawTransaction } from "../evm/tx-builder.js";
-import { deriveChildPrivateKey } from "../mpc-service/signer.js";
+import {
+  findCreated,
+  chainIdHexToCaip2,
+  computeRequestId,
+  reconstructSignedTx,
+  submitRawTransaction,
+  deriveChildPrivateKey,
+} from "@signet/canton-mpc";
 import {
   tryLoadEnv,
   setupVault,

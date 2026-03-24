@@ -1,0 +1,59 @@
+import { fileURLToPath } from "node:url";
+
+// MPC Service
+export { MpcServer } from "./mpc-service/server.js";
+export type { MpcServerConfig } from "./mpc-service/server.js";
+export { deriveChildPrivateKey, signEvmTxHash, signMpcResponse } from "./mpc-service/signer.js";
+
+// Canton infrastructure
+export { CantonClient } from "./infra/canton-client.js";
+export type {
+  CreatedEvent,
+  Event,
+  UserRight,
+  DisclosedContract,
+  TransactionResponse,
+  JsGetUpdatesResponse,
+} from "./infra/canton-client.js";
+export { canActAsRight, canReadAsRight } from "./infra/canton-client.js";
+export { getCreatedEvent, findCreated, firstCreated } from "./infra/canton-helpers.js";
+export { createLedgerStream } from "./infra/ledger-stream.js";
+export type { StreamHandle } from "./infra/ledger-stream.js";
+
+// MPC crypto & address derivation
+export {
+  computeRequestId,
+  computeResponseHash,
+  toSpkiPublicKey,
+  derivePublicKey,
+} from "./mpc/crypto.js";
+export type { EvmTransactionParams } from "./mpc/crypto.js";
+export { eip712Types, eip712Domain } from "./mpc/crypto.js";
+export { deriveDepositAddress, chainIdHexToCaip2, KEY_VERSION } from "./mpc/address-derivation.js";
+
+// EVM transaction building
+export {
+  buildTxRequest,
+  serializeUnsignedTx,
+  reconstructSignedTx,
+  submitRawTransaction,
+} from "./evm/tx-builder.js";
+export type { CantonEvmParams } from "./evm/tx-builder.js";
+
+// Config
+export { loadEnv } from "./config/env.js";
+export type { Env } from "./config/env.js";
+
+// Daml template types (re-exported for consumer convenience)
+export {
+  VaultOrchestrator,
+  PendingEvmTx,
+  EcdsaSignature,
+  EvmTxOutcomeSignature,
+  Erc20Holding,
+  DepositAuthorization,
+  DepositAuthProposal,
+} from "@daml.js/canton-mpc-poc-0.0.1/lib/Erc20Vault/module";
+
+// DAR path (resolves to dist/ after build)
+export const DAR_PATH = fileURLToPath(new URL("canton-mpc-poc-0.0.1.dar", import.meta.url));

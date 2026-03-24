@@ -1,4 +1,3 @@
-import "dotenv/config";
 import * as z from "zod";
 import { type Hex } from "viem";
 

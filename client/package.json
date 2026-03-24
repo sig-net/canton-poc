@@ -4,15 +4,15 @@
   "type": "module",
   "scripts": {
     "test": "vitest run",
-    "mpc-service": "tsx src/mpc-service/index.ts",
+    "mpc-service": "tsx ../packages/canton-mpc/src/mpc-service/index.ts",
     "sepolia:preflight": "tsx src/scripts/sepolia-preflight.ts",
     "daml:build": "cd .. && dpm build",
     "daml:test": "cd .. && dpm test",
     "daml:sandbox": "cd .. && dpm sandbox --json-api-port 7575 --dar .daml/dist/canton-mpc-poc-0.0.1.dar",
-    "codegen:api": "curl -sf http://localhost:7575/docs/openapi -o openapi.yaml && openapi-typescript openapi.yaml -o generated/api/ledger-api.ts",
-    "codegen:daml": "cd .. && dpm codegen-js .daml/dist/canton-mpc-poc-0.0.1.dar -o client/generated/model -s daml.js",
+    "codegen:api": "curl -sf http://localhost:7575/docs/openapi -o openapi.yaml && pnpm exec openapi-typescript openapi.yaml -o ../packages/canton-mpc/generated/api/ledger-api.ts",
+    "codegen:daml": "cd .. && dpm codegen-js .daml/dist/canton-mpc-poc-0.0.1.dar -o packages/canton-mpc/generated/model -s daml.js",
     "codegen": "pnpm run codegen:daml && pnpm run codegen:api",
-    "clean": "rm -rf generated ../.daml",
+    "clean": "rm -rf ../packages/canton-mpc/generated ../.daml",
     "generate": "pnpm run clean && pnpm run daml:build && pnpm run codegen && pnpm install",
     "check": "tsc --noEmit && eslint . && knip && prettier --check .",
     "fix": "eslint . --fix && prettier --write ."
@@ -20,7 +20,6 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/node": "^25.3.0",
-    "@types/ws": "^8.18.1",
     "eslint": "^10.0.2",
     "eslint-config-prettier": "^10.1.8",
     "jiti": "^2.6.1",
@@ -33,15 +32,9 @@
     "vitest": "^4.0.18"
   },
   "dependencies": {
-    "@daml.js/canton-mpc-poc-0.0.1": "file:./generated/model/canton-mpc-poc-0.0.1",
-    "@daml/types": "^3.4.11",
-    "@mojotech/json-type-validation": "^3.1.0",
     "@noble/curves": "^2.0.1",
-    "dotenv": "^17.3.1",
-    "openapi-fetch": "^0.17.0",
+    "@signet/canton-mpc": "workspace:*",
     "signet.js": "0.4.0",
-    "viem": "^2.46.3",
-    "ws": "^8.19.0",
-    "zod": "^4.3.6"
+    "viem": "^2.46.3"
   }
 }
