@@ -1,6 +1,6 @@
 # canton-mpc
 
-MPC-based ERC-20 custody service for [Canton](https://docs.digitalasset.com/). Watches for `PendingEvmTx` contracts on the Canton ledger, derives child keys and signs EVM transactions using [signet.js](https://github.com/sig-net/signet.js), records signatures on Canton, and monitors EVM receipts to report outcomes back to the ledger.
+Sig Network MPC service for [Canton](https://docs.digitalasset.com/). Watches for `PendingEvmTx` contracts on the Canton ledger, derives child keys and signs EVM transactions using [signet.js](https://github.com/sig-net/signet.js), records signatures on Canton, and monitors EVM receipts to report outcomes back to the ledger.
 
 ## Prerequisites
 
