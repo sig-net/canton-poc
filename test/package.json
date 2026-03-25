@@ -5,7 +5,7 @@
   "scripts": {
     "test": "vitest run",
     "check:types": "tsc --noEmit",
-    "mpc-service": "tsx ../packages/canton-mpc/src/mpc-service/index.ts",
+    "mpc-service": "tsx src/scripts/mpc-service.ts",
     "sepolia:preflight": "tsx src/scripts/sepolia-preflight.ts",
     "daml:build": "cd .. && dpm build",
     "daml:test": "cd .. && dpm test",

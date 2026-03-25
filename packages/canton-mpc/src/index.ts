@@ -40,10 +40,6 @@ export {
 } from "./evm/tx-builder.js";
 export type { CantonEvmParams } from "./evm/tx-builder.js";
 
-// Config
-export { loadEnv } from "./config/env.js";
-export type { Env } from "./config/env.js";
-
 // Daml template types (re-exported for consumer convenience)
 export {
   VaultOrchestrator,

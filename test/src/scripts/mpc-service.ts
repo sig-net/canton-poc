@@ -1,13 +1,11 @@
-import { resolve, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import {
+  CantonClient,
+  DAR_PATH,
+  MpcServer,
+  VaultOrchestrator,
+} from "canton-mpc";
 import { loadEnv } from "../config/env.js";
-import { CantonClient } from "../infra/canton-client.js";
-import { VaultOrchestrator } from "@daml.js/canton-mpc-poc-0.0.1/lib/Erc20Vault/module";
-import { MpcServer } from "./server.js";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const DAR_PATH = resolve(__dirname, "../../../.daml/dist/canton-mpc-poc-0.0.1.dar");
-const VAULT_ORCHESTRATOR = VaultOrchestrator.templateId;
 const USER_ID = "mpc-service";
 
 async function main() {
@@ -24,7 +22,7 @@ async function main() {
   await canton.createUser(USER_ID, issuer);
   console.log("[MPC] User created");
 
-  const contracts = await canton.getActiveContracts([issuer], VAULT_ORCHESTRATOR);
+  const contracts = await canton.getActiveContracts([issuer], VaultOrchestrator.templateId);
   if (contracts.length === 0) {
     throw new Error("[MPC] No VaultOrchestrator contract found");
   }
