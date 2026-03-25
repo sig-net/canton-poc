@@ -26,8 +26,6 @@ import {
   fundFromFaucet,
 } from "./sepolia-helpers.js";
 
-export { DAR_PATH };
-
 export const VAULT_ORCHESTRATOR = VaultOrchestrator.templateId;
 export const ECDSA_SIGNATURE = EcdsaSignature.templateId;
 export const OUTCOME_SIGNATURE = EvmTxOutcomeSignature.templateId;
