@@ -120,16 +120,16 @@ Absolute path to the bundled `canton-mpc-poc-0.0.1.dar`. Pass to `canton.uploadD
 
 ### Utilities
 
-| Export                                                        | Description                                      |
-| ------------------------------------------------------------- | ------------------------------------------------ |
-| `deriveDepositAddress(rootPubKey, predecessorId, path)`        | Derive an EVM deposit address from MPC root key  |
-| `computeRequestId(...)`                                        | Compute the EIP-712 request ID for a transaction |
-| `toSpkiPublicKey(uncompressedPubKey)`                          | Convert uncompressed public key to SPKI format   |
-| `deriveChildPrivateKey(rootPrivateKey, predecessorId, path)`   | Derive a child signing key                       |
-| `reconstructSignedTx(evmParams, signature)`                    | Reconstruct a signed EVM transaction             |
-| `submitRawTransaction(rpcUrl, raw)`                            | Submit a raw transaction to an EVM RPC           |
-| `findCreated(events, templateFragment)`                        | Find a created event by template name            |
-| `VaultOrchestrator`, `PendingEvmTx`, `Erc20Holding`, `DepositAuthorization`, ... | Daml template types         |
+| Export                                                                           | Description                                      |
+| -------------------------------------------------------------------------------- | ------------------------------------------------ |
+| `deriveDepositAddress(rootPubKey, predecessorId, path)`                          | Derive an EVM deposit address from MPC root key  |
+| `computeRequestId(...)`                                                          | Compute the EIP-712 request ID for a transaction |
+| `toSpkiPublicKey(uncompressedPubKey)`                                            | Convert uncompressed public key to SPKI format   |
+| `deriveChildPrivateKey(rootPrivateKey, predecessorId, path)`                     | Derive a child signing key                       |
+| `reconstructSignedTx(evmParams, signature)`                                      | Reconstruct a signed EVM transaction             |
+| `submitRawTransaction(rpcUrl, raw)`                                              | Submit a raw transaction to an EVM RPC           |
+| `findCreated(events, templateFragment)`                                          | Find a created event by template name            |
+| `VaultOrchestrator`, `PendingEvmTx`, `Erc20Holding`, `DepositAuthorization`, ... | Daml template types                              |
 
 ## Limitations
 
