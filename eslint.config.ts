@@ -13,7 +13,11 @@ export default tseslint.config(
     languageOptions: {
       parserOptions: {
         projectService: {
-          allowDefaultProject: ["eslint.config.ts", "packages/canton-mpc/tsdown.config.ts"],
+          allowDefaultProject: [
+            "eslint.config.ts",
+            "packages/canton-mpc/tsdown.config.ts",
+            "packages/canton-mpc/vitest.config.ts",
+          ],
         },
         tsconfigRootDir: import.meta.dirname,
       },
@@ -30,7 +34,11 @@ export default tseslint.config(
     },
   },
   {
-    files: ["eslint.config.ts", "packages/canton-mpc/tsdown.config.ts"],
+    files: [
+      "eslint.config.ts",
+      "packages/canton-mpc/tsdown.config.ts",
+      "packages/canton-mpc/vitest.config.ts",
+    ],
     ...tseslint.configs.disableTypeChecked,
   },
 );

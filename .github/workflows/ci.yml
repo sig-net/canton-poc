@@ -74,6 +74,10 @@ jobs:
         working-directory: packages/canton-mpc
         run: pnpm build
 
+      - name: Test library
+        working-directory: packages/canton-mpc
+        run: pnpm test
+
       - name: Check
         run: pnpm check
 
