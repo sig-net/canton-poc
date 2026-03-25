@@ -4,11 +4,11 @@ MPC-based ERC-20 custody service for [Canton](https://docs.digitalasset.com/). W
 
 ## Prerequisites
 
-| Tool | Version |
-|------|---------|
-| Java | 17+ |
+| Tool           | Version                                             |
+| -------------- | --------------------------------------------------- |
+| Java           | 17+                                                 |
 | Canton sandbox | Via [Daml SDK (DPM)](https://get.digitalasset.com/) |
-| Node.js | 20+ |
+| Node.js        | 20+                                                 |
 
 ## Install
 
@@ -19,13 +19,7 @@ npm install canton-mpc viem
 ## Quick Start
 
 ```typescript
-import {
-  MpcServer,
-  CantonClient,
-  VaultOrchestrator,
-  DAR_PATH,
-  toSpkiPublicKey,
-} from "canton-mpc";
+import { MpcServer, CantonClient, VaultOrchestrator, DAR_PATH, toSpkiPublicKey } from "canton-mpc";
 
 // 1. Connect to Canton and upload the bundled DAR
 const canton = new CantonClient("http://localhost:7575");
@@ -49,9 +43,8 @@ const orchResult = await canton.createContract(
     vaultId: "my-vault",
   },
 );
-const orchCid = orchResult.transaction.events
-  .find((e) => "CreatedEvent" in e)!
-  .CreatedEvent.contractId;
+const orchCid = orchResult.transaction.events.find((e) => "CreatedEvent" in e)!.CreatedEvent
+  .contractId;
 
 // 4. Start the MPC service
 const server = new MpcServer({
@@ -88,14 +81,14 @@ The main service class. Watches for pending transactions, signs them, and report
 new MpcServer(config: MpcServerConfig)
 ```
 
-| Config field | Type | Description |
-|-------------|------|-------------|
-| `canton` | `CantonClient` | Connected Canton client instance |
-| `orchCid` | `string` | Contract ID of the `VaultOrchestrator` |
-| `userId` | `string` | Canton user ID for ledger commands |
-| `parties` | `string[]` | Parties to act as |
-| `rootPrivateKey` | `Hex` | `0x`-prefixed secp256k1 private key |
-| `rpcUrl` | `string` | Sepolia JSON-RPC endpoint |
+| Config field     | Type           | Description                            |
+| ---------------- | -------------- | -------------------------------------- |
+| `canton`         | `CantonClient` | Connected Canton client instance       |
+| `orchCid`        | `string`       | Contract ID of the `VaultOrchestrator` |
+| `userId`         | `string`       | Canton user ID for ledger commands     |
+| `parties`        | `string[]`     | Parties to act as                      |
+| `rootPrivateKey` | `Hex`          | `0x`-prefixed secp256k1 private key    |
+| `rpcUrl`         | `string`       | Sepolia JSON-RPC endpoint              |
 
 **Methods:**
 
@@ -127,16 +120,16 @@ Absolute path to the bundled `canton-mpc-poc-0.0.1.dar`. Pass to `canton.uploadD
 
 ### Utilities
 
-| Export | Description |
-|--------|-------------|
-| `deriveDepositAddress(pubKey, predecessorId, path)` | Derive an EVM deposit address from MPC root key |
-| `computeRequestId(...)` | Compute the EIP-712 request ID for a transaction |
-| `toSpkiPublicKey(uncompressedKey)` | Convert uncompressed public key to SPKI format |
-| `deriveChildPrivateKey(rootKey, predecessorId, path)` | Derive a child signing key |
-| `reconstructSignedTx(evmParams, sig)` | Reconstruct a signed EVM transaction |
-| `submitRawTransaction(rpcUrl, raw)` | Submit a raw transaction to an EVM RPC |
-| `findCreated(events, templateFragment)` | Find a created event by template name |
-| `VaultOrchestrator`, `PendingEvmTx`, `Erc20Holding`, ... | Daml template types |
+| Export                                                   | Description                                      |
+| -------------------------------------------------------- | ------------------------------------------------ |
+| `deriveDepositAddress(pubKey, predecessorId, path)`      | Derive an EVM deposit address from MPC root key  |
+| `computeRequestId(...)`                                  | Compute the EIP-712 request ID for a transaction |
+| `toSpkiPublicKey(uncompressedKey)`                       | Convert uncompressed public key to SPKI format   |
+| `deriveChildPrivateKey(rootKey, predecessorId, path)`    | Derive a child signing key                       |
+| `reconstructSignedTx(evmParams, sig)`                    | Reconstruct a signed EVM transaction             |
+| `submitRawTransaction(rpcUrl, raw)`                      | Submit a raw transaction to an EVM RPC           |
+| `findCreated(events, templateFragment)`                  | Find a created event by template name            |
+| `VaultOrchestrator`, `PendingEvmTx`, `Erc20Holding`, ... | Daml template types                              |
 
 ## Limitations
 

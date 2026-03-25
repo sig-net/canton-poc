@@ -106,7 +106,7 @@ data-dependencies:
 
 # Optional: Build options passed to the Daml compiler
 build-options:
-  - -Wno-crypto-text-is-alpha  # Required when using DA.Crypto.Text
+  - -Wno-crypto-text-is-alpha # Required when using DA.Crypto.Text
 
 # Optional: Code generation configuration
 codegen:
@@ -117,16 +117,16 @@ codegen:
 
 ### Field Details
 
-| Field | Required | Description |
-|---|---|---|
-| `sdk-version` | Yes | The Daml SDK version. Must match an installed version. |
-| `name` | Yes | Project name. Used as part of the DAR filename. |
-| `version` | Yes | Project version. Used as part of the DAR filename. |
-| `source` | Yes | Relative path to the directory containing `.daml` source files. |
-| `dependencies` | Yes | List of base Daml packages the project depends on. |
-| `data-dependencies` | No | List of additional DAR files or packages to depend on. |
-| `build-options` | No | List of compiler flags passed to the Daml build. |
-| `codegen` | No | Configuration for code generation (TypeScript/JavaScript). |
+| Field               | Required | Description                                                     |
+| ------------------- | -------- | --------------------------------------------------------------- |
+| `sdk-version`       | Yes      | The Daml SDK version. Must match an installed version.          |
+| `name`              | Yes      | Project name. Used as part of the DAR filename.                 |
+| `version`           | Yes      | Project version. Used as part of the DAR filename.              |
+| `source`            | Yes      | Relative path to the directory containing `.daml` source files. |
+| `dependencies`      | Yes      | List of base Daml packages the project depends on.              |
+| `data-dependencies` | No       | List of additional DAR files or packages to depend on.          |
+| `build-options`     | No       | List of compiler flags passed to the Daml build.                |
+| `codegen`           | No       | Configuration for code generation (TypeScript/JavaScript).      |
 
 ### Common Dependencies
 
@@ -137,10 +137,10 @@ codegen:
 
 ### Common Build Options
 
-| Flag | Purpose |
-|---|---|
+| Flag                        | Purpose                                                     |
+| --------------------------- | ----------------------------------------------------------- |
 | `-Wno-crypto-text-is-alpha` | Suppress warning when using `DA.Crypto.Text` (alpha module) |
-| `--ghc-option -Werror` | Treat warnings as errors |
+| `--ghc-option -Werror`      | Treat warnings as errors                                    |
 
 ---
 
@@ -205,9 +205,9 @@ Tests are Daml Script functions annotated as test entry points. They execute aga
 
 **Flags:**
 
-| Flag | Description |
-|---|---|
-| `--files <path>` | Run tests only from the specified file |
+| Flag                       | Description                             |
+| -------------------------- | --------------------------------------- |
+| `--files <path>`           | Run tests only from the specified file  |
 | `--test-pattern <pattern>` | Run tests whose names match the pattern |
 
 ---
@@ -235,12 +235,12 @@ dpm sandbox --json-api-port 7575 --dar .daml/dist/my-project-0.1.0.dar
 
 **Flags:**
 
-| Flag | Default | Description |
-|---|---|---|
-| `--json-api-port <port>` | `7575` | Port for the JSON API HTTP endpoint |
-| `--canton-port <port>` | `6865` | Port for the Canton gRPC ledger API |
-| `--dar <path>` | (none) | Path to a DAR file to load at startup |
-| `--wall-clock-time` | (disabled) | Use wall clock time instead of static time |
+| Flag                     | Default    | Description                                |
+| ------------------------ | ---------- | ------------------------------------------ |
+| `--json-api-port <port>` | `7575`     | Port for the JSON API HTTP endpoint        |
+| `--canton-port <port>`   | `6865`     | Port for the Canton gRPC ledger API        |
+| `--dar <path>`           | (none)     | Path to a DAR file to load at startup      |
+| `--wall-clock-time`      | (disabled) | Use wall clock time instead of static time |
 
 **Default endpoints when running:**
 
@@ -267,10 +267,10 @@ dpm codegen-js .daml/dist/my-project-0.1.0.dar \
 
 **Flags:**
 
-| Flag | Short | Description |
-|---|---|---|
-| `--output-directory <dir>` | `-o` | Directory where generated code is written |
-| `--npm-scope <scope>` | `-s` | NPM scope for the generated packages |
+| Flag                       | Short | Description                               |
+| -------------------------- | ----- | ----------------------------------------- |
+| `--output-directory <dir>` | `-o`  | Directory where generated code is written |
+| `--npm-scope <scope>`      | `-s`  | NPM scope for the generated packages      |
 
 **Alternative:** Configure codegen in `daml.yaml` so `dpm build` or a separate step can use it:
 
@@ -282,6 +282,7 @@ codegen:
 ```
 
 The generated output includes:
+
 - TypeScript type definitions for all templates and choices
 - Companion objects for creating and exercising contracts
 - Package ID references
@@ -475,12 +476,14 @@ dpm build
 **Common causes and fixes:**
 
 1. **Insufficient JVM memory** - Canton can be memory-hungry. Increase heap:
+
    ```bash
    export _JAVA_OPTIONS="-Xmx4g"
    dpm sandbox --dar .daml/dist/my-project-0.1.0.dar
    ```
 
 2. **Corrupt state** - Clear sandbox state:
+
    ```bash
    rm -rf .canton
    dpm sandbox --dar .daml/dist/my-project-0.1.0.dar

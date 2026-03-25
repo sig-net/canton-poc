@@ -1,13 +1,10 @@
 {
   "$schema": "https://unpkg.com/knip@5/schema.json",
-  "ignoreBinaries": ["dpm", "build", "openapi-typescript"],
+  "ignoreBinaries": ["dpm", "build"],
   "workspaces": {
     "test": {},
     "packages/canton-mpc": {
-      "ignoreDependencies": [
-        "@daml/types",
-        "@mojotech/json-type-validation"
-      ]
+      "ignoreDependencies": ["@daml/types", "@mojotech/json-type-validation"]
     }
   }
 }

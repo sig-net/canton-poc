@@ -33,8 +33,8 @@ export const ERC20_HOLDING = Erc20Holding.templateId;
 
 export const SEPOLIA_CHAIN_ID = 11155111;
 export const GAS_LIMIT = 100_000n;
-export const POLL_INTERVAL = 5_000;
-export const POLL_TIMEOUT = 180_000;
+const POLL_INTERVAL = 5_000;
+const POLL_TIMEOUT = 180_000;
 export const KEY_VERSION = 1;
 export const ALGO = "ECDSA";
 export const DEST = "ethereum";
@@ -140,7 +140,7 @@ export async function setupVault(
 
 // ── Deposit flow ──
 
-export interface DepositResult {
+interface DepositResult {
   holdingCid: string;
   holdingArgs: Erc20Holding;
   requestId: string;

@@ -33,15 +33,15 @@ Canton should adopt this pattern because:
 
 ## Current vs Proposed
 
-| Aspect | Current | Proposed |
-|--------|---------|----------|
-| `mpcOutput` content | `"01"` or `"00"` | ABI-encoded return data (e.g. `0000...0001` for `bool true`) |
-| Error signal | `mpcOutput == "00"` | 4-byte `deadbeef` prefix |
-| Deposit claim check | `outcome.mpcOutput == "01"` | `abiDecodeBool mpcOutput 0 == True` |
-| Withdrawal refund check | `outcome.mpcOutput /= "01"` | `hasErrorPrefix mpcOutput \|\| not (abiDecodeBool mpcOutput 0)` |
-| Return data extraction | Not done — checks receipt status only | Re-simulate call at `blockNumber - 1`, ABI decode result |
-| Schema system | None | `PendingEvmTx` carries two schemas: `outputDeserializationSchema` + `respondSerializationSchema` (JSON `[{name,type}]` arrays, same format as Solana's `sign_bidirectional`) |
-| Response hash input | `keccak256(responseTypeHash \|\| requestId \|\| keccak256("01"))` | `keccak256(responseTypeHash \|\| requestId \|\| keccak256(abiEncodedOutput))` |
+| Aspect                  | Current                                                           | Proposed                                                                                                                                                                     |
+| ----------------------- | ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mpcOutput` content     | `"01"` or `"00"`                                                  | ABI-encoded return data (e.g. `0000...0001` for `bool true`)                                                                                                                 |
+| Error signal            | `mpcOutput == "00"`                                               | 4-byte `deadbeef` prefix                                                                                                                                                     |
+| Deposit claim check     | `outcome.mpcOutput == "01"`                                       | `abiDecodeBool mpcOutput 0 == True`                                                                                                                                          |
+| Withdrawal refund check | `outcome.mpcOutput /= "01"`                                       | `hasErrorPrefix mpcOutput \|\| not (abiDecodeBool mpcOutput 0)`                                                                                                              |
+| Return data extraction  | Not done — checks receipt status only                             | Re-simulate call at `blockNumber - 1`, ABI decode result                                                                                                                     |
+| Schema system           | None                                                              | `PendingEvmTx` carries two schemas: `outputDeserializationSchema` + `respondSerializationSchema` (JSON `[{name,type}]` arrays, same format as Solana's `sign_bidirectional`) |
+| Response hash input     | `keccak256(responseTypeHash \|\| requestId \|\| keccak256("01"))` | `keccak256(responseTypeHash \|\| requestId \|\| keccak256(abiEncodedOutput))`                                                                                                |
 
 ## Design
 
@@ -75,12 +75,13 @@ Both schemas use the **same JSON format** as the Solana program — an array
 of `{name, type}` objects matching the `AbiSchemaField` type from fakenet:
 
 ```json
-[{"name":"","type":"bool"}]
+[{ "name": "", "type": "bool" }]
 ```
 
 For ERC20 `transfer(address,uint256) returns (bool)`, both schemas are
 `[{"name":"","type":"bool"}]`. They diverge for more complex returns — e.g.
 a DEX swap might use:
+
 - `outputDeserializationSchema`: `[{"name":"amountOut","type":"uint256"}]`
 - `respondSerializationSchema`: `[{"name":"amountOut","type":"uint256"}]`
 
@@ -106,12 +107,15 @@ always uses ABI (format 1) since the Daml ledger decodes ABI via
 **`PendingEvmTx`** — add `outputDeserializationSchema : Text` and `respondSerializationSchema : Text`
 
 **`ClaimEvmDeposit`** — replace:
+
 ```haskell
 -- before
 assertMsg "MPC reported ETH transaction failure"
   (outcome.mpcOutput == "01")
 ```
+
 with:
+
 ```haskell
 -- after
 assertMsg "MPC reported ETH transaction failure"
@@ -121,13 +125,16 @@ assertMsg "ERC20 transfer returned false" success
 ```
 
 **`CompleteEvmWithdrawal`** — replace:
+
 ```haskell
 -- before
 if outcome.mpcOutput == "01"
   then return None
   else do ...refund...
 ```
+
 with:
+
 ```haskell
 -- after
 let shouldRefund =
@@ -142,6 +149,7 @@ if not shouldRefund
 `[{"name":"","type":"bool"}]` when creating `PendingEvmTx`.
 
 **New helper** (in `Abi.daml` or `Erc20Vault.daml`):
+
 ```haskell
 hasErrorPrefix : BytesHex -> Bool
 hasErrorPrefix hex = DA.Text.length hex >= 8 && DA.Text.take 8 hex == "deadbeef"
@@ -188,8 +196,7 @@ if (receipt.status === "success") {
   const returnData = await extractReturnData(client, tx, receipt);
   mpcOutput = returnData; // ABI-encoded, e.g. "0000...0001"
 } else {
-  mpcOutput = "deadbeef" + AbiCoder.defaultAbiCoder()
-    .encode(["bool"], [true]).slice(2); // error prefix + { error: true }
+  mpcOutput = "deadbeef" + AbiCoder.defaultAbiCoder().encode(["bool"], [true]).slice(2); // error prefix + { error: true }
 }
 ```
 
@@ -218,8 +225,7 @@ This is the same technique fakenet uses in `EthereumMonitor.extractTransactionOu
 **Nonce-consumed-but-no-receipt** (tx replaced) — also use error prefix:
 
 ```typescript
-mpcOutput = "deadbeef" + AbiCoder.defaultAbiCoder()
-  .encode(["bool"], [true]).slice(2);
+mpcOutput = "deadbeef" + AbiCoder.defaultAbiCoder().encode(["bool"], [true]).slice(2);
 ```
 
 #### 4. TypeScript — `signer.ts`
@@ -236,10 +242,12 @@ arbitrary hex string. The function is agnostic to the content.
 #### 6. TypeScript — Tests
 
 **`sepolia-e2e.test.ts`** — update assertions:
+
 - Verify `mpcOutput` is 64 hex chars (one ABI-encoded `bool` slot) instead of `"01"`
 - Verify `abiDecode(['bool'], '0x' + mpcOutput)[0] === true`
 
 **New unit test** — `abi-return-data.test.ts`:
+
 - Test `extractReturnData` with mocked `client.call` responses
 - Test error prefix generation and parsing
 - Test round-trip: TypeScript ABI-encodes → Daml `abiDecodeBool` decodes
@@ -256,7 +264,7 @@ export interface PendingTx {
   fromAddress: Hex;
   nonce: number;
   checkCount: number;
-  evmParams: CantonEvmParams;  // NEW — needed for re-simulation
+  evmParams: CantonEvmParams; // NEW — needed for re-simulation
 }
 ```
 

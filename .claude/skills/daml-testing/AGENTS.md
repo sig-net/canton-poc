@@ -154,11 +154,11 @@ result <- submit (actAs issuer <> readAs auditor) do
 
 The `actAs` / `readAs` combinators replace the old `submitMulti` API:
 
-| Old (deprecated)                            | New (Daml 3.x)                                     |
-|---------------------------------------------|-----------------------------------------------------|
-| `submitMulti [p1, p2] [] do ...`            | `submit (actAs p1 <> actAs p2) do ...`              |
-| `submitMulti [p1] [p2] do ...`              | `submit (actAs p1 <> readAs p2) do ...`             |
-| `submitMulti [p1, p2] [p3] do ...`          | `submit (actAs p1 <> actAs p2 <> readAs p3) do ...` |
+| Old (deprecated)                   | New (Daml 3.x)                                      |
+| ---------------------------------- | --------------------------------------------------- |
+| `submitMulti [p1, p2] [] do ...`   | `submit (actAs p1 <> actAs p2) do ...`              |
+| `submitMulti [p1] [p2] do ...`     | `submit (actAs p1 <> readAs p2) do ...`             |
+| `submitMulti [p1, p2] [p3] do ...` | `submit (actAs p1 <> actAs p2 <> readAs p3) do ...` |
 
 - `actAs` grants authority to act (sign) as a party.
 - `readAs` grants visibility but not authority.
@@ -483,7 +483,6 @@ testSomething = do
    check before the failing step to confirm the contract still exists.
 
 5. **Check signatory/observer rules if submission fails:**
-
    - The submitting parties (via `actAs`) must include all required signatories.
    - If a choice requires multiple signatories, combine them with `<>`.
    - Use `readAs` for parties that need visibility but not signing authority.
@@ -505,6 +504,7 @@ testSomething = do
 ### 1. Forgetting `actAs` for multi-party choices
 
 **Wrong:**
+
 ```daml
 -- This only authorizes issuer, not depositor
 result <- submit issuer do
@@ -514,6 +514,7 @@ result <- submit issuer do
 ```
 
 **Right:**
+
 ```daml
 result <- submit (actAs issuer <> actAs depositor) do
   exerciseCmd orchCid RequestDeposit with
@@ -524,12 +525,14 @@ result <- submit (actAs issuer <> actAs depositor) do
 ### 2. Using deprecated `submitMulti`
 
 **Wrong:**
+
 ```daml
 result <- submitMulti [issuer, depositor] [] do
   exerciseCmd cid MyChoice with ...
 ```
 
 **Right:**
+
 ```daml
 result <- submit (actAs issuer <> actAs depositor) do
   exerciseCmd cid MyChoice with ...
@@ -538,6 +541,7 @@ result <- submit (actAs issuer <> actAs depositor) do
 ### 3. Not unwrapping Optional from `queryContractId`
 
 **Wrong:**
+
 ```daml
 pending <- queryContractId depositor pendingCid
 -- pending is Optional, not the actual data!
@@ -545,6 +549,7 @@ assertMsg "check" (pending.amount == 100)  -- compile error
 ```
 
 **Right:**
+
 ```daml
 maybePending <- queryContractId depositor pendingCid
 let pd = fromSome maybePending
@@ -554,12 +559,14 @@ assertMsg "check" (pd.amount == 100)
 ### 4. Hardcoding party strings
 
 **Wrong:**
+
 ```daml
 -- Party literals are fragile and may not match runtime identities
 let issuer = getParty "Issuer"
 ```
 
 **Right:**
+
 ```daml
 issuer <- allocateParty "Issuer"
 ```
@@ -567,6 +574,7 @@ issuer <- allocateParty "Issuer"
 ### 5. Missing `import Daml.Script`
 
 **Wrong:**
+
 ```daml
 module Test where
 
@@ -577,6 +585,7 @@ testFoo = do ...
 ```
 
 **Right:**
+
 ```daml
 module Test where
 

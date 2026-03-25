@@ -9,9 +9,8 @@ import {
 import { sepolia } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
 
-export const DEPOSIT_PATH = "m/44/60/0/0";
 export const DEPOSIT_AMOUNT = 1_000_000_000_000_000n; // 0.001 DAI (18 decimals)
-export const FAUCET_ETH_AMOUNT = 2_000_000_000_000_000n; // 0.002 ETH (~2x ERC20 transfer cost)
+const FAUCET_ETH_AMOUNT = 2_000_000_000_000_000n; // 0.002 ETH (~2x ERC20 transfer cost)
 
 /**
  * Get the current nonce for an address on Sepolia.

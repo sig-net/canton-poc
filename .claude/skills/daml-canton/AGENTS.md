@@ -33,6 +33,7 @@ dpm sandbox --json-api-port 7575
 ```
 
 The sandbox starts a full Canton node with:
+
 - Sequencer, Mediator, and Participant nodes
 - JSON Ledger API v2 on the specified port (default 7575)
 - Admin API for topology management
@@ -57,6 +58,7 @@ curl -X POST http://localhost:7575/v2/parties \
 ```
 
 Response:
+
 ```json
 {
   "partyDetails": {
@@ -93,6 +95,7 @@ curl -X POST http://localhost:7575/v2/users \
 ### User Rights Explained
 
 Users need:
+
 - `CanActAs` to submit commands as a party
 - `CanReadAs` to read contracts visible to a party
 - A user can have rights for multiple parties
@@ -139,18 +142,18 @@ Canton enforces strict upgrade rules:
 
 ### Available Endpoints
 
-| Endpoint | Method | Purpose |
-|----------|--------|---------|
-| `/v2/parties` | POST | Allocate a party |
-| `/v2/users` | POST | Create user with rights |
-| `/v2/dars?vetAllPackages=true` | POST | Upload a DAR (binary) |
-| `/v2/commands/submit-and-wait-for-transaction` | POST | Submit commands (sync, full transaction tree) |
-| `/v2/commands/submit-and-wait` | POST | Submit commands (sync, returns less data) |
-| `/v2/commands/async/submit` | POST | Submit commands (async) |
-| `/v2/state/active-contracts` | POST | Query active contracts |
-| `/docs/openapi` | GET | OpenAPI 3.0.3 spec (YAML) |
-| `/docs/asyncapi` | GET | AsyncAPI spec (WebSocket) |
-| `/health` | GET | Health check |
+| Endpoint                                       | Method | Purpose                                       |
+| ---------------------------------------------- | ------ | --------------------------------------------- |
+| `/v2/parties`                                  | POST   | Allocate a party                              |
+| `/v2/users`                                    | POST   | Create user with rights                       |
+| `/v2/dars?vetAllPackages=true`                 | POST   | Upload a DAR (binary)                         |
+| `/v2/commands/submit-and-wait-for-transaction` | POST   | Submit commands (sync, full transaction tree) |
+| `/v2/commands/submit-and-wait`                 | POST   | Submit commands (sync, returns less data)     |
+| `/v2/commands/async/submit`                    | POST   | Submit commands (async)                       |
+| `/v2/state/active-contracts`                   | POST   | Query active contracts                        |
+| `/docs/openapi`                                | GET    | OpenAPI 3.0.3 spec (YAML)                     |
+| `/docs/asyncapi`                               | GET    | AsyncAPI spec (WebSocket)                     |
+| `/health`                                      | GET    | Health check                                  |
 
 ### Command Submission Format
 
@@ -185,6 +188,7 @@ Canton enforces strict upgrade rules:
 ```
 
 The `#` prefix enables package-name resolution so you don't need the full package hash. Examples:
+
 - `#canton-mpc-poc:Erc20Vault:VaultOrchestrator`
 - `#canton-mpc-poc:Erc20Vault:DepositRequest`
 
@@ -313,6 +317,7 @@ ls log/canton.log
 ```
 
 Canton logs include:
+
 - Transaction processing events
 - Party/user management operations
 - Package upload results
@@ -336,18 +341,22 @@ Use this to verify the sandbox is fully started before making API calls. The JSO
 ### Sandbox Won't Start
 
 1. **Check `JAVA_HOME` is set to JDK 17+:**
+
    ```bash
    java -version  # Must be 17+
    echo $JAVA_HOME
    ```
 
 2. **Check port is free:**
+
    ```bash
    lsof -i :7575
    ```
+
    Kill any process using the port, or choose a different port with `--json-api-port`.
 
 3. **Increase JVM memory if OOM:**
+
    ```bash
    export _JAVA_OPTIONS="-Xmx4g"
    ```
@@ -452,15 +461,15 @@ cd test && npm test
 
 ### Common Commands
 
-| Task | Command |
-|------|---------|
-| Build DAR | `dpm build` |
-| Run Daml tests | `dpm test` |
-| Start sandbox | `dpm sandbox --json-api-port 7575 --dar .daml/dist/my-project-0.1.0.dar` |
-| Health check | `curl http://localhost:7575/health` |
-| Allocate party | `curl -X POST http://localhost:7575/v2/parties -H "Content-Type: application/json" -d '{"partyIdHint":"Alice","identityProviderId":""}'` |
-| Upload DAR | `curl -X POST "http://localhost:7575/v2/dars?vetAllPackages=true" -H "Content-Type: application/octet-stream" --data-binary @.daml/dist/my-project-0.1.0.dar` |
-| Get OpenAPI spec | `curl http://localhost:7575/docs/openapi` |
+| Task             | Command                                                                                                                                                       |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Build DAR        | `dpm build`                                                                                                                                                   |
+| Run Daml tests   | `dpm test`                                                                                                                                                    |
+| Start sandbox    | `dpm sandbox --json-api-port 7575 --dar .daml/dist/my-project-0.1.0.dar`                                                                                      |
+| Health check     | `curl http://localhost:7575/health`                                                                                                                           |
+| Allocate party   | `curl -X POST http://localhost:7575/v2/parties -H "Content-Type: application/json" -d '{"partyIdHint":"Alice","identityProviderId":""}'`                      |
+| Upload DAR       | `curl -X POST "http://localhost:7575/v2/dars?vetAllPackages=true" -H "Content-Type: application/octet-stream" --data-binary @.daml/dist/my-project-0.1.0.dar` |
+| Get OpenAPI spec | `curl http://localhost:7575/docs/openapi`                                                                                                                     |
 
 ### Important Reminders
 

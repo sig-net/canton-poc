@@ -113,20 +113,20 @@ const VAULT_ORCHESTRATOR = VaultOrchestrator.templateId;
 
 ## Type Mappings (Daml -> TypeScript)
 
-| Daml Type | TypeScript Type | JS Representation | Notes |
-|---|---|---|---|
-| `Text` | `string` | `string` | |
-| `Int` | `string` | `string` | Avoids JS number precision loss! |
-| `Decimal` | `string` | `string` | |
-| `Bool` | `boolean` | `boolean` | |
-| `Party` | `string` | `string` | Full party ID with namespace |
-| `ContractId` | `string` | `string` | |
-| `Time` | `string` | `string` | ISO 8601 |
-| `Date` | `string` | `string` | |
-| `[a]` | `a[]` | `a[]` | |
-| `Optional a` | `a \| null` | conditional | |
-| `TextMap a` | `{ [key: string]: a }` | object | |
-| `BytesHex` | `string` | `string` | Bare hex in Daml, 0x-prefixed in TS/viem |
+| Daml Type    | TypeScript Type        | JS Representation | Notes                                    |
+| ------------ | ---------------------- | ----------------- | ---------------------------------------- |
+| `Text`       | `string`               | `string`          |                                          |
+| `Int`        | `string`               | `string`          | Avoids JS number precision loss!         |
+| `Decimal`    | `string`               | `string`          |                                          |
+| `Bool`       | `boolean`              | `boolean`         |                                          |
+| `Party`      | `string`               | `string`          | Full party ID with namespace             |
+| `ContractId` | `string`               | `string`          |                                          |
+| `Time`       | `string`               | `string`          | ISO 8601                                 |
+| `Date`       | `string`               | `string`          |                                          |
+| `[a]`        | `a[]`                  | `a[]`             |                                          |
+| `Optional a` | `a \| null`            | conditional       |                                          |
+| `TextMap a`  | `{ [key: string]: a }` | object            |                                          |
+| `BytesHex`   | `string`               | `string`          | Bare hex in Daml, 0x-prefixed in TS/viem |
 
 **CRITICAL**: `Int` maps to `string` in TypeScript. Pass amounts as `"100000000"` not `100000000`. JavaScript numbers lose precision beyond `Number.MAX_SAFE_INTEGER` (2^53 - 1), which is why the Daml codegen maps `Int` to `string`.
 
@@ -246,20 +246,17 @@ async function submitAndWait(
   actAs: string[],
   commands: components["schemas"]["JsCommand"][],
 ): Promise<TransactionResponse> {
-  const { data, error } = await client.POST(
-    "/v2/commands/submit-and-wait-for-transaction",
-    {
-      body: {
-        commands: {
-          commands,
-          commandId: crypto.randomUUID(),
-          userId,
-          actAs,
-          readAs: actAs,
-        },
-      } as components["schemas"]["JsSubmitAndWaitForTransactionRequest"],
-    },
-  );
+  const { data, error } = await client.POST("/v2/commands/submit-and-wait-for-transaction", {
+    body: {
+      commands: {
+        commands,
+        commandId: crypto.randomUUID(),
+        userId,
+        actAs,
+        readAs: actAs,
+      },
+    } as components["schemas"]["JsSubmitAndWaitForTransactionRequest"],
+  });
   if (error) throw new Error(`submitAndWait failed: ${JSON.stringify(error)}`);
   return data!;
 }
@@ -346,17 +343,13 @@ const args = event.createArgument;
 ### Extracting Events from Transaction Results
 
 ```typescript
-function extractCreatedEvents(
-  result: TransactionResponse,
-): JsCreatedEvent[] {
+function extractCreatedEvents(result: TransactionResponse): JsCreatedEvent[] {
   return (result.transaction?.events ?? [])
     .filter((e) => e.CreatedEvent)
     .map((e) => e.CreatedEvent!);
 }
 
-function extractArchivedContractIds(
-  result: TransactionResponse,
-): string[] {
+function extractArchivedContractIds(result: TransactionResponse): string[] {
   return (result.transaction?.events ?? [])
     .filter((e) => e.ArchivedEvent)
     .map((e) => e.ArchivedEvent!.contractId!);
@@ -445,6 +438,7 @@ ws.onclose = () => {
 ```
 
 The WebSocket connection at `/v2/updates` streams ledger updates in real time. The subscription message specifies:
+
 - `beginExclusive`: offset to start streaming from (0 for beginning)
 - `verbose`: include full template IDs in events
 - `updateFormat.includeTransactions`: which transactions to include, with party-based event filtering
@@ -454,18 +448,18 @@ The WebSocket connection at `/v2/updates` streams ledger updates in real time. T
 
 ## JSON Ledger API v2 Endpoint Reference
 
-| Endpoint | Method | Purpose |
-|---|---|---|
-| `/v2/parties` | POST | Allocate a party |
-| `/v2/users` | POST | Create user with rights |
-| `/v2/users/{userId}/rights` | POST | Add rights to existing user |
-| `/v2/dars?vetAllPackages=true` | POST | Upload a DAR (binary body) |
-| `/v2/commands/submit-and-wait-for-transaction` | POST | Submit commands, wait for result |
-| `/v2/commands/async/submit` | POST | Submit commands asynchronously |
-| `/v2/state/active-contracts` | POST | Query active contract set |
-| `/v2/updates` | WebSocket | Stream ledger updates |
-| `/docs/openapi` | GET | OpenAPI spec (YAML) |
-| `/docs/asyncapi` | GET | AsyncAPI spec (WebSocket) |
+| Endpoint                                       | Method    | Purpose                          |
+| ---------------------------------------------- | --------- | -------------------------------- |
+| `/v2/parties`                                  | POST      | Allocate a party                 |
+| `/v2/users`                                    | POST      | Create user with rights          |
+| `/v2/users/{userId}/rights`                    | POST      | Add rights to existing user      |
+| `/v2/dars?vetAllPackages=true`                 | POST      | Upload a DAR (binary body)       |
+| `/v2/commands/submit-and-wait-for-transaction` | POST      | Submit commands, wait for result |
+| `/v2/commands/async/submit`                    | POST      | Submit commands asynchronously   |
+| `/v2/state/active-contracts`                   | POST      | Query active contract set        |
+| `/v2/updates`                                  | WebSocket | Stream ledger updates            |
+| `/docs/openapi`                                | GET       | OpenAPI spec (YAML)              |
+| `/docs/asyncapi`                               | GET       | AsyncAPI spec (WebSocket)        |
 
 ---
 
@@ -490,9 +484,7 @@ const ADMIN_USER = `admin-${RUN_ID}`;
 
 beforeAll(async () => {
   // Upload DAR
-  await uploadDar(
-    resolve(__dirname, "../../.daml/dist/canton-mpc-poc-0.0.1.dar"),
-  );
+  await uploadDar(resolve(__dirname, "../../.daml/dist/canton-mpc-poc-0.0.1.dar"));
 
   // Allocate parties with unique names
   issuer = await allocateParty(`Issuer_${RUN_ID}`);
@@ -504,15 +496,10 @@ beforeAll(async () => {
 
 describe("VaultOrchestrator", () => {
   it("should create a contract", async () => {
-    const result = await createContract(
-      ADMIN_USER,
-      [issuer],
-      VaultOrchestrator.templateId,
-      {
-        issuer,
-        mpcPublicKey: TEST_PUB_KEY,
-      },
-    );
+    const result = await createContract(ADMIN_USER, [issuer], VaultOrchestrator.templateId, {
+      issuer,
+      mpcPublicKey: TEST_PUB_KEY,
+    });
 
     const events = result.transaction!.events!;
     const created = events.find((e) => e.CreatedEvent)?.CreatedEvent;
@@ -522,16 +509,13 @@ describe("VaultOrchestrator", () => {
 
   it("should exercise a choice", async () => {
     // First create the contract
-    const createResult = await createContract(
-      ADMIN_USER,
-      [issuer],
-      VaultOrchestrator.templateId,
-      { issuer, mpcPublicKey: TEST_PUB_KEY },
-    );
+    const createResult = await createContract(ADMIN_USER, [issuer], VaultOrchestrator.templateId, {
+      issuer,
+      mpcPublicKey: TEST_PUB_KEY,
+    });
 
-    const contractId = createResult.transaction!.events!.find(
-      (e) => e.CreatedEvent,
-    )!.CreatedEvent!.contractId!;
+    const contractId = createResult.transaction!.events!.find((e) => e.CreatedEvent)!.CreatedEvent!
+      .contractId!;
 
     // Then exercise a choice on it
     const exerciseResult = await exerciseChoice(
@@ -574,10 +558,14 @@ Daml `Int` maps to TypeScript `string`, not `number`. Always pass integer amount
 
 ```typescript
 // CORRECT
-{ amount: "100000000" }
+{
+  amount: "100000000";
+}
 
 // WRONG - will lose precision for large values
-{ amount: 100000000 }
+{
+  amount: 100000000;
+}
 ```
 
 ### 3. DAR Upload Idempotency
@@ -643,6 +631,7 @@ Canton enforces strict upgrade compatibility. Renaming a template field (e.g., `
 ### 13. Daml Finance Naming Conventions
 
 Follow Daml Finance / CIP-56 Canton Token Standard naming:
+
 - **`issuer`** — the party that issues/manages the instrument (not `operator`)
 - **`Holding`** — asset ownership contracts (e.g., `Erc20Holding`, not `UserErc20Balance`)
 - **`owner`** — the party that owns the holding

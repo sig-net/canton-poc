@@ -17,7 +17,7 @@ const EnvSchema = z.object({
   VAULT_ID: z.string().default("default-vault"),
 });
 
-export type Env = z.infer<typeof EnvSchema>;
+type Env = z.infer<typeof EnvSchema>;
 
 export function loadEnv(): Env {
   return EnvSchema.parse({

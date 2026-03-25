@@ -141,24 +141,24 @@ data Status
 
 Complete mapping of Daml types to their descriptions and TypeScript equivalents (for JSON API / Daml-to-TS codegen):
 
-| Daml Type | Description | TS Equivalent |
-|-----------|-------------|---------------|
-| `Text` | UTF-8 string | `string` |
-| `Int` | 64-bit signed integer | `string` (avoids JS precision loss) |
-| `Decimal` | Fixed-point decimal (10 integer + 28 fractional digits) | `string` |
-| `Bool` | Boolean value | `boolean` |
-| `Party` | Ledger party identifier | `string` |
-| `ContractId a` | Reference to a contract of template `a` | `string` |
-| `Time` | UTC timestamp with microsecond precision | `string` (ISO 8601) |
-| `Date` | Calendar date (no time component) | `string` |
-| `Optional a` | Nullable value, either `Some a` or `None` | `a \| null` |
-| `[a]` | List (linked list) | `a[]` |
-| `TextMap a` | String-keyed map | `{ [key: string]: a }` |
-| `Map k v` | Ordered map with any comparable key | `Array<[k, v]>` |
-| `Set a` | Ordered set of comparable values | `a[]` |
-| `(a, b)` | Tuple | `{ _1: a, _2: b }` |
-| `(a, b, c)` | Triple | `{ _1: a, _2: b, _3: c }` |
-| `BytesHex` | Hex-encoded bytes (from `DA.Crypto.Text`) | `string` |
+| Daml Type      | Description                                             | TS Equivalent                       |
+| -------------- | ------------------------------------------------------- | ----------------------------------- |
+| `Text`         | UTF-8 string                                            | `string`                            |
+| `Int`          | 64-bit signed integer                                   | `string` (avoids JS precision loss) |
+| `Decimal`      | Fixed-point decimal (10 integer + 28 fractional digits) | `string`                            |
+| `Bool`         | Boolean value                                           | `boolean`                           |
+| `Party`        | Ledger party identifier                                 | `string`                            |
+| `ContractId a` | Reference to a contract of template `a`                 | `string`                            |
+| `Time`         | UTC timestamp with microsecond precision                | `string` (ISO 8601)                 |
+| `Date`         | Calendar date (no time component)                       | `string`                            |
+| `Optional a`   | Nullable value, either `Some a` or `None`               | `a \| null`                         |
+| `[a]`          | List (linked list)                                      | `a[]`                               |
+| `TextMap a`    | String-keyed map                                        | `{ [key: string]: a }`              |
+| `Map k v`      | Ordered map with any comparable key                     | `Array<[k, v]>`                     |
+| `Set a`        | Ordered set of comparable values                        | `a[]`                               |
+| `(a, b)`       | Tuple                                                   | `{ _1: a, _2: b }`                  |
+| `(a, b, c)`    | Triple                                                  | `{ _1: a, _2: b, _3: c }`           |
+| `BytesHex`     | Hex-encoded bytes (from `DA.Crypto.Text`)               | `string`                            |
 
 ### Numeric Precision Notes
 
@@ -275,6 +275,7 @@ A consuming choice **archives** (consumes) the contract when exercised. The cont
 ```
 
 Structure:
+
 - `choice ChoiceName : ReturnType` -- name and return type
 - `with` block -- choice arguments (can be empty if no args)
 - `controller` -- who can exercise this choice

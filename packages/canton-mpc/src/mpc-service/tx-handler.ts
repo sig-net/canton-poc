@@ -43,7 +43,7 @@ export interface PendingTx {
   checkCount: number;
 }
 
-export type CheckResult = "pending" | "done" | "failed";
+type CheckResult = "pending" | "done" | "failed";
 
 // ---------------------------------------------------------------------------
 // Error classification
