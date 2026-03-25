@@ -85,8 +85,8 @@ importers:
         specifier: ^2.0.1
         version: 2.0.1
       canton-mpc:
-        specifier: workspace:*
-        version: link:../packages/canton-mpc
+        specifier: 0.0.1
+        version: 0.0.1(bufferutil@4.1.0)(typescript@5.9.3)(viem@2.47.6(bufferutil@4.1.0)(typescript@5.9.3)(zod@4.3.6))(zod@4.3.6)
       dotenv:
         specifier: ^17.3.1
         version: 17.3.1
@@ -1108,6 +1108,11 @@ packages:
   camelcase@6.3.0:
     resolution: {integrity: sha512-Gmy6FhYlCY7uOElZUSbxo2UCDH8owEk996gkbrpsgGtrJLM3J7jGxl9Ic7Qwwj4ivOE5AWZWRMecDdF7hqGjFA==}
     engines: {node: '>=10'}
+
+  canton-mpc@0.0.1:
+    resolution: {integrity: sha512-UfzFZ1MKvmU/dhT/4QqrLO/2lPgAidLIV/EP+qDynYRIQIRw2phiHZanDEmJCqnPC6oy7VUnGm6eQOvBQZ81HA==}
+    peerDependencies:
+      viem: ^2.0.0
 
   chai@6.2.2:
     resolution: {integrity: sha512-NUPRluOfOiTKBKvWPtSD4PhFvWCqOi0BGStNWs57X9js7XGTprSmFoz5F0tWhR4WPjNeR9jXqdC7/UpSJTnlRg==}
@@ -3058,6 +3063,22 @@ snapshots:
   cac@7.0.0: {}
 
   camelcase@6.3.0: {}
+
+  canton-mpc@0.0.1(bufferutil@4.1.0)(typescript@5.9.3)(viem@2.47.6(bufferutil@4.1.0)(typescript@5.9.3)(zod@4.3.6))(zod@4.3.6):
+    dependencies:
+      '@daml/types': 3.4.11
+      '@mojotech/json-type-validation': 3.1.0
+      '@noble/curves': 2.0.1
+      openapi-fetch: 0.17.0
+      signet.js: 0.4.0(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@4.3.6)
+      viem: 2.47.6(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@4.3.6)
+      ws: 8.20.0(bufferutil@4.1.0)(utf-8-validate@6.0.6)
+    transitivePeerDependencies:
+      - bufferutil
+      - encoding
+      - typescript
+      - utf-8-validate
+      - zod
 
   chai@6.2.2: {}
 
