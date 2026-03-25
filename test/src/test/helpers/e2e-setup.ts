@@ -10,7 +10,6 @@ import {
   toSpkiPublicKey,
   reconstructSignedTx,
   submitRawTransaction,
-  loadEnv,
   DAR_PATH,
   VaultOrchestrator,
   Erc20Holding,
@@ -18,6 +17,7 @@ import {
   EvmTxOutcomeSignature,
   PendingEvmTx,
 } from "canton-mpc";
+import { loadEnv } from "../../config/env.js";
 import {
   DEPOSIT_AMOUNT,
   fetchNonce,
