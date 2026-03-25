@@ -1,6 +1,6 @@
 {
   "name": "canton-mpc",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "MPC-based ERC-20 custody service for Canton",
   "type": "module",
   "main": "dist/index.cjs",
