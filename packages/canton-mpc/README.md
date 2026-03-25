@@ -1,12 +1,12 @@
 # canton-mpc
 
-MPC-based ERC-20 custody service for [Canton](https://docs.digitalasset.com/). Watches for `PendingEvmTx` contracts on the Canton ledger, signs EVM transactions using threshold-derived keys via [signet.js](https://github.com/sig-net/signet.js), submits them to Sepolia, and reports outcomes back to Canton.
+Sig Network MPC service for [Canton](https://docs.digitalasset.com/). Watches for `PendingEvmTx` contracts on the Canton ledger, derives child keys and signs EVM transactions using [signet.js](https://github.com/sig-net/signet.js), records signatures on Canton, and monitors EVM receipts to report outcomes back to the ledger.
 
 ## Prerequisites
 
 | Tool           | Version                                             |
 | -------------- | --------------------------------------------------- |
-| Java           | 17+                                                 |
+| Java           | 21+                                                 |
 | Canton sandbox | Via [Daml SDK (DPM)](https://get.digitalasset.com/) |
 | Node.js        | 20+                                                 |
 
@@ -67,8 +67,8 @@ process.on("SIGTERM", () => server.shutdown());
 ## How It Works
 
 1. **Watch** — `MpcServer` opens a WebSocket stream to the Canton ledger, listening for `PendingEvmTx` contracts
-2. **Sign** — When a pending tx is detected, it derives a child key from the MPC root key, signs the EVM transaction, and exercises `SignEvmTx` on Canton
-3. **Monitor** — Polls the Sepolia RPC for the transaction receipt
+2. **Sign** — Derives a child key from the MPC root key, signs the EVM transaction hash, and exercises `SignEvmTx` on Canton (recording the ECDSA signature on-ledger)
+3. **Monitor** — Polls the EVM RPC for the transaction receipt (the signed transaction must be broadcast externally)
 4. **Report** — Once confirmed (or failed), signs the MPC response and exercises `ProvideEvmOutcomeSig` on Canton
 
 ## API
@@ -120,18 +120,18 @@ Absolute path to the bundled `canton-mpc-poc-0.0.1.dar`. Pass to `canton.uploadD
 
 ### Utilities
 
-| Export                                                   | Description                                      |
-| -------------------------------------------------------- | ------------------------------------------------ |
-| `deriveDepositAddress(pubKey, predecessorId, path)`      | Derive an EVM deposit address from MPC root key  |
-| `computeRequestId(...)`                                  | Compute the EIP-712 request ID for a transaction |
-| `toSpkiPublicKey(uncompressedKey)`                       | Convert uncompressed public key to SPKI format   |
-| `deriveChildPrivateKey(rootKey, predecessorId, path)`    | Derive a child signing key                       |
-| `reconstructSignedTx(evmParams, sig)`                    | Reconstruct a signed EVM transaction             |
-| `submitRawTransaction(rpcUrl, raw)`                      | Submit a raw transaction to an EVM RPC           |
-| `findCreated(events, templateFragment)`                  | Find a created event by template name            |
-| `VaultOrchestrator`, `PendingEvmTx`, `Erc20Holding`, ... | Daml template types                              |
+| Export                                                                           | Description                                      |
+| -------------------------------------------------------------------------------- | ------------------------------------------------ |
+| `deriveDepositAddress(rootPubKey, predecessorId, path)`                          | Derive an EVM deposit address from MPC root key  |
+| `computeRequestId(...)`                                                          | Compute the EIP-712 request ID for a transaction |
+| `toSpkiPublicKey(uncompressedPubKey)`                                            | Convert uncompressed public key to SPKI format   |
+| `deriveChildPrivateKey(rootPrivateKey, predecessorId, path)`                     | Derive a child signing key                       |
+| `reconstructSignedTx(evmParams, signature)`                                      | Reconstruct a signed EVM transaction             |
+| `submitRawTransaction(rpcUrl, raw)`                                              | Submit a raw transaction to an EVM RPC           |
+| `findCreated(events, templateFragment)`                                          | Find a created event by template name            |
+| `VaultOrchestrator`, `PendingEvmTx`, `Erc20Holding`, `DepositAuthorization`, ... | Daml template types                              |
 
 ## Limitations
 
-- **Sepolia only** — EVM chain is hardcoded to Sepolia (chain ID 11155111)
+- **Sepolia only** — EVM monitoring and utilities are hardcoded to Sepolia (chain ID 11155111)
 - **Single instance** — `MpcServer` is stateful; don't run multiple instances against the same Canton party
