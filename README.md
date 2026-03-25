@@ -6,9 +6,9 @@ MPC-based ERC-20 custody on Canton. Daml smart contracts manage vault state (dep
 
 | Tool           | Version | Install                                                           |
 | -------------- | ------- | ----------------------------------------------------------------- |
-| Java           | 17+     | [Temurin](https://adoptium.net/)                                  |
+| Java           | 21+     | [Temurin](https://adoptium.net/)                                  |
 | Daml SDK (DPM) | 3.4.11  | `curl -sSL https://get.digitalasset.com/install/install.sh \| sh` |
-| Node.js        | 20+     | [nodejs.org](https://nodejs.org/)                                 |
+| Node.js        | 24+     | [nodejs.org](https://nodejs.org/)                                 |
 | pnpm           | 10+     | `corepack enable && corepack prepare pnpm@latest --activate`      |
 
 After installing DPM, make sure `~/.dpm/bin` is on your `PATH`.
