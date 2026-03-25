@@ -16,13 +16,13 @@ The sandbox must be running before tests. The e2e test (sepolia-e2e) needs it; u
 ```bash
 # 1. Build DAR and regenerate codegen (required after Daml changes)
 dpm build
-cd client && pnpm codegen:daml
+cd test && pnpm codegen:daml
 
 # 2. Start sandbox in a separate terminal (keep running)
-cd client && pnpm daml:sandbox
+cd test && pnpm daml:sandbox
 
 # 3. Run all tests (unit + e2e)
-cd client && pnpm test
+cd test && pnpm test
 ```
 
 ### Sepolia E2E tests
@@ -31,7 +31,7 @@ Requires `.env` with `SEPOLIA_RPC_URL`, `MPC_ROOT_PRIVATE_KEY`, `MPC_ROOT_PUBLIC
 
 ```bash
 # Start sandbox in background first, then:
-cd client
+cd test
 pnpm sepolia:preflight    # verify faucet balances
 pnpm test:e2e:sepolia
 ```

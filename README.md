@@ -15,14 +15,14 @@ After installing DPM, make sure `~/.dpm/bin` is on your `PATH`.
 
 ## Configuration
 
-The MPC service reads `CANTON_JSON_API_URL` from `client/.env` and passes it to the `CantonClient` constructor. Defaults to `http://localhost:7575` if unset. Tests always use the default.
+The MPC service reads `CANTON_JSON_API_URL` from `test/.env` and passes it to the `CantonClient` constructor. Defaults to `http://localhost:7575` if unset. Tests always use the default.
 
 ```bash
-# In client/.env — point to a remote or non-default sandbox
+# In test/.env — point to a remote or non-default sandbox
 CANTON_JSON_API_URL=http://my-canton-node:7575
 ```
 
-See `client/.env.example` for all available variables.
+See `test/.env.example` for all available variables.
 
 ## Quick Start
 
@@ -30,7 +30,7 @@ See `client/.env.example` for all available variables.
 
 ```bash
 dpm build
-cd client
+cd test
 pnpm run codegen:daml
 pnpm install
 ```
@@ -40,7 +40,7 @@ pnpm install
 In a separate terminal (keep it running):
 
 ```bash
-cd client
+cd test
 pnpm daml:sandbox
 ```
 
@@ -53,7 +53,7 @@ curl -sf http://localhost:7575/docs/openapi > /dev/null && echo "Ready"
 ### 3. Run tests
 
 ```bash
-cd client
+cd test
 pnpm test          # single run (unit + integration)
 pnpm test:watch    # watch mode
 ```
@@ -63,7 +63,7 @@ pnpm test:watch    # watch mode
 If you change Daml sources and need a full clean rebuild (requires sandbox running for OpenAPI codegen):
 
 ```bash
-cd client && pnpm generate
+cd test && pnpm generate
 ```
 
 This runs `clean -> daml:build -> codegen:daml -> codegen:api -> install`.
@@ -84,7 +84,7 @@ End-to-end tests that exercise the full deposit/withdrawal lifecycle against a l
 ### Setup
 
 ```bash
-cd client
+cd test
 cp .env.example .env
 ```
 
@@ -124,7 +124,7 @@ pnpm test:e2e:sepolia
 
 ## Available Scripts
 
-From `client/`:
+From `test/`:
 
 | Script | Description |
 |--------|-------------|

@@ -1,11 +1,10 @@
-import { defineConfig } from "eslint/config";
 import eslint from "@eslint/js";
 import tseslint from "typescript-eslint";
 import eslintConfigPrettier from "eslint-config-prettier";
 
-export default defineConfig(
+export default tseslint.config(
   {
-    ignores: ["dist/", "generated/", "node_modules/"],
+    ignores: ["**/dist/**", "**/generated/**", "**/node_modules/**", "**/.daml/**", "**/*.mjs"],
   },
   eslint.configs.recommended,
   tseslint.configs.recommendedTypeChecked,
@@ -13,7 +12,9 @@ export default defineConfig(
   {
     languageOptions: {
       parserOptions: {
-        projectService: true,
+        projectService: {
+          allowDefaultProject: ["eslint.config.ts", "packages/canton-mpc/tsdown.config.ts"],
+        },
         tsconfigRootDir: import.meta.dirname,
       },
     },
@@ -27,5 +28,9 @@ export default defineConfig(
       "@typescript-eslint/no-useless-empty-export": "error",
       "no-useless-return": "error",
     },
+  },
+  {
+    files: ["eslint.config.ts", "packages/canton-mpc/tsdown.config.ts"],
+    ...tseslint.configs.disableTypeChecked,
   },
 );

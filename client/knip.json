@@ -1,7 +1,0 @@
-{
-  "$schema": "https://unpkg.com/knip@5/schema.json",
-  "entry": ["src/**/*.ts"],
-  "project": ["src/**/*.ts"],
-  "ignoreDependencies": ["canton-mpc"],
-  "ignoreBinaries": ["dpm"]
-}

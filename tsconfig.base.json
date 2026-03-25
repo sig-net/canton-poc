@@ -6,7 +6,9 @@
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "noUncheckedSideEffectImports": true,
     "resolveJsonModule": true,
     "declaration": true,
     "declarationMap": true,
@@ -14,9 +16,6 @@
     "noUncheckedIndexedAccess": true,
     "noFallthroughCasesInSwitch": true,
     "forceConsistentCasingInFileNames": true,
-    "outDir": "dist",
-    "rootDir": ".",
     "types": ["node"]
-  },
-  "include": ["src", "eslint.config.ts", "vitest.config.ts"]
+  }
 }

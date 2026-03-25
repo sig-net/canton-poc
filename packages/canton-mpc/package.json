@@ -21,9 +21,10 @@
   ],
   "scripts": {
     "build": "tsdown && cp ../../.daml/dist/canton-mpc-poc-0.0.1.dar dist/",
-    "check": "tsc --noEmit",
+    "check:types": "tsc --noEmit",
     "prepack": "pnpm run build",
-    "release": "pnpm run build && pnpm publish --access public"
+    "release": "pnpm run build && pnpm publish --access public",
+    "test:dual": "pnpm run build && node test-dual-format.mjs"
   },
   "peerDependencies": {
     "viem": "^2.0.0"

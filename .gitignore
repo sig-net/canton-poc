@@ -6,7 +6,7 @@ log/
 
 # TypeScript
 node_modules/
-client/dist/
+test/dist/
 packages/canton-mpc/dist/
 packages/canton-mpc/generated/
 

@@ -1,9 +1,10 @@
 {
-  "name": "canton-mpc-poc-client",
+  "name": "canton-mpc-poc-test",
   "private": true,
   "type": "module",
   "scripts": {
     "test": "vitest run",
+    "check:types": "tsc --noEmit",
     "mpc-service": "tsx ../packages/canton-mpc/src/mpc-service/index.ts",
     "sepolia:preflight": "tsx src/scripts/sepolia-preflight.ts",
     "daml:build": "cd .. && dpm build",
@@ -13,22 +14,12 @@
     "codegen:daml": "cd .. && dpm codegen-js .daml/dist/canton-mpc-poc-0.0.1.dar -o packages/canton-mpc/generated/model -s daml.js",
     "codegen": "pnpm run codegen:daml && pnpm run codegen:api",
     "clean": "rm -rf ../packages/canton-mpc/generated ../.daml",
-    "generate": "pnpm run clean && pnpm run daml:build && pnpm run codegen && pnpm install",
-    "check": "tsc --noEmit && eslint . && knip && prettier --check .",
-    "fix": "eslint . --fix && prettier --write ."
+    "generate": "pnpm run clean && pnpm run daml:build && pnpm run codegen && pnpm install"
   },
   "devDependencies": {
-    "@eslint/js": "^10.0.1",
-    "@types/node": "^25.3.0",
-    "eslint": "^10.0.2",
-    "eslint-config-prettier": "^10.1.8",
-    "jiti": "^2.6.1",
-    "knip": "^5.85.0",
     "openapi-typescript": "^7.13.0",
-    "prettier": "^3.8.1",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.56.1",
     "vitest": "^4.0.18"
   },
   "dependencies": {

@@ -1,5 +1,21 @@
 {
   "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "pnpm -r run check:types && eslint . && knip && prettier --check .",
+    "fix": "eslint . --fix && prettier --write ."
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^25.3.0",
+    "eslint": "^10.0.2",
+    "eslint-config-prettier": "^10.1.8",
+    "jiti": "^2.6.1",
+    "knip": "^5.85.0",
+    "prettier": "^3.8.1",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.56.1"
+  },
   "pnpm": {
     "onlyBuiltDependencies": [
       "esbuild"

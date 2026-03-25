@@ -1,6 +1,6 @@
 dist/
 generated/
 node_modules/
-package-lock.json
+.daml/
 pnpm-lock.yaml
 openapi.yaml
