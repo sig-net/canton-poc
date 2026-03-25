@@ -16,7 +16,7 @@ import {
   EcdsaSignature,
   EvmTxOutcomeSignature,
   Erc20Holding,
-} from "@signet/canton-mpc";
+} from "canton-mpc";
 
 const VAULT_ID = "test-vault";
 const canton = new CantonClient();

@@ -9,7 +9,7 @@ import {
   reconstructSignedTx,
   submitRawTransaction,
   deriveChildPrivateKey,
-} from "@signet/canton-mpc";
+} from "canton-mpc";
 import {
   tryLoadEnv,
   setupVault,

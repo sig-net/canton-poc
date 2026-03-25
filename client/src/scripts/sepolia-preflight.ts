@@ -14,7 +14,7 @@
 import { createPublicClient, http, parseAbi } from "viem";
 import { sepolia } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
-import { loadEnv, CantonClient, deriveDepositAddress, DAR_PATH } from "@signet/canton-mpc";
+import { loadEnv, CantonClient, deriveDepositAddress, DAR_PATH } from "canton-mpc";
 import { DEPOSIT_AMOUNT } from "../test/helpers/sepolia-helpers.js";
 
 const env = loadEnv();

@@ -1,5 +1,5 @@
 {
-  "name": "@signet/canton-mpc",
+  "name": "canton-mpc",
   "version": "0.0.1",
   "description": "MPC-based ERC-20 custody service for Canton",
   "type": "module",
@@ -38,6 +38,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@daml.js/canton-mpc-poc-0.0.1": "file:./generated/model/canton-mpc-poc-0.0.1",
     "@types/node": "^25.3.0",
     "@types/ws": "^8.18.1",
     "tsdown": "^0.21.4",

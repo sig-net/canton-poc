@@ -17,7 +17,7 @@ import {
   EcdsaSignature,
   EvmTxOutcomeSignature,
   PendingEvmTx,
-} from "@signet/canton-mpc";
+} from "canton-mpc";
 import {
   DEPOSIT_AMOUNT,
   fetchNonce,

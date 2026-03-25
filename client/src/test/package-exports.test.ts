@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { existsSync } from "node:fs";
-import { MpcServer, CantonClient, DAR_PATH } from "@signet/canton-mpc";
+import { MpcServer, CantonClient, DAR_PATH } from "canton-mpc";
 
 describe("package exports (ESM)", () => {
   it("exports MpcServer class", () => {
@@ -31,7 +31,7 @@ describe("package exports (CJS via dist)", () => {
     const { createRequire } = await import("node:module");
     const require = createRequire(import.meta.url);
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-    const cjs: Record<string, unknown> = require("@signet/canton-mpc");
+    const cjs: Record<string, unknown> = require("canton-mpc");
 
     expect(typeof cjs.MpcServer).toBe("function");
     expect(typeof cjs.CantonClient).toBe("function");

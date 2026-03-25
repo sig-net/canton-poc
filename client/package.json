@@ -33,7 +33,7 @@
   },
   "dependencies": {
     "@noble/curves": "^2.0.1",
-    "@signet/canton-mpc": "workspace:*",
+    "canton-mpc": "workspace:*",
     "signet.js": "0.4.0",
     "viem": "^2.46.3"
   }
