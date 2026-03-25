@@ -65,7 +65,7 @@ jobs:
           exit 1
 
       - name: Generate OpenAPI types
-        working-directory: client
+        working-directory: test
         run: |
           curl -sf http://localhost:7575/docs/openapi -o openapi.yaml
           pnpm exec openapi-typescript openapi.yaml -o ../packages/canton-mpc/generated/api/ledger-api.ts
@@ -74,14 +74,9 @@ jobs:
         working-directory: packages/canton-mpc
         run: pnpm build
 
-      - name: Check library
-        working-directory: packages/canton-mpc
-        run: pnpm check
-
-      - name: Check client
-        working-directory: client
+      - name: Check
         run: pnpm check
 
       - name: Test
-        working-directory: client
+        working-directory: test
         run: pnpm test
