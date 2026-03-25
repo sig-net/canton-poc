@@ -15,8 +15,8 @@ export default tseslint.config(
         projectService: {
           allowDefaultProject: [
             "eslint.config.ts",
-            "packages/canton-mpc/tsdown.config.ts",
-            "packages/canton-mpc/vitest.config.ts",
+            "packages/canton-sig/tsdown.config.ts",
+            "packages/canton-sig/vitest.config.ts",
           ],
         },
         tsconfigRootDir: import.meta.dirname,
@@ -36,8 +36,8 @@ export default tseslint.config(
   {
     files: [
       "eslint.config.ts",
-      "packages/canton-mpc/tsdown.config.ts",
-      "packages/canton-mpc/vitest.config.ts",
+      "packages/canton-sig/tsdown.config.ts",
+      "packages/canton-sig/vitest.config.ts",
     ],
     ...tseslint.configs.disableTypeChecked,
   },

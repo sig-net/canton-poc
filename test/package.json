@@ -9,10 +9,10 @@
     "daml:build": "cd .. && dpm build",
     "daml:test": "cd .. && dpm test",
     "daml:sandbox": "cd .. && dpm sandbox --json-api-port 7575 --dar .daml/dist/canton-mpc-poc-0.0.1.dar",
-    "codegen:api": "curl -sf http://localhost:7575/docs/openapi -o openapi.yaml && pnpm exec openapi-typescript openapi.yaml -o ../packages/canton-mpc/generated/api/ledger-api.ts",
-    "codegen:daml": "cd .. && dpm codegen-js .daml/dist/canton-mpc-poc-0.0.1.dar -o packages/canton-mpc/generated/model -s daml.js",
+    "codegen:api": "curl -sf http://localhost:7575/docs/openapi -o openapi.yaml && pnpm exec openapi-typescript openapi.yaml -o ../packages/canton-sig/generated/api/ledger-api.ts",
+    "codegen:daml": "cd .. && dpm codegen-js .daml/dist/canton-mpc-poc-0.0.1.dar -o packages/canton-sig/generated/model -s daml.js",
     "codegen": "pnpm run codegen:daml && pnpm run codegen:api",
-    "clean": "rm -rf ../packages/canton-mpc/generated ../.daml",
+    "clean": "rm -rf ../packages/canton-sig/generated ../.daml",
     "generate": "pnpm run clean && pnpm run daml:build && pnpm run codegen && pnpm install"
   },
   "devDependencies": {
@@ -23,7 +23,7 @@
   },
   "dependencies": {
     "@noble/curves": "^2.0.1",
-    "canton-mpc": "workspace:*",
+    "canton-sig": "workspace:*",
     "dotenv": "^17.3.1",
     "signet.js": "0.4.0",
     "viem": "^2.46.3",

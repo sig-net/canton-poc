@@ -6,7 +6,7 @@ import {
   eip712Types,
   eip712Domain,
   type EvmTransactionParams,
-} from "canton-mpc";
+} from "canton-sig";
 
 const sampleEvmParams: EvmTransactionParams = {
   to: "a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",

@@ -36,7 +36,7 @@ importers:
         specifier: ^8.56.1
         version: 8.57.2(eslint@10.1.0(jiti@2.6.1))(typescript@5.9.3)
 
-  packages/canton-mpc:
+  packages/canton-sig:
     dependencies:
       '@daml/types':
         specifier: ^3.4.11
@@ -59,7 +59,7 @@ importers:
     devDependencies:
       '@daml.js/canton-mpc-poc-0.0.1':
         specifier: file:./generated/model/canton-mpc-poc-0.0.1
-        version: file:packages/canton-mpc/generated/model/canton-mpc-poc-0.0.1
+        version: file:packages/canton-sig/generated/model/canton-mpc-poc-0.0.1
       '@types/node':
         specifier: ^25.3.0
         version: 25.5.0
@@ -84,9 +84,9 @@ importers:
       '@noble/curves':
         specifier: ^2.0.1
         version: 2.0.1
-      canton-mpc:
+      canton-sig:
         specifier: workspace:*
-        version: link:../packages/canton-mpc
+        version: link:../packages/canton-sig
       dotenv:
         specifier: ^17.3.1
         version: 17.3.1
@@ -201,11 +201,11 @@ packages:
   '@cosmjs/utils@0.38.1':
     resolution: {integrity: sha512-ccQ5in6IvsQ+o/SstUdQH1jCJ2+MkJPZK7A/EYwMAFcjV8vzOgJ97LVy6AT24nwdi0/iVa2nbAG+fitUEsgLcA==}
 
-  '@daml.js/canton-mpc-poc-0.0.1@file:packages/canton-mpc/generated/model/canton-mpc-poc-0.0.1':
-    resolution: {directory: packages/canton-mpc/generated/model/canton-mpc-poc-0.0.1, type: directory}
+  '@daml.js/canton-mpc-poc-0.0.1@file:packages/canton-sig/generated/model/canton-mpc-poc-0.0.1':
+    resolution: {directory: packages/canton-sig/generated/model/canton-mpc-poc-0.0.1, type: directory}
 
-  '@daml.js/ghc-stdlib-DA-Internal-Template-1.0.0@file:packages/canton-mpc/generated/model/ghc-stdlib-DA-Internal-Template-1.0.0':
-    resolution: {directory: packages/canton-mpc/generated/model/ghc-stdlib-DA-Internal-Template-1.0.0, type: directory}
+  '@daml.js/ghc-stdlib-DA-Internal-Template-1.0.0@file:packages/canton-sig/generated/model/ghc-stdlib-DA-Internal-Template-1.0.0':
+    resolution: {directory: packages/canton-sig/generated/model/ghc-stdlib-DA-Internal-Template-1.0.0, type: directory}
 
   '@daml/types@3.4.11':
     resolution: {integrity: sha512-lGskPPTFVtJpLbHi1XoqG7/mnOU/zJcomQixoszEbtU7D63t7xDAW9yvtaQa7C1Uz70OOBhM1z72Se63GR3NXg==}
@@ -2300,12 +2300,12 @@ snapshots:
 
   '@cosmjs/utils@0.38.1': {}
 
-  '@daml.js/canton-mpc-poc-0.0.1@file:packages/canton-mpc/generated/model/canton-mpc-poc-0.0.1':
+  '@daml.js/canton-mpc-poc-0.0.1@file:packages/canton-sig/generated/model/canton-mpc-poc-0.0.1':
     dependencies:
-      '@daml.js/ghc-stdlib-DA-Internal-Template-1.0.0': file:packages/canton-mpc/generated/model/ghc-stdlib-DA-Internal-Template-1.0.0
+      '@daml.js/ghc-stdlib-DA-Internal-Template-1.0.0': file:packages/canton-sig/generated/model/ghc-stdlib-DA-Internal-Template-1.0.0
       '@mojotech/json-type-validation': 3.1.0
 
-  '@daml.js/ghc-stdlib-DA-Internal-Template-1.0.0@file:packages/canton-mpc/generated/model/ghc-stdlib-DA-Internal-Template-1.0.0':
+  '@daml.js/ghc-stdlib-DA-Internal-Template-1.0.0@file:packages/canton-sig/generated/model/ghc-stdlib-DA-Internal-Template-1.0.0':
     dependencies:
       '@mojotech/json-type-validation': 3.1.0
 

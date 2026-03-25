@@ -16,7 +16,7 @@ import {
   EcdsaSignature,
   EvmTxOutcomeSignature,
   PendingEvmTx,
-} from "canton-mpc";
+} from "canton-sig";
 import { loadEnv } from "../../config/env.js";
 import {
   DEPOSIT_AMOUNT,
