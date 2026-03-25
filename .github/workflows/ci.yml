@@ -45,7 +45,7 @@ jobs:
         run: |
           dpm build
           dpm test
-          dpm codegen-js .daml/dist/canton-mpc-poc-0.0.1.dar -o packages/canton-mpc/generated/model -s daml.js
+          dpm codegen-js .daml/dist/canton-mpc-poc-0.0.1.dar -o packages/canton-sig/generated/model -s daml.js
 
       - run: pnpm install --frozen-lockfile
 
@@ -68,14 +68,14 @@ jobs:
         working-directory: test
         run: |
           curl -sf http://localhost:7575/docs/openapi -o openapi.yaml
-          pnpm exec openapi-typescript openapi.yaml -o ../packages/canton-mpc/generated/api/ledger-api.ts
+          pnpm exec openapi-typescript openapi.yaml -o ../packages/canton-sig/generated/api/ledger-api.ts
 
       - name: Build library
-        working-directory: packages/canton-mpc
+        working-directory: packages/canton-sig
         run: pnpm build
 
       - name: Test library
-        working-directory: packages/canton-mpc
+        working-directory: packages/canton-sig
         run: pnpm test
 
       - name: Check

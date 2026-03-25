@@ -1,4 +1,4 @@
-# canton-mpc
+# canton-sig
 
 Sig Network MPC service for [Canton](https://docs.digitalasset.com/). Watches for `PendingEvmTx` contracts on the Canton ledger, derives child keys and signs EVM transactions using [signet.js](https://github.com/sig-net/signet.js), records signatures on Canton, and monitors EVM receipts to report outcomes back to the ledger.
 
@@ -13,7 +13,7 @@ Sig Network MPC service for [Canton](https://docs.digitalasset.com/). Watches fo
 ## Install
 
 ```bash
-npm install canton-mpc viem
+npm install canton-sig viem
 ```
 
 ## Quick Start
@@ -27,7 +27,7 @@ import {
   toSpkiPublicKey,
   deriveDepositAddress,
   findCreated,
-} from "canton-mpc";
+} from "canton-sig";
 
 // 1. Connect to Canton and upload the bundled DAR
 const canton = new CantonClient("http://localhost:7575");
@@ -134,7 +134,7 @@ new CantonClient(baseUrl?: string) // defaults to http://localhost:7575
 
 ### `DAR_PATH`
 
-Absolute path to the bundled `canton-mpc-poc-0.0.1.dar`. Pass to `canton.uploadDar()`.
+Absolute path to the bundled `canton-sig-poc-0.0.1.dar`. Pass to `canton.uploadDar()`.
 
 ### Utilities
 

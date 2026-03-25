@@ -1,5 +1,5 @@
 {
-  "name": "canton-mpc",
+  "name": "canton-sig",
   "version": "0.0.4",
   "description": "MPC-based ERC-20 custody service for Canton",
   "type": "module",
