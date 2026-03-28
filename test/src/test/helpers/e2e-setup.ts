@@ -231,6 +231,8 @@ export async function executeDepositFlow(
       algo: ALGO,
       dest: DEST,
       authCid,
+      outputDeserializationSchema: '[{"name":"","type":"bool"}]',
+      respondSerializationSchema: '[{"name":"","type":"bool"}]',
     },
     undefined,
     [orchDisclosure],

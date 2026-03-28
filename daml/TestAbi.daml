@@ -680,3 +680,23 @@ testAbiDecodeTupleTwoDynMembers = do
   assertMsg "second string offset = 128" (str1Offset == 128)
   assertMsg "first string = Hello" (abiDecodeString vec_two_strings str0Offset == "Hello")
   assertMsg "second string = World" (abiDecodeString vec_two_strings str1Offset == "World")
+
+-- ---------------------------------------------------------------------------
+-- Tests: hasErrorPrefix / stripErrorPrefix
+-- ---------------------------------------------------------------------------
+
+testHasErrorPrefix : Script ()
+testHasErrorPrefix = do
+  assertMsg "deadbeef + payload is error" (hasErrorPrefix ("deadbeef" <> vec_bool_true))
+  assertMsg "exactly deadbeef is error" (hasErrorPrefix "deadbeef")
+  assertMsg "deadbeef + short data" (hasErrorPrefix "deadbeef01")
+  assertMsg "normal ABI bool true is not error" (not (hasErrorPrefix vec_bool_true))
+  assertMsg "normal ABI bool false is not error" (not (hasErrorPrefix vec_bool_false))
+  assertMsg "empty string is not error" (not (hasErrorPrefix ""))
+  assertMsg "short string is not error" (not (hasErrorPrefix "dead"))
+  assertMsg "different prefix is not error" (not (hasErrorPrefix ("cafebabe" <> vec_bool_true)))
+
+testStripErrorPrefix : Script ()
+testStripErrorPrefix = do
+  assertMsg "strip deadbeef + bool true" (stripErrorPrefix ("deadbeef" <> vec_bool_true) == vec_bool_true)
+  assertMsg "strip exactly deadbeef" (stripErrorPrefix "deadbeef" == "")

@@ -115,6 +115,8 @@ describeIf("sepolia e2e withdrawal lifecycle", () => {
         algo: ALGO,
         dest: DEST,
         balanceCid: holdingCid,
+        outputDeserializationSchema: '[{"name":"","type":"bool"}]',
+        respondSerializationSchema: '[{"name":"","type":"bool"}]',
       },
       undefined,
       [setup.orchDisclosure],
@@ -168,7 +170,9 @@ describeIf("sepolia e2e withdrawal lifecycle", () => {
     );
     const outcomeCid = outcome.contractId;
     const outcomeArgs = outcome.createArgument as EvmTxOutcomeSignature;
-    expect(outcomeArgs.mpcOutput).toBe("01");
+    expect(outcomeArgs.mpcOutput).toBe(
+      "0000000000000000000000000000000000000000000000000000000000000001",
+    );
     console.log("[wdl-e2e] EvmTxOutcomeSignature observed");
 
     // ── User completes withdrawal on Canton ──
@@ -189,7 +193,7 @@ describeIf("sepolia e2e withdrawal lifecycle", () => {
     );
 
     // CompleteEvmWithdrawal succeeded (no throw).
-    // On success (mpcOutput=="01"): returns None — no refund Erc20Holding created.
+    // On success (mpcOutput==ABI-encoded true): returns None — no refund Erc20Holding created.
     const holdings = await setup.canton.getActiveContracts(
       [setup.issuer, setup.requester],
       ERC20_HOLDING,
@@ -268,6 +272,8 @@ describeIf("sepolia e2e withdrawal lifecycle", () => {
         algo: ALGO,
         dest: DEST,
         balanceCid: errorHoldingCid,
+        outputDeserializationSchema: '[{"name":"","type":"bool"}]',
+        respondSerializationSchema: '[{"name":"","type":"bool"}]',
       },
       undefined,
       [setup.orchDisclosure],
@@ -314,7 +320,7 @@ describeIf("sepolia e2e withdrawal lifecycle", () => {
     await publicClient.waitForTransactionReceipt({ hash: replacementHash });
     console.log(`[wdl-nonce] Replacement tx mined: ${replacementHash}`);
 
-    // ── MPC detects nonce consumed without receipt → mpcOutput="00" ──
+    // ── MPC detects nonce consumed without receipt → mpcOutput starts with "deadbeef" ──
     const outcome = await pollForContract(
       [setup.issuer],
       OUTCOME_SIGNATURE,
@@ -323,8 +329,8 @@ describeIf("sepolia e2e withdrawal lifecycle", () => {
     );
     const outcomeCid = outcome.contractId;
     const outcomeArgs = outcome.createArgument as EvmTxOutcomeSignature;
-    expect(outcomeArgs.mpcOutput).toBe("00");
-    console.log("[wdl-nonce] EvmTxOutcomeSignature observed (mpcOutput=00)");
+    expect(outcomeArgs.mpcOutput.startsWith("deadbeef")).toBe(true);
+    console.log("[wdl-nonce] EvmTxOutcomeSignature observed (mpcOutput starts with deadbeef)");
 
     // ── Complete withdrawal → refund ──
     const completeResult = await setup.canton.exerciseChoice(
@@ -343,7 +349,7 @@ describeIf("sepolia e2e withdrawal lifecycle", () => {
       [setup.orchDisclosure],
     );
 
-    // Refund Erc20Holding should be created (mpcOutput != "01")
+    // Refund Erc20Holding should be created (mpcOutput != ABI-encoded true)
     const refundHolding = findCreated(completeResult.transaction.events, "Erc20Holding");
     const refundArgs = refundHolding.createArgument as Erc20Holding;
     expect(refundArgs.owner).toBe(setup.requester);
