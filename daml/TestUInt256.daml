@@ -1087,8 +1087,688 @@ fuzz9divQ = "000000079f433fa6d61aeb755d536f2cd2e7758bfbe0ae0e812dbf50ac4a8747"
 fuzz9divR : Int
 fuzz9divR = 40982969
 
+fuzz10a : BytesHex
+fuzz10a = "a5e4e348e567aab7e774468e46da12da21656120bf668492caa898887bd68f9f"
+fuzz10b : BytesHex
+fuzz10b = "89c5fbb4cf92395b9a7818bafec3c9deff29c4201b6b5f4030d77503171b9210"
+fuzz10add : BytesHex
+fuzz10add = "2faadefdb4f9e41381ec5f49459ddcb9208f2540dad1e3d2fb800d8b92f221af"
+fuzz10sub : BytesHex
+fuzz10sub = "1c1ee79415d5715c4cfc2dd3481648fb223b9d00a3fb255299d1238564bafd8f"
+fuzz10mul : BytesHex
+fuzz10mul = "1ef5d46d4aa303ece72617b569ece48d908e753e1aa1d5501cbd0f8d8a16a7f0"
+fuzz10d : Int
+fuzz10d = 55590016
+fuzz10divQ : BytesHex
+fuzz10divQ = "0000003211396c531c6291b1842c52a83f30470299bd85dfc6fbc9bf3d40c5a3"
+fuzz10divR : Int
+fuzz10divR = 20023839
+
+fuzz11a : BytesHex
+fuzz11a = "44132646fc108d6be5f1334ec610772457b0b3825443b3d9b6ed90032dd548c1"
+fuzz11b : BytesHex
+fuzz11b = "f74fd91f9c2ef4a195fa3840410bf3ab4ab54c80f6232b967f5dae370aa62de7"
+fuzz11add : BytesHex
+fuzz11add = "3b62ff66983f820d7beb6b8f071c6acfa26600034a66df70364b3e3a387b76a8"
+fuzz11sub : BytesHex
+fuzz11sub = "4cc34d275fe198ca4ff6fb0e850483790cfb67015e208843378fe1cc232f1ada"
+fuzz11mul : BytesHex
+fuzz11mul = "f183cbf1cced5c34a21afec193310dfe6ffde853d06b0fc651ea5e8890649327"
+fuzz11d : Int
+fuzz11d = 181575059
+fuzz11divQ : BytesHex
+fuzz11divQ = "000000064a3ceaa6a5c36136e8aedd0efac3890125171d488d408f6f5abf291c"
+fuzz11divR : Int
+fuzz11divR = 81953197
+
+fuzz12a : BytesHex
+fuzz12a = "71355ac2ee31435d6c375597a2bdcba6609086a7ef7375f7d24d4055368d5431"
+fuzz12b : BytesHex
+fuzz12b = "e2efc516c8410cd4b1436782a4327ebcaa0597d1ee271bc565bac54f8654cc00"
+fuzz12add : BytesHex
+fuzz12add = "54251fd9b67250321d7abd1a46f04a630a961e79dd9a91bd380805a4bce22031"
+fuzz12sub : BytesHex
+fuzz12sub = "8e4595ac25f03688baf3ee14fe8b4ce9b68aeed6014c5a326c927b05b0388831"
+fuzz12mul : BytesHex
+fuzz12mul = "23ed98e70133f4a02fd2888aa164a73d921d0c666848b37d5dc87808e52b0c00"
+fuzz12d : Int
+fuzz12d = 215202269
+fuzz12divQ : BytesHex
+fuzz12divQ = "00000008d3648adc5e351b312e93cde88e3ab9ad29e1a8b865062495aeb55d5d"
+fuzz12divR : Int
+fuzz12divR = 64783848
+
+fuzz13a : BytesHex
+fuzz13a = "bf8d30492cbc3e6c43a0813cd30e5e2ff3ef874b567165571dfcba7c7a2587a8"
+fuzz13b : BytesHex
+fuzz13b = "63d1d5b8bda73236ea1b7993d9238c90d12ae8e99ca60ce113db8b1e5fba6638"
+fuzz13add : BytesHex
+fuzz13add = "235f0601ea6370a32dbbfad0ac31eac0c51a7034f317723831d8459ad9dfede0"
+fuzz13sub : BytesHex
+fuzz13sub = "5bbb5a906f150c35598507a8f9ead19f22c49e61b9cb58760a212f5e1a6b2170"
+fuzz13mul : BytesHex
+fuzz13mul = "ec22da77cf6820702c5f87f1eb0af61a7ddb9e7d0350469227212e3194529cc0"
+fuzz13d : Int
+fuzz13d = 201188733
+fuzz13divQ : BytesHex
+fuzz13divQ = "0000000ff93b8510fc9614138d27d2faa6d741a4561f9d7ccc9ad96fd9411b9f"
+fuzz13divR : Int
+fuzz13divR = 109236229
+
+fuzz14a : BytesHex
+fuzz14a = "63d9f0af55959c75490bc291a539d84799dbfedefeea31bee4eda20f0883d45b"
+fuzz14b : BytesHex
+fuzz14b = "25639f6878c67128697734d42c887da215da8a5d13538e678f116f0a3a09ede3"
+fuzz14add : BytesHex
+fuzz14add = "893d9017ce5c0d9db282f765d1c255e9afb6893c123dc02673ff1119428dc23e"
+fuzz14sub : BytesHex
+fuzz14sub = "3e765146dccf2b4cdf948dbd78b15aa584017481eb96a35755dc3304ce79e678"
+fuzz14mul : BytesHex
+fuzz14mul = "efc90708301e66e3d2bffa58408c542b0dc2689723efb18b85788983adb08bb1"
+fuzz14d : Int
+fuzz14d = 53348067
+fuzz14divQ : BytesHex
+fuzz14divQ = "0000001f66decc63c4e2dec8dabbdc8d5bd2545d35c7b14242d1968f451e00a4"
+fuzz14divR : Int
+fuzz14divR = 23948015
+
+fuzz15a : BytesHex
+fuzz15a = "4b163d1cf8bf1a60a9b697133b1b59beab6f44e40e01cbb5d22044ac54c23a91"
+fuzz15b : BytesHex
+fuzz15b = "62daa68f93845e8ae03eccbb4851e0bdec9f50d8c8c8d2cbafeb7802f771c6bf"
+fuzz15add : BytesHex
+fuzz15add = "adf0e3ac8c4378eb89f563ce836d3a7c980e95bcd6ca9e81820bbcaf4c340150"
+fuzz15sub : BytesHex
+fuzz15sub = "e83b968d653abbd5c977ca57f2c97900becff40b4538f8ea2234cca95d5073d2"
+fuzz15mul : BytesHex
+fuzz15mul = "6be938bb783bb0d520b4d95afa96a5a94a8af9d45fcfc810e81cc3813736d82f"
+fuzz15d : Int
+fuzz15d = 127142639
+fuzz15divQ : BytesHex
+fuzz15divQ = "00000009e87cac14cd041585d06601473c1735ed378268cb1b2fe7a99d1436e1"
+fuzz15divR : Int
+fuzz15divR = 61486210
+
+fuzz16a : BytesHex
+fuzz16a = "3b9887918f16035b491da1e20962ca58a97f15d6a32469bc2cc1b63bc5a69e0c"
+fuzz16b : BytesHex
+fuzz16b = "7e27c0019e6c85db934dbf42002761a7a78441295b63fc0f8e52947ee07d7f8c"
+fuzz16add : BytesHex
+fuzz16add = "b9c047932d828936dc6b6124098a2c00510356fffe8865cbbb144abaa6241d98"
+fuzz16sub : BytesHex
+fuzz16sub = "bd70c78ff0a97d7fb5cfe2a0093b68b101fad4ad47c06dac9e6f21bce5291e80"
+fuzz16mul : BytesHex
+fuzz16mul = "65e647478d1cde9bb6f76a781bc81b611d2618d616de9493beb1564b6b626290"
+fuzz16d : Int
+fuzz16d = 253044528
+fuzz16divQ : BytesHex
+fuzz16divQ = "00000003f387a3da519f53ebf0ae3ee160624a1a3ddfe0096ae158c4a81686ea"
+fuzz16divR : Int
+fuzz16divR = 195931180
+
+fuzz17a : BytesHex
+fuzz17a = "b7b6d9bf46a2e4e813b9fdcbb2319196304d3f7bc8765d5d0d197d1c8c8879d2"
+fuzz17b : BytesHex
+fuzz17b = "1c70af50653dbdf04c44107f914cfc5c43cb03086541745fc27c294f0c45a4f3"
+fuzz17add : BytesHex
+fuzz17add = "d427890fabe0a2d85ffe0e4b437e8df2741842842db7d1bccf95a66b98ce1ec5"
+fuzz17sub : BytesHex
+fuzz17sub = "9b462a6ee16526f7c775ed4c20e49539ec823c736334e8fd4a9d53cd8042d4df"
+fuzz17mul : BytesHex
+fuzz17mul = "65440a9645ff6c7d12cda044ccf35a19cc4aabb7c540ff1f31f88c6d81302a56"
+fuzz17d : Int
+fuzz17d = 62058811
+fuzz17divQ : BytesHex
+fuzz17divQ = "00000031aa7ff1880e61b1bc9652c2116f115257e48a4de99aa7388de3485fce"
+fuzz17divR : Int
+fuzz17divR = 23951192
+
+fuzz18a : BytesHex
+fuzz18a = "c7e22e2da0d099aa13511d95af8cdbd2387837c4b602bb80d97f740f498066a1"
+fuzz18b : BytesHex
+fuzz18b = "4e32353972e557c3ac359c5d49c6f9bb9bc79d86aa2e02947ab4255967a42e1d"
+fuzz18add : BytesHex
+fuzz18add = "1614636713b5f16dbf86b9f2f953d58dd43fd54b6030be1554339968b12494be"
+fuzz18sub : BytesHex
+fuzz18sub = "79aff8f42deb41e6671b813865c5e2169cb09a3e0bd4b8ec5ecb4eb5e1dc3884"
+fuzz18mul : BytesHex
+fuzz18mul = "937f47b50d58d8875c3364956bcd032f01a2fd3ed8e1073b0a559775ec208e3d"
+fuzz18d : Int
+fuzz18d = 157046891
+fuzz18divQ : BytesHex
+fuzz18divQ = "000000155a7a086d144181eed3bc4214a30f8200759b42e78b8ed32b9d82a335"
+fuzz18divR : Int
+fuzz18divR = 130021242
+
+fuzz19a : BytesHex
+fuzz19a = "e4842a0e27c064a471141bbf43201b00df4948824805e3a0af29fc072e0a3419"
+fuzz19b : BytesHex
+fuzz19b = "5b9956f82030b484863bb3497651328f71a1f36357390006f43fc137e71fee4d"
+fuzz19add : BytesHex
+fuzz19add = "401d810647f11928f74fcf08b9714d9050eb3be59f3ee3a7a369bd3f152a2266"
+fuzz19sub : BytesHex
+fuzz19sub = "88ead316078fb01fead86875cccee8716da7551ef0cce399baea3acf46ea45cc"
+fuzz19mul : BytesHex
+fuzz19mul = "7d4734ba4c3fb57a630e4a034aff8f77a9f0a3320563c8aef2f84d943387e985"
+fuzz19d : Int
+fuzz19d = 212951332
+fuzz19divQ : BytesHex
+fuzz19divQ = "0000001200e4982ecc7d53c5e812d48b75bf36d4518f9ee0ed093bb6bdaee0f9"
+fuzz19divR : Int
+fuzz19divR = 101398549
+
+fuzz20a : BytesHex
+fuzz20a = "afffab634fdfd362098b876a491b66e445397166fdc02f50f944e75dbb7722f2"
+fuzz20b : BytesHex
+fuzz20b = "0ffaf3bd9bd1bff893b9271419227a4dc026dc4b7bbcf3191a9afb3b4a87e9ad"
+fuzz20add : BytesHex
+fuzz20add = "bffa9f20ebb1935a9d44ae7e623de13205604db2797d226a13dfe29905ff0c9f"
+fuzz20sub : BytesHex
+fuzz20sub = "a004b7a5b40e136975d260562ff8ec968512951b82033c37dea9ec2270ef3945"
+fuzz20mul : BytesHex
+fuzz20mul = "771d939f840aa0126144c344b8c6aed0eb83abddcb5f4310e20f49aa7feedf8a"
+fuzz20d : Int
+fuzz20d = 174322955
+fuzz20divQ : BytesHex
+fuzz20divQ = "00000010f041273eeb19c57d64e6d1e3571cc3587b5dba9557276ca5f136d195"
+fuzz20divR : Int
+fuzz20divR = 149522571
+
+fuzz21a : BytesHex
+fuzz21a = "c187196682222a9e068fb58ca7d71b85195572f26b8a85a1989f6a4a32561e79"
+fuzz21b : BytesHex
+fuzz21b = "10a29c777df4efadad8697c0c66f649e1d020f67264e0ef13ac1e5ee021fbacd"
+fuzz21add : BytesHex
+fuzz21add = "d229b5de00171a4bb4164d4d6e4680233657825991d89492d36150383475d946"
+fuzz21sub : BytesHex
+fuzz21sub = "b0e47cef042d3af059091dcbe167b6e6fc53638b453c76b05ddd845c303663ac"
+fuzz21mul : BytesHex
+fuzz21mul = "3c6e573083fcf7be96983635a4bacaf27935d826fc03192cb6ce5c2583c150e5"
+fuzz21d : Int
+fuzz21d = 1270667
+fuzz21divQ : BytesHex
+fuzz21divQ = "000009fb3cead27c68a9a9925ec26c06ba9d9f38468849041ec3559a61763d56"
+fuzz21divR : Int
+fuzz21divR = 560839
+
+fuzz22a : BytesHex
+fuzz22a = "bce82ae8606feee737bb904d5b8c8831df74cb2f058bd95e3ed587c5e5806648"
+fuzz22b : BytesHex
+fuzz22b = "4a3d334748823327aada469a0944ea16cfef8e1830f12484c5da50230736c679"
+fuzz22add : BytesHex
+fuzz22add = "07255e2fa8f2220ee295d6e764d17248af645947367cfde304afd7e8ecb72cc1"
+fuzz22sub : BytesHex
+fuzz22sub = "72aaf7a117edbbbf8ce149b352479e1b0f853d16d49ab4d978fb37a2de499fcf"
+fuzz22mul : BytesHex
+fuzz22mul = "4009937dce7df89e68789b4309a7cca4fa98e2e99ef13cd8e8c9a3c453fc0808"
+fuzz22d : Int
+fuzz22d = 101669670
+fuzz22divQ : BytesHex
+fuzz22divQ = "0000001f2c3efa20b5c12fcb5bcce9b31820afbab3241cd147a9d02cab1eeaca"
+fuzz22divR : Int
+fuzz22divR = 60669516
+
+fuzz23a : BytesHex
+fuzz23a = "6bbe5c5f91e1a0f35dfc6535a40f046cc52dfcbb6e1fec186b9eb06bf8b17807"
+fuzz23b : BytesHex
+fuzz23b = "60b16a7d9843cbf638bf77d425898a3aa2aa1462124305daf74dbd2db050a8f0"
+fuzz23add : BytesHex
+fuzz23add = "cc6fc6dd2a256ce996bbdd09c9988ea767d8111d8062f1f362ec6d99a90220f7"
+fuzz23sub : BytesHex
+fuzz23sub = "0b0cf1e1f99dd4fd253ced617e857a322283e8595bdce63d7450f33e4860cf17"
+fuzz23mul : BytesHex
+fuzz23mul = "4f85133b4417e83df21b1f3188d9bb2115a2b657395b3321fd2e3ea2ef551e90"
+fuzz23d : Int
+fuzz23d = 252623140
+fuzz23divQ : BytesHex
+fuzz23divQ = "0000000727ccf5b1da1bb8703e874191615c5f133a91622f24ab5f7ada808c2d"
+fuzz23divR : Int
+fuzz23divR = 198917299
+
+fuzz24a : BytesHex
+fuzz24a = "3ae3e4235c3f8bc0bbeef62e901c9b6cd64a2e3c11520ecab85ba5fe66752510"
+fuzz24b : BytesHex
+fuzz24b = "b0cce47da58cd02fe64d4f75de020e6319297dc120ea84c549b323cb379e0398"
+fuzz24add : BytesHex
+fuzz24add = "ebb0c8a101cc5bf0a23c45a46e1ea9cfef73abfd323c9390020ec9c99e1328a8"
+fuzz24sub : BytesHex
+fuzz24sub = "8a16ffa5b6b2bb90d5a1a6b8b21a8d09bd20b07af0678a056ea882332ed72178"
+fuzz24mul : BytesHex
+fuzz24mul = "84e471895ac8e09f284e8b239891706a3e39ec6f61f7db486188853384dd3180"
+fuzz24d : Int
+fuzz24d = 84406297
+fuzz24divQ : BytesHex
+fuzz24divQ = "0000000bb4984df61c7c1fbe5e8f9a4bdf42c6cc8f69fb5dc012cf87d96a65ed"
+fuzz24divR : Int
+fuzz24divR = 17301739
+
+fuzz25a : BytesHex
+fuzz25a = "17e8b8e7a082be4b8b1b895e40037e42037b2307b597435bcdf0099fadd38d1a"
+fuzz25b : BytesHex
+fuzz25b = "1af07fd0224cbd362efeda76fe79ba0b2882095c038f7b46193244dc3d36651b"
+fuzz25add : BytesHex
+fuzz25add = "32d938b7c2cf7b81ba1a63d53e7d384d2bfd2c63b926bea1e7224e7beb09f235"
+fuzz25sub : BytesHex
+fuzz25sub = "fcf839177e3601155c1caee74189c436daf919abb207c815b4bdc4c3709d27ff"
+fuzz25mul : BytesHex
+fuzz25mul = "e5c19201ff3efec0172e6d8bc4778df90a4f922e6c2154762c934102c17723be"
+fuzz25d : Int
+fuzz25d = 127750059
+fuzz25divQ : BytesHex
+fuzz25divQ = "0000000323d32d62920fcfcecc7fd1caca1e22a33916a486db0ecce4c990b1c4"
+fuzz25divR : Int
+fuzz25divR = 35476270
+
+fuzz26a : BytesHex
+fuzz26a = "c756ccc21371dd5f4ebfc3b35147d53287ec55d354550779f3e6a8429e781e20"
+fuzz26b : BytesHex
+fuzz26b = "6fc9daa0ab7cbc5d9c8d1ebd22c0a6f74c08595640d7994bcee0c762b52a3edb"
+fuzz26add : BytesHex
+fuzz26add = "3720a762beee99bceb4ce27074087c29d3f4af29952ca0c5c2c76fa553a25cfb"
+fuzz26sub : BytesHex
+fuzz26sub = "578cf22167f52101b232a4f62e872e3b3be3fc7d137d6e2e2505e0dfe94ddf45"
+fuzz26mul : BytesHex
+fuzz26mul = "dc447129c23513e54621d8bb9dc10dcbc81fb65634fa7e9c5d7168a0394d8560"
+fuzz26d : Int
+fuzz26d = 3295678
+fuzz26divQ : BytesHex
+fuzz26divQ = "000003f6c5117a037c7c59612274a64e3de8d2e652962f26010503ebd4790c52"
+fuzz26divR : Int
+fuzz26divR = 1677124
+
+fuzz27a : BytesHex
+fuzz27a = "ee0823d16bac0b58c0329362551b4d64b632a5f1c144797c98fb58243f40b026"
+fuzz27b : BytesHex
+fuzz27b = "12066e5cf36e06dc9e08e7bc6199b7554d849b3870e5cb29a57fc8982f347187"
+fuzz27add : BytesHex
+fuzz27add = "000e922e5f1a12355e3b7b1eb6b504ba03b7412a322a44a63e7b20bc6e7521ad"
+fuzz27sub : BytesHex
+fuzz27sub = "dc01b574783e047c2229aba5f381960f68ae0ab9505eae52f37b8f8c100c3e9f"
+fuzz27mul : BytesHex
+fuzz27mul = "f7f24749a916a1f7e76ed954628b01ef202bb3369a025a1e264d7b13aa95aa0a"
+fuzz27d : Int
+fuzz27d = 68067409
+fuzz27divQ : BytesHex
+fuzz27divQ = "0000003aab813fb8f576f9c42e1a8300b3669bd2f38b964ef5c7fd00248d2226"
+fuzz27divR : Int
+fuzz27divR = 53289504
+
+fuzz28a : BytesHex
+fuzz28a = "ae369761304a1b8675a8729952534f606e5ca71dbe1a12c1c4407b29be6d5f7a"
+fuzz28b : BytesHex
+fuzz28b = "78fcee88cfd50e8357266348e95c460acfa8c8d737ad358cf0da0153d68f7be8"
+fuzz28add : BytesHex
+fuzz28add = "273385ea001f2a09ccced5e23baf956b3e056ff4f5c7484eb51a7c7d94fcdb62"
+fuzz28sub : BytesHex
+fuzz28sub = "3539a8d860750d031e820f5068f709559eb3de46866cdd34d36679d5e7dde392"
+fuzz28mul : BytesHex
+fuzz28mul = "67ebf43276e80289ac00061c0f38633faab2d0a3ac6ae3835fd6e7c971242490"
+fuzz28d : Int
+fuzz28d = 53006233
+fuzz28divQ : BytesHex
+fuzz28divQ = "0000003724145b4cc4957219b04fbd9d4229c98952bec6a9a57058ba696a9e44"
+fuzz28divR : Int
+fuzz28divR = 18599126
+
+fuzz29a : BytesHex
+fuzz29a = "0d065430790e2e069c896e8dfe07a222fddc3437c652d73aaa287d678e7ed790"
+fuzz29b : BytesHex
+fuzz29b = "d7e09a0b5fafd9b3e06b0d81f28eb3848b2dd39809b3a6d5c97966ca4f41edfe"
+fuzz29add : BytesHex
+fuzz29add = "e4e6ee3bd8be07ba7cf47c0ff09655a7890a07cfd0067e1073a1e431ddc0c58e"
+fuzz29sub : BytesHex
+fuzz29sub = "3525ba25195e5452bc1e610c0b78ee9e72ae609fbc9f3064e0af169d3f3ce992"
+fuzz29mul : BytesHex
+fuzz29mul = "eeceab12610fe92a13b9f3616b01f853e25c0c69cb99713809931604fafa30e0"
+fuzz29d : Int
+fuzz29d = 103583608
+fuzz29divQ : BytesHex
+fuzz29divQ = "000000021c0ddba3766d3ee0c324f902da2326bdb09f0cfc086ba5af55dac6a8"
+fuzz29divR : Int
+fuzz29divR = 102359248
+
+fuzz30a : BytesHex
+fuzz30a = "1a74ff3b3d39310a3ace77f0860aefc67f0de7015675982e3688163f6bd53e48"
+fuzz30b : BytesHex
+fuzz30b = "b73b5c0a16d8b9ec0eb774dae62b962901495ed820195e044e65dadeb0e68ac5"
+fuzz30add : BytesHex
+fuzz30add = "d1b05b455411eaf64985eccb6c3685ef805745d9768ef63284edf11e1cbbc90d"
+fuzz30sub : BytesHex
+fuzz30sub = "6339a3312660771e2c1703159fdf599d7dc48829365c3a29e8223b60baeeb383"
+fuzz30mul : BytesHex
+fuzz30mul = "b956030c88091fe6ec9801d39b481d9936931ed6c39acc9386321dc6635bbd68"
+fuzz30d : Int
+fuzz30d = 173545696
+fuzz30divQ : BytesHex
+fuzz30divQ = "000000028ec468c9d11241e49b65725f6079be2184adc0492056591e6aa8c31e"
+fuzz30divR : Int
+fuzz30divR = 126858248
+
+fuzz31a : BytesHex
+fuzz31a = "c96e799460aed2274e79145301f8eb6bd82bc10e460269e8ec65e59b7019f25e"
+fuzz31b : BytesHex
+fuzz31b = "cf1f0950f9fd73fce9258acec4e74c4cee83445e379f876d3cddee1e301cadfc"
+fuzz31add : BytesHex
+fuzz31add = "988d82e55aac4624379e9f21c6e037b8c6af056c7da1f1562943d3b9a036a05a"
+fuzz31sub : BytesHex
+fuzz31sub = "fa4f704366b15e2a655389843d119f1ee9a87cb00e62e27baf87f77d3ffd4462"
+fuzz31mul : BytesHex
+fuzz31mul = "f78d4b352886edf4981eee4191c3f3b57b8d9b5606daa8e55800fb10049c1a88"
+fuzz31d : Int
+fuzz31d = 125555856
+fuzz31divQ : BytesHex
+fuzz31divQ = "0000001aea7e7ef5c2395be9d23f3094f287ed21bb9ce7606742766a4526b59a"
+fuzz31divR : Int
+fuzz31divR = 82985918
+
+fuzz32a : BytesHex
+fuzz32a = "4ca80339f808f17f02ca69f55a35268a9fcde1d5ca40a4a0972bf87a2d7882f4"
+fuzz32b : BytesHex
+fuzz32b = "f7769261e9ac53ce0989a90849c791cb7f6239d2782e4df132507c154029d3e7"
+fuzz32add : BytesHex
+fuzz32add = "441e959be1b5454d0c5412fda3fcb8561f301ba8426ef291c97c748f6da256db"
+fuzz32sub : BytesHex
+fuzz32sub = "553170d80e5c9db0f940c0ed106d94bf206ba803521256af64db7c64ed4eaf0d"
+fuzz32mul : BytesHex
+fuzz32mul = "e80bda2bae60564c7bd92ec61eb0560bfd4abdae773d18a7abfa40c754c1462c"
+fuzz32d : Int
+fuzz32d = 170652439
+fuzz32divQ : BytesHex
+fuzz32divQ = "0000000789479efe9774a07975660bfe18f7efc6a7f4bebc1007b8c742e62443"
+fuzz32divR : Int
+fuzz32divR = 18786287
+
+fuzz33a : BytesHex
+fuzz33a = "cc67626f006e9d2ba92e0d51045d68426ebc14a83b7e42ad7653d61060d76c27"
+fuzz33b : BytesHex
+fuzz33b = "98e4e1d57b16cf351eae50dddda9a9d9eeec4df8dfefbece3fd7bbd720084652"
+fuzz33add : BytesHex
+fuzz33add = "654c44447b856c60c7dc5e2ee207121c5da862a11b6e017bb62b91e780dfb279"
+fuzz33sub : BytesHex
+fuzz33sub = "338280998557cdf68a7fbc7326b3be687fcfc6af5b8e83df367c1a3940cf25d5"
+fuzz33mul : BytesHex
+fuzz33mul = "6c7ac0e5842308081c0a204c59e8f98c944af3cd874707b5aeae51bb2dcb4e7e"
+fuzz33d : Int
+fuzz33d = 238459900
+fuzz33divQ : BytesHex
+fuzz33divQ = "0000000e619303719e6df19594aa5db272fdad14c64e8a7295a52c8db46fe891"
+fuzz33divR : Int
+fuzz33divR = 71873131
+
+fuzz34a : BytesHex
+fuzz34a = "ad28c0033cd8dab71977dc8ff894e09138b5c9d53ac65bc0c6020135d34159ca"
+fuzz34b : BytesHex
+fuzz34b = "51f5ca9dd3293db242d6c640296708cf30586dce409c76e47e22312f8c77d28c"
+fuzz34add : BytesHex
+fuzz34add = "ff1e8aa1100218695c4ea2d021fbe960690e37a37b62d2a5442432655fb92c56"
+fuzz34sub : BytesHex
+fuzz34sub = "5b32f56569af9d04d6a1164fcf2dd7c2085d5c06fa29e4dc47dfd00646c9873e"
+fuzz34mul : BytesHex
+fuzz34mul = "414be94616ab3a87c24c541ec17f6f196b7e567dcf0c468a91a6e74c584ace78"
+fuzz34d : Int
+fuzz34d = 42014556
+fuzz34divQ : BytesHex
+fuzz34divQ = "00000045255165a586c55709e053d0011b9140018075b782309bfeead9c6fcad"
+fuzz34divR : Int
+fuzz34divR = 31326366
+
+fuzz35a : BytesHex
+fuzz35a = "24cd6e0611e4d4f0268873fcad306f785fa5bee30939fbee678788fe0d1ff09f"
+fuzz35b : BytesHex
+fuzz35b = "1337317824d4b0d56a0708d23c429e3928facd3c58c966c5ca4481e2c8335349"
+fuzz35add : BytesHex
+fuzz35add = "38049f7e36b985c5908f7ccee9730db188a08c1f620362b431cc0ae0d55343e8"
+fuzz35sub : BytesHex
+fuzz35sub = "11963c8ded10241abc816b2a70edd13f36aaf1a6b07095289d43071b44ec9d56"
+fuzz35mul : BytesHex
+fuzz35mul = "2ad0daa6128157a7cf42e1d651c14837da0dd09fd367cf2c4a9c8b6a40cc2a57"
+fuzz35d : Int
+fuzz35d = 48638605
+fuzz35divQ : BytesHex
+fuzz35divQ = "0000000cb1cad2117fbe90be0ae2db3e3230fc194ac7a7b563a8997afe36b315"
+fuzz35divR : Int
+fuzz35divR = 12573710
+
+fuzz36a : BytesHex
+fuzz36a = "7b83d18a647f270858b5cb8a0a5ad1991f4e6c01499f4835047da027c16e82bc"
+fuzz36b : BytesHex
+fuzz36b = "4d895cd621006a6c443f6e9ff27aa50bbedf69f5579094eec0f6128f339b6edc"
+fuzz36add : BytesHex
+fuzz36add = "c90d2e60857f91749cf53a29fcd576a4de2dd5f6a12fdd23c573b2b6f509f198"
+fuzz36sub : BytesHex
+fuzz36sub = "2dfa74b4437ebc9c14765cea17e02c8d606f020bf20eb34643878d988dd313e0"
+fuzz36mul : BytesHex
+fuzz36mul = "fd6aa47aad3116bcfb952c16a6cd02e2fc3ebda232afd34b2cf6184052f92190"
+fuzz36d : Int
+fuzz36d = 4897629
+fuzz36divQ : BytesHex
+fuzz36divQ = "000001a71c31425020f88654134f310cfe4c865ea0d01e97141a6cab48c0fdc1"
+fuzz36divR : Int
+fuzz36divR = 2906271
+
+fuzz37a : BytesHex
+fuzz37a = "e9a17fd6ccb161d5ae82bb72f1aeeb011033291864af6d54ec9ac7142b6f504d"
+fuzz37b : BytesHex
+fuzz37b = "6ec17fa9e9f055c37f63c9b5c41c63243aa76684e0d2b202e75a7745e66a7174"
+fuzz37add : BytesHex
+fuzz37add = "5862ff80b6a1b7992de68528b5cb4e254ada8f9d45821f57d3f53e5a11d9c1c1"
+fuzz37sub : BytesHex
+fuzz37sub = "7ae0002ce2c10c122f1ef1bd2d9287dcd58bc29383dcbb5205404fce4504ded9"
+fuzz37mul : BytesHex
+fuzz37mul = "1163b6597219071087ef98d858a5781f9b252bec84e5f7b03ec88a4d3ec45fe4"
+fuzz37d : Int
+fuzz37d = 214642472
+fuzz37divQ : BytesHex
+fuzz37divQ = "0000001242ec1f303c3d896ac0584987f6e40cb626480a412816e3091834139b"
+fuzz37divR : Int
+fuzz37divR = 63556373
+
+fuzz38a : BytesHex
+fuzz38a = "6c86c9080d186d1b4ccae6f0496bfeb4ef988fcc37c64379cc7c9598537974ce"
+fuzz38b : BytesHex
+fuzz38b = "54754f2671a07b7833b5c5562a64323f998cb359c34b9eb413d8dc304173f150"
+fuzz38add : BytesHex
+fuzz38add = "c0fc182e7eb8e8938080ac4673d030f489254325fb11e22de05571c894ed661e"
+fuzz38sub : BytesHex
+fuzz38sub = "181179e19b77f1a31915219a1f07cc75560bdc72747aa4c5b8a3b9681205837e"
+fuzz38mul : BytesHex
+fuzz38mul = "132e5e15c241a617e9a7ca945b0bb13439be811b0897e8cdef596b0733746e60"
+fuzz38d : Int
+fuzz38d = 151384155
+fuzz38divQ : BytesHex
+fuzz38divQ = "0000000c070a1b484781fb5894832f2d2fc51cbbc4f0db753c766c3dbed52cdc"
+fuzz38divR : Int
+fuzz38divR = 123224730
+
+fuzz39a : BytesHex
+fuzz39a = "09408798fb6da97b04e1ac3e9a226f84fd1990ecba74c5f1e2748649478f624a"
+fuzz39b : BytesHex
+fuzz39b = "f8fd509974fc0c48caa58c5b73c839838c81707a0fd7ab43527fe49d430dad2f"
+fuzz39add : BytesHex
+fuzz39add = "023dd8327069b5c3cf87389a0deaa908899b0166ca4c713534f46ae68a9d0f79"
+fuzz39sub : BytesHex
+fuzz39sub = "104336ff86719d323a3c1fe3265a360170982072aa9d1aae8ff4a1ac0481b51b"
+fuzz39mul : BytesHex
+fuzz39mul = "abc53173162792bcc66499412f3433aa1872ea79a46c00295ec6853364810d96"
+fuzz39d : Int
+fuzz39d = 153438422
+fuzz39divQ : BytesHex
+fuzz39divQ = "0000000102faa1d874f4428c68d28d0aa85b1f04118d05d6c3e885ede467cc4a"
+fuzz39divR : Int
+fuzz39divR = 111397998
+
+fuzz40a : BytesHex
+fuzz40a = "a165a63de5725aee491abe18f851e2b4cf3c18358cd947bb31733d1425c1208f"
+fuzz40b : BytesHex
+fuzz40b = "76ec9b75b81b176299de47b565e17671b90e1d42b282a9f76b8cab631d64dac7"
+fuzz40add : BytesHex
+fuzz40add = "185241b39d8d7250e2f905ce5e335926884a35783f5bf1b29cffe8774325fb56"
+fuzz40sub : BytesHex
+fuzz40sub = "2a790ac82d57438baf3c766392706c43162dfaf2da569dc3c5e691b1085c45c8"
+fuzz40mul : BytesHex
+fuzz40mul = "af0d5a34b461acd0c59081060bc4e6c46879527b8c51ccc3e4605f3db9b61529"
+fuzz40d : Int
+fuzz40d = 71138208
+fuzz40divQ : BytesHex
+fuzz40divQ = "000000261057e9b089e78a76a5ea58a3927f31d10020af0416dec6a20aac6614"
+fuzz40divR : Int
+fuzz40divR = 36812815
+
+fuzz41a : BytesHex
+fuzz41a = "4a53c69bde6f79a9e532c9d671f632f40b3aab2b9b0a8a2828ddc10bf6348e95"
+fuzz41b : BytesHex
+fuzz41b = "f91e5feb55c0dc5c324c6ca43fec187af4586ba7ad772c383c4988aa4bfc7e8e"
+fuzz41add : BytesHex
+fuzz41add = "4372268734305606177f367ab1e24b6eff9316d34881b660652749b642310d23"
+fuzz41sub : BytesHex
+fuzz41sub = "513566b088ae9d4db2e65d32320a1a7916e23f83ed935defec943861aa381007"
+fuzz41mul : BytesHex
+fuzz41mul = "37df3539708128843ae6ecec430fb088384a5c1f9b8b77f9580f904471006ca6"
+fuzz41d : Int
+fuzz41d = 24680060
+fuzz41divQ : BytesHex
+fuzz41divQ = "0000003286dbfe65524ddcdf5d39e2f9d2fac6118052b9db4830c73989385b8e"
+fuzz41divR : Int
+fuzz41divR = 11731405
+
+fuzz42a : BytesHex
+fuzz42a = "252e77cab0956288196c0028ec3270a5041a8f3e84078cce9972f9c813734035"
+fuzz42b : BytesHex
+fuzz42b = "45065911acc8b292d4f6e0939e1390e830df5fb6bd6aa80fb8b4d704ef2385f0"
+fuzz42add : BytesHex
+fuzz42add = "6a34d0dc5d5e151aee62e0bc8a46018d34f9eef5417234de5227d0cd0296c625"
+fuzz42sub : BytesHex
+fuzz42sub = "e0281eb903ccaff544751f954e1edfbcd33b2f87c69ce4bee0be22c3244fba45"
+fuzz42mul : BytesHex
+fuzz42mul = "241cf5f04a3e03fa96ee80de6e5053518ad98174b5cda712de0fe3345ea6bab0"
+fuzz42d : Int
+fuzz42d = 43051475
+fuzz42divQ : BytesHex
+fuzz42divQ = "0000000e7d5c003f094a954a906c9643e050fd6e5146c4ba66258b05104e591a"
+fuzz42divR : Int
+fuzz42divR = 19342791
+
+fuzz43a : BytesHex
+fuzz43a = "6bbd6a51bef0bb0a59e08f12aedfda711e38708812738885094d7c7f150fc2d7"
+fuzz43b : BytesHex
+fuzz43b = "b2df8d2af6176639252d93cca46795a4617b3d9750d7fae5bd9405d0eaf02696"
+fuzz43add : BytesHex
+fuzz43add = "1e9cf77cb50821437f0e22df534770157fb3ae1f634b836ac6e1824fffffe96d"
+fuzz43sub : BytesHex
+fuzz43sub = "b8dddd26c8d954d134b2fb460a7844ccbcbd32f0c19b8d9f4bb976ae2a1f9c41"
+fuzz43mul : BytesHex
+fuzz43mul = "c773ac5e8a596fe3c689365353529638dfc061bd7987fcb89f2e7825ddb813fa"
+fuzz43d : Int
+fuzz43d = 53412814
+fuzz43divQ : BytesHex
+fuzz43divQ = "00000021d773c4f3e60ce7865ec2b276241466fad8ef650cc315a98e91dd77b6"
+fuzz43divR : Int
+fuzz43divR = 543843
+
+fuzz44a : BytesHex
+fuzz44a = "97e1351e88f5e492998ffbff51a1c7539cb543795edf97cca5eb91484b4f83ad"
+fuzz44b : BytesHex
+fuzz44b = "17bbaf9d56f9d9d5c527a86a0849493840a77b4e800316c039954459355738f4"
+fuzz44add : BytesHex
+fuzz44add = "af9ce4bbdfefbe685eb7a46959eb108bdd5cbec7dee2ae8cdf80d5a180a6bca1"
+fuzz44sub : BytesHex
+fuzz44sub = "8025858131fc0abcd468539549587e1b5c0dc82adedc810c6c564cef15f84ab9"
+fuzz44mul : BytesHex
+fuzz44mul = "ec6518a47bb9655b290a6826544d10de32899ab290877af879c712cebd6258e4"
+fuzz44d : Int
+fuzz44d = 153508721
+fuzz44divQ : BytesHex
+fuzz44divQ = "000000109963d3e0792d3089c499b86442de79a958cc5082bd7ea8a91b37f634"
+fuzz44divR : Int
+fuzz44divR = 56580793
+
+fuzz45a : BytesHex
+fuzz45a = "7c33e3bd89806769628ba3e83299768466947d04ae4d215a4206c25286d17674"
+fuzz45b : BytesHex
+fuzz45b = "0f04e8fa52c2b3259a60e0708adec4aa13978d55f06dd2e8197de15fec591e0a"
+fuzz45add : BytesHex
+fuzz45add = "8b38ccb7dc431a8efcec8458bd783b2e7a2c0a5a9ebaf4425b84a3b2732a947e"
+fuzz45sub : BytesHex
+fuzz45sub = "6d2efac336bdb443c82ac377a7bab1da52fcefaebddf4e722888e0f29a78586a"
+fuzz45mul : BytesHex
+fuzz45mul = "475bd9615b2cac4b4fbfe2f5e2b212f5db7d891b39507fd74d7e2416ee643888"
+fuzz45d : Int
+fuzz45d = 53311952
+fuzz45divQ : BytesHex
+fuzz45divQ = "0000002716222be53b5239187ba5cefe1fdb2756e23b0a108e0d76dc63821df8"
+fuzz45divR : Int
+fuzz45divR = 5694708
+
+fuzz46a : BytesHex
+fuzz46a = "6c5f8ad5b1d64594e4f60a775f5043db3f9f569a9e6f3b287fde7e776ec71f6a"
+fuzz46b : BytesHex
+fuzz46b = "20f519ba80da0dc281ca96278c67c6a2e163794ec49d4cc8f2eba7c79939f45f"
+fuzz46add : BytesHex
+fuzz46add = "8d54a49032b0535766c0a09eebb80a7e2102cfe9630c87f172ca263f080113c9"
+fuzz46sub : BytesHex
+fuzz46sub = "4b6a711b30fc37d2632b744fd2e87d385e3bdd4bd9d1ee5f8cf2d6afd58d2b0b"
+fuzz46mul : BytesHex
+fuzz46mul = "5c7202965d53d31cebbc79a7e2a206229cd6b2dbcdcf276e1a7d016a3e6fb056"
+fuzz46d : Int
+fuzz46d = 163096354
+fuzz46divQ : BytesHex
+fuzz46divQ = "0000000b25e4630dac5e1406bac062aea69bc75b5b9a4fb895bbfbc7942721c5"
+fuzz46divR : Int
+fuzz46divR = 133505088
+
+fuzz47a : BytesHex
+fuzz47a = "7d67edf62adaf3be7e9d765aeff3e64c129fef9f5ba02112f0a77922b254ce61"
+fuzz47b : BytesHex
+fuzz47b = "2e751f3486ab618cb6486883fb2c5575c9b10ef549d6bf9800d947ca6b3ba18b"
+fuzz47add : BytesHex
+fuzz47add = "abdd0d2ab186554b34e5dedeeb203bc1dc50fe94a576e0aaf180c0ed1d906fec"
+fuzz47sub : BytesHex
+fuzz47sub = "4ef2cec1a42f9231c8550dd6f4c790d648eee0aa11c9617aefce315847192cd6"
+fuzz47mul : BytesHex
+fuzz47mul = "f14848c8312f0f19b944ff9a5964e8396d5499c15a449c2d9606e35645320fab"
+fuzz47d : Int
+fuzz47d = 89706718
+fuzz47divQ : BytesHex
+fuzz47divQ = "00000017742c052d005b072745ddda97326e72a37ff0a239d9e864e4e4add16f"
+fuzz47divR : Int
+fuzz47divR = 4653087
+
+fuzz48a : BytesHex
+fuzz48a = "00682e071204cadf1030eab0c23f592ba730a7bba8bffc221773e87c747d5c3d"
+fuzz48b : BytesHex
+fuzz48b = "45f63c4aa7022e0a4ee88959c9999ae32b6d570419decff8bdb003be78273f0f"
+fuzz48add : BytesHex
+fuzz48add = "465e6a51b906f8e95f19740a8bd8f40ed29dfebfc29ecc1ad523ec3aeca49b4c"
+fuzz48sub : BytesHex
+fuzz48sub = "ba71f1bc6b029cd4c1486156f8a5be487bc350b78ee12c2959c3e4bdfc561d2e"
+fuzz48mul : BytesHex
+fuzz48mul = "bcb923212e1184a509ee2b7e9a8c3bd470de394b2ab9648407a0ee9152566a93"
+fuzz48d : Int
+fuzz48d = 9262573
+fuzz48divQ : BytesHex
+fuzz48divQ = "00000000bcb32efd55a6da8a463c9091919161597783218c2fe594033621a926"
+fuzz48divR : Int
+fuzz48divR = 3941903
+
+fuzz49a : BytesHex
+fuzz49a = "0e62334c95b52eba15cd515c4578b38148b14ab4411293d380714198aab9e9ba"
+fuzz49b : BytesHex
+fuzz49b = "9e59d30104645a90cf7267a95eb4ed7aead6b97f91766ecf09006f0fbbf44455"
+fuzz49add : BytesHex
+fuzz49add = "acbc064d9a19894ae53fb905a42da0fc33880433d28902a28971b0a866ae2e0f"
+fuzz49sub : BytesHex
+fuzz49sub = "7008604b9150d429465ae9b2e6c3c6065dda9134af9c25047770d288eec5a565"
+fuzz49mul : BytesHex
+fuzz49mul = "e7601352ac6123bfffeb3280b7f3c9221433a05ef36ae6caec7c33ddb51802c2"
+fuzz49d : Int
+fuzz49d = 196657157
+fuzz49divQ : BytesHex
+fuzz49divQ = "000000013a22c9c231a12b8a5343013a637d2998ebedb8182e11229fc1840a24"
+fuzz49divR : Int
+fuzz49divR = 95074054
+
 -- ---------------------------------------------------------------------------
--- 48. Frozen fuzz vectors (10 of 50)
+-- 48. Frozen fuzz vectors (50 random pairs)
 -- ---------------------------------------------------------------------------
 
 testFrozenFuzz : Script ()
@@ -1153,7 +1833,246 @@ testFrozenFuzz = do
   let (q9, r9) = uint256DivInt (uint256FromHex fuzz9a) fuzz9d
   assertMsg "fuzz9 divQ" (uint256ToHex q9 == fuzz9divQ)
   assertMsg "fuzz9 divR" (r9 == fuzz9divR)
-
+  assertMsg "fuzz10 add" (hexAddUint256 fuzz10a fuzz10b == fuzz10add)
+  assertMsg "fuzz10 sub" (hexSubUint256 fuzz10a fuzz10b == fuzz10sub)
+  assertMsg "fuzz10 mul" (hexMulUint256 fuzz10a fuzz10b == fuzz10mul)
+  let (q10, r10) = uint256DivInt (uint256FromHex fuzz10a) fuzz10d
+  assertMsg "fuzz10 divQ" (uint256ToHex q10 == fuzz10divQ)
+  assertMsg "fuzz10 divR" (r10 == fuzz10divR)
+  assertMsg "fuzz11 add" (hexAddUint256 fuzz11a fuzz11b == fuzz11add)
+  assertMsg "fuzz11 sub" (hexSubUint256 fuzz11a fuzz11b == fuzz11sub)
+  assertMsg "fuzz11 mul" (hexMulUint256 fuzz11a fuzz11b == fuzz11mul)
+  let (q11, r11) = uint256DivInt (uint256FromHex fuzz11a) fuzz11d
+  assertMsg "fuzz11 divQ" (uint256ToHex q11 == fuzz11divQ)
+  assertMsg "fuzz11 divR" (r11 == fuzz11divR)
+  assertMsg "fuzz12 add" (hexAddUint256 fuzz12a fuzz12b == fuzz12add)
+  assertMsg "fuzz12 sub" (hexSubUint256 fuzz12a fuzz12b == fuzz12sub)
+  assertMsg "fuzz12 mul" (hexMulUint256 fuzz12a fuzz12b == fuzz12mul)
+  let (q12, r12) = uint256DivInt (uint256FromHex fuzz12a) fuzz12d
+  assertMsg "fuzz12 divQ" (uint256ToHex q12 == fuzz12divQ)
+  assertMsg "fuzz12 divR" (r12 == fuzz12divR)
+  assertMsg "fuzz13 add" (hexAddUint256 fuzz13a fuzz13b == fuzz13add)
+  assertMsg "fuzz13 sub" (hexSubUint256 fuzz13a fuzz13b == fuzz13sub)
+  assertMsg "fuzz13 mul" (hexMulUint256 fuzz13a fuzz13b == fuzz13mul)
+  let (q13, r13) = uint256DivInt (uint256FromHex fuzz13a) fuzz13d
+  assertMsg "fuzz13 divQ" (uint256ToHex q13 == fuzz13divQ)
+  assertMsg "fuzz13 divR" (r13 == fuzz13divR)
+  assertMsg "fuzz14 add" (hexAddUint256 fuzz14a fuzz14b == fuzz14add)
+  assertMsg "fuzz14 sub" (hexSubUint256 fuzz14a fuzz14b == fuzz14sub)
+  assertMsg "fuzz14 mul" (hexMulUint256 fuzz14a fuzz14b == fuzz14mul)
+  let (q14, r14) = uint256DivInt (uint256FromHex fuzz14a) fuzz14d
+  assertMsg "fuzz14 divQ" (uint256ToHex q14 == fuzz14divQ)
+  assertMsg "fuzz14 divR" (r14 == fuzz14divR)
+  assertMsg "fuzz15 add" (hexAddUint256 fuzz15a fuzz15b == fuzz15add)
+  assertMsg "fuzz15 sub" (hexSubUint256 fuzz15a fuzz15b == fuzz15sub)
+  assertMsg "fuzz15 mul" (hexMulUint256 fuzz15a fuzz15b == fuzz15mul)
+  let (q15, r15) = uint256DivInt (uint256FromHex fuzz15a) fuzz15d
+  assertMsg "fuzz15 divQ" (uint256ToHex q15 == fuzz15divQ)
+  assertMsg "fuzz15 divR" (r15 == fuzz15divR)
+  assertMsg "fuzz16 add" (hexAddUint256 fuzz16a fuzz16b == fuzz16add)
+  assertMsg "fuzz16 sub" (hexSubUint256 fuzz16a fuzz16b == fuzz16sub)
+  assertMsg "fuzz16 mul" (hexMulUint256 fuzz16a fuzz16b == fuzz16mul)
+  let (q16, r16) = uint256DivInt (uint256FromHex fuzz16a) fuzz16d
+  assertMsg "fuzz16 divQ" (uint256ToHex q16 == fuzz16divQ)
+  assertMsg "fuzz16 divR" (r16 == fuzz16divR)
+  assertMsg "fuzz17 add" (hexAddUint256 fuzz17a fuzz17b == fuzz17add)
+  assertMsg "fuzz17 sub" (hexSubUint256 fuzz17a fuzz17b == fuzz17sub)
+  assertMsg "fuzz17 mul" (hexMulUint256 fuzz17a fuzz17b == fuzz17mul)
+  let (q17, r17) = uint256DivInt (uint256FromHex fuzz17a) fuzz17d
+  assertMsg "fuzz17 divQ" (uint256ToHex q17 == fuzz17divQ)
+  assertMsg "fuzz17 divR" (r17 == fuzz17divR)
+  assertMsg "fuzz18 add" (hexAddUint256 fuzz18a fuzz18b == fuzz18add)
+  assertMsg "fuzz18 sub" (hexSubUint256 fuzz18a fuzz18b == fuzz18sub)
+  assertMsg "fuzz18 mul" (hexMulUint256 fuzz18a fuzz18b == fuzz18mul)
+  let (q18, r18) = uint256DivInt (uint256FromHex fuzz18a) fuzz18d
+  assertMsg "fuzz18 divQ" (uint256ToHex q18 == fuzz18divQ)
+  assertMsg "fuzz18 divR" (r18 == fuzz18divR)
+  assertMsg "fuzz19 add" (hexAddUint256 fuzz19a fuzz19b == fuzz19add)
+  assertMsg "fuzz19 sub" (hexSubUint256 fuzz19a fuzz19b == fuzz19sub)
+  assertMsg "fuzz19 mul" (hexMulUint256 fuzz19a fuzz19b == fuzz19mul)
+  let (q19, r19) = uint256DivInt (uint256FromHex fuzz19a) fuzz19d
+  assertMsg "fuzz19 divQ" (uint256ToHex q19 == fuzz19divQ)
+  assertMsg "fuzz19 divR" (r19 == fuzz19divR)
+  assertMsg "fuzz20 add" (hexAddUint256 fuzz20a fuzz20b == fuzz20add)
+  assertMsg "fuzz20 sub" (hexSubUint256 fuzz20a fuzz20b == fuzz20sub)
+  assertMsg "fuzz20 mul" (hexMulUint256 fuzz20a fuzz20b == fuzz20mul)
+  let (q20, r20) = uint256DivInt (uint256FromHex fuzz20a) fuzz20d
+  assertMsg "fuzz20 divQ" (uint256ToHex q20 == fuzz20divQ)
+  assertMsg "fuzz20 divR" (r20 == fuzz20divR)
+  assertMsg "fuzz21 add" (hexAddUint256 fuzz21a fuzz21b == fuzz21add)
+  assertMsg "fuzz21 sub" (hexSubUint256 fuzz21a fuzz21b == fuzz21sub)
+  assertMsg "fuzz21 mul" (hexMulUint256 fuzz21a fuzz21b == fuzz21mul)
+  let (q21, r21) = uint256DivInt (uint256FromHex fuzz21a) fuzz21d
+  assertMsg "fuzz21 divQ" (uint256ToHex q21 == fuzz21divQ)
+  assertMsg "fuzz21 divR" (r21 == fuzz21divR)
+  assertMsg "fuzz22 add" (hexAddUint256 fuzz22a fuzz22b == fuzz22add)
+  assertMsg "fuzz22 sub" (hexSubUint256 fuzz22a fuzz22b == fuzz22sub)
+  assertMsg "fuzz22 mul" (hexMulUint256 fuzz22a fuzz22b == fuzz22mul)
+  let (q22, r22) = uint256DivInt (uint256FromHex fuzz22a) fuzz22d
+  assertMsg "fuzz22 divQ" (uint256ToHex q22 == fuzz22divQ)
+  assertMsg "fuzz22 divR" (r22 == fuzz22divR)
+  assertMsg "fuzz23 add" (hexAddUint256 fuzz23a fuzz23b == fuzz23add)
+  assertMsg "fuzz23 sub" (hexSubUint256 fuzz23a fuzz23b == fuzz23sub)
+  assertMsg "fuzz23 mul" (hexMulUint256 fuzz23a fuzz23b == fuzz23mul)
+  let (q23, r23) = uint256DivInt (uint256FromHex fuzz23a) fuzz23d
+  assertMsg "fuzz23 divQ" (uint256ToHex q23 == fuzz23divQ)
+  assertMsg "fuzz23 divR" (r23 == fuzz23divR)
+  assertMsg "fuzz24 add" (hexAddUint256 fuzz24a fuzz24b == fuzz24add)
+  assertMsg "fuzz24 sub" (hexSubUint256 fuzz24a fuzz24b == fuzz24sub)
+  assertMsg "fuzz24 mul" (hexMulUint256 fuzz24a fuzz24b == fuzz24mul)
+  let (q24, r24) = uint256DivInt (uint256FromHex fuzz24a) fuzz24d
+  assertMsg "fuzz24 divQ" (uint256ToHex q24 == fuzz24divQ)
+  assertMsg "fuzz24 divR" (r24 == fuzz24divR)
+  assertMsg "fuzz25 add" (hexAddUint256 fuzz25a fuzz25b == fuzz25add)
+  assertMsg "fuzz25 sub" (hexSubUint256 fuzz25a fuzz25b == fuzz25sub)
+  assertMsg "fuzz25 mul" (hexMulUint256 fuzz25a fuzz25b == fuzz25mul)
+  let (q25, r25) = uint256DivInt (uint256FromHex fuzz25a) fuzz25d
+  assertMsg "fuzz25 divQ" (uint256ToHex q25 == fuzz25divQ)
+  assertMsg "fuzz25 divR" (r25 == fuzz25divR)
+  assertMsg "fuzz26 add" (hexAddUint256 fuzz26a fuzz26b == fuzz26add)
+  assertMsg "fuzz26 sub" (hexSubUint256 fuzz26a fuzz26b == fuzz26sub)
+  assertMsg "fuzz26 mul" (hexMulUint256 fuzz26a fuzz26b == fuzz26mul)
+  let (q26, r26) = uint256DivInt (uint256FromHex fuzz26a) fuzz26d
+  assertMsg "fuzz26 divQ" (uint256ToHex q26 == fuzz26divQ)
+  assertMsg "fuzz26 divR" (r26 == fuzz26divR)
+  assertMsg "fuzz27 add" (hexAddUint256 fuzz27a fuzz27b == fuzz27add)
+  assertMsg "fuzz27 sub" (hexSubUint256 fuzz27a fuzz27b == fuzz27sub)
+  assertMsg "fuzz27 mul" (hexMulUint256 fuzz27a fuzz27b == fuzz27mul)
+  let (q27, r27) = uint256DivInt (uint256FromHex fuzz27a) fuzz27d
+  assertMsg "fuzz27 divQ" (uint256ToHex q27 == fuzz27divQ)
+  assertMsg "fuzz27 divR" (r27 == fuzz27divR)
+  assertMsg "fuzz28 add" (hexAddUint256 fuzz28a fuzz28b == fuzz28add)
+  assertMsg "fuzz28 sub" (hexSubUint256 fuzz28a fuzz28b == fuzz28sub)
+  assertMsg "fuzz28 mul" (hexMulUint256 fuzz28a fuzz28b == fuzz28mul)
+  let (q28, r28) = uint256DivInt (uint256FromHex fuzz28a) fuzz28d
+  assertMsg "fuzz28 divQ" (uint256ToHex q28 == fuzz28divQ)
+  assertMsg "fuzz28 divR" (r28 == fuzz28divR)
+  assertMsg "fuzz29 add" (hexAddUint256 fuzz29a fuzz29b == fuzz29add)
+  assertMsg "fuzz29 sub" (hexSubUint256 fuzz29a fuzz29b == fuzz29sub)
+  assertMsg "fuzz29 mul" (hexMulUint256 fuzz29a fuzz29b == fuzz29mul)
+  let (q29, r29) = uint256DivInt (uint256FromHex fuzz29a) fuzz29d
+  assertMsg "fuzz29 divQ" (uint256ToHex q29 == fuzz29divQ)
+  assertMsg "fuzz29 divR" (r29 == fuzz29divR)
+  assertMsg "fuzz30 add" (hexAddUint256 fuzz30a fuzz30b == fuzz30add)
+  assertMsg "fuzz30 sub" (hexSubUint256 fuzz30a fuzz30b == fuzz30sub)
+  assertMsg "fuzz30 mul" (hexMulUint256 fuzz30a fuzz30b == fuzz30mul)
+  let (q30, r30) = uint256DivInt (uint256FromHex fuzz30a) fuzz30d
+  assertMsg "fuzz30 divQ" (uint256ToHex q30 == fuzz30divQ)
+  assertMsg "fuzz30 divR" (r30 == fuzz30divR)
+  assertMsg "fuzz31 add" (hexAddUint256 fuzz31a fuzz31b == fuzz31add)
+  assertMsg "fuzz31 sub" (hexSubUint256 fuzz31a fuzz31b == fuzz31sub)
+  assertMsg "fuzz31 mul" (hexMulUint256 fuzz31a fuzz31b == fuzz31mul)
+  let (q31, r31) = uint256DivInt (uint256FromHex fuzz31a) fuzz31d
+  assertMsg "fuzz31 divQ" (uint256ToHex q31 == fuzz31divQ)
+  assertMsg "fuzz31 divR" (r31 == fuzz31divR)
+  assertMsg "fuzz32 add" (hexAddUint256 fuzz32a fuzz32b == fuzz32add)
+  assertMsg "fuzz32 sub" (hexSubUint256 fuzz32a fuzz32b == fuzz32sub)
+  assertMsg "fuzz32 mul" (hexMulUint256 fuzz32a fuzz32b == fuzz32mul)
+  let (q32, r32) = uint256DivInt (uint256FromHex fuzz32a) fuzz32d
+  assertMsg "fuzz32 divQ" (uint256ToHex q32 == fuzz32divQ)
+  assertMsg "fuzz32 divR" (r32 == fuzz32divR)
+  assertMsg "fuzz33 add" (hexAddUint256 fuzz33a fuzz33b == fuzz33add)
+  assertMsg "fuzz33 sub" (hexSubUint256 fuzz33a fuzz33b == fuzz33sub)
+  assertMsg "fuzz33 mul" (hexMulUint256 fuzz33a fuzz33b == fuzz33mul)
+  let (q33, r33) = uint256DivInt (uint256FromHex fuzz33a) fuzz33d
+  assertMsg "fuzz33 divQ" (uint256ToHex q33 == fuzz33divQ)
+  assertMsg "fuzz33 divR" (r33 == fuzz33divR)
+  assertMsg "fuzz34 add" (hexAddUint256 fuzz34a fuzz34b == fuzz34add)
+  assertMsg "fuzz34 sub" (hexSubUint256 fuzz34a fuzz34b == fuzz34sub)
+  assertMsg "fuzz34 mul" (hexMulUint256 fuzz34a fuzz34b == fuzz34mul)
+  let (q34, r34) = uint256DivInt (uint256FromHex fuzz34a) fuzz34d
+  assertMsg "fuzz34 divQ" (uint256ToHex q34 == fuzz34divQ)
+  assertMsg "fuzz34 divR" (r34 == fuzz34divR)
+  assertMsg "fuzz35 add" (hexAddUint256 fuzz35a fuzz35b == fuzz35add)
+  assertMsg "fuzz35 sub" (hexSubUint256 fuzz35a fuzz35b == fuzz35sub)
+  assertMsg "fuzz35 mul" (hexMulUint256 fuzz35a fuzz35b == fuzz35mul)
+  let (q35, r35) = uint256DivInt (uint256FromHex fuzz35a) fuzz35d
+  assertMsg "fuzz35 divQ" (uint256ToHex q35 == fuzz35divQ)
+  assertMsg "fuzz35 divR" (r35 == fuzz35divR)
+  assertMsg "fuzz36 add" (hexAddUint256 fuzz36a fuzz36b == fuzz36add)
+  assertMsg "fuzz36 sub" (hexSubUint256 fuzz36a fuzz36b == fuzz36sub)
+  assertMsg "fuzz36 mul" (hexMulUint256 fuzz36a fuzz36b == fuzz36mul)
+  let (q36, r36) = uint256DivInt (uint256FromHex fuzz36a) fuzz36d
+  assertMsg "fuzz36 divQ" (uint256ToHex q36 == fuzz36divQ)
+  assertMsg "fuzz36 divR" (r36 == fuzz36divR)
+  assertMsg "fuzz37 add" (hexAddUint256 fuzz37a fuzz37b == fuzz37add)
+  assertMsg "fuzz37 sub" (hexSubUint256 fuzz37a fuzz37b == fuzz37sub)
+  assertMsg "fuzz37 mul" (hexMulUint256 fuzz37a fuzz37b == fuzz37mul)
+  let (q37, r37) = uint256DivInt (uint256FromHex fuzz37a) fuzz37d
+  assertMsg "fuzz37 divQ" (uint256ToHex q37 == fuzz37divQ)
+  assertMsg "fuzz37 divR" (r37 == fuzz37divR)
+  assertMsg "fuzz38 add" (hexAddUint256 fuzz38a fuzz38b == fuzz38add)
+  assertMsg "fuzz38 sub" (hexSubUint256 fuzz38a fuzz38b == fuzz38sub)
+  assertMsg "fuzz38 mul" (hexMulUint256 fuzz38a fuzz38b == fuzz38mul)
+  let (q38, r38) = uint256DivInt (uint256FromHex fuzz38a) fuzz38d
+  assertMsg "fuzz38 divQ" (uint256ToHex q38 == fuzz38divQ)
+  assertMsg "fuzz38 divR" (r38 == fuzz38divR)
+  assertMsg "fuzz39 add" (hexAddUint256 fuzz39a fuzz39b == fuzz39add)
+  assertMsg "fuzz39 sub" (hexSubUint256 fuzz39a fuzz39b == fuzz39sub)
+  assertMsg "fuzz39 mul" (hexMulUint256 fuzz39a fuzz39b == fuzz39mul)
+  let (q39, r39) = uint256DivInt (uint256FromHex fuzz39a) fuzz39d
+  assertMsg "fuzz39 divQ" (uint256ToHex q39 == fuzz39divQ)
+  assertMsg "fuzz39 divR" (r39 == fuzz39divR)
+  assertMsg "fuzz40 add" (hexAddUint256 fuzz40a fuzz40b == fuzz40add)
+  assertMsg "fuzz40 sub" (hexSubUint256 fuzz40a fuzz40b == fuzz40sub)
+  assertMsg "fuzz40 mul" (hexMulUint256 fuzz40a fuzz40b == fuzz40mul)
+  let (q40, r40) = uint256DivInt (uint256FromHex fuzz40a) fuzz40d
+  assertMsg "fuzz40 divQ" (uint256ToHex q40 == fuzz40divQ)
+  assertMsg "fuzz40 divR" (r40 == fuzz40divR)
+  assertMsg "fuzz41 add" (hexAddUint256 fuzz41a fuzz41b == fuzz41add)
+  assertMsg "fuzz41 sub" (hexSubUint256 fuzz41a fuzz41b == fuzz41sub)
+  assertMsg "fuzz41 mul" (hexMulUint256 fuzz41a fuzz41b == fuzz41mul)
+  let (q41, r41) = uint256DivInt (uint256FromHex fuzz41a) fuzz41d
+  assertMsg "fuzz41 divQ" (uint256ToHex q41 == fuzz41divQ)
+  assertMsg "fuzz41 divR" (r41 == fuzz41divR)
+  assertMsg "fuzz42 add" (hexAddUint256 fuzz42a fuzz42b == fuzz42add)
+  assertMsg "fuzz42 sub" (hexSubUint256 fuzz42a fuzz42b == fuzz42sub)
+  assertMsg "fuzz42 mul" (hexMulUint256 fuzz42a fuzz42b == fuzz42mul)
+  let (q42, r42) = uint256DivInt (uint256FromHex fuzz42a) fuzz42d
+  assertMsg "fuzz42 divQ" (uint256ToHex q42 == fuzz42divQ)
+  assertMsg "fuzz42 divR" (r42 == fuzz42divR)
+  assertMsg "fuzz43 add" (hexAddUint256 fuzz43a fuzz43b == fuzz43add)
+  assertMsg "fuzz43 sub" (hexSubUint256 fuzz43a fuzz43b == fuzz43sub)
+  assertMsg "fuzz43 mul" (hexMulUint256 fuzz43a fuzz43b == fuzz43mul)
+  let (q43, r43) = uint256DivInt (uint256FromHex fuzz43a) fuzz43d
+  assertMsg "fuzz43 divQ" (uint256ToHex q43 == fuzz43divQ)
+  assertMsg "fuzz43 divR" (r43 == fuzz43divR)
+  assertMsg "fuzz44 add" (hexAddUint256 fuzz44a fuzz44b == fuzz44add)
+  assertMsg "fuzz44 sub" (hexSubUint256 fuzz44a fuzz44b == fuzz44sub)
+  assertMsg "fuzz44 mul" (hexMulUint256 fuzz44a fuzz44b == fuzz44mul)
+  let (q44, r44) = uint256DivInt (uint256FromHex fuzz44a) fuzz44d
+  assertMsg "fuzz44 divQ" (uint256ToHex q44 == fuzz44divQ)
+  assertMsg "fuzz44 divR" (r44 == fuzz44divR)
+  assertMsg "fuzz45 add" (hexAddUint256 fuzz45a fuzz45b == fuzz45add)
+  assertMsg "fuzz45 sub" (hexSubUint256 fuzz45a fuzz45b == fuzz45sub)
+  assertMsg "fuzz45 mul" (hexMulUint256 fuzz45a fuzz45b == fuzz45mul)
+  let (q45, r45) = uint256DivInt (uint256FromHex fuzz45a) fuzz45d
+  assertMsg "fuzz45 divQ" (uint256ToHex q45 == fuzz45divQ)
+  assertMsg "fuzz45 divR" (r45 == fuzz45divR)
+  assertMsg "fuzz46 add" (hexAddUint256 fuzz46a fuzz46b == fuzz46add)
+  assertMsg "fuzz46 sub" (hexSubUint256 fuzz46a fuzz46b == fuzz46sub)
+  assertMsg "fuzz46 mul" (hexMulUint256 fuzz46a fuzz46b == fuzz46mul)
+  let (q46, r46) = uint256DivInt (uint256FromHex fuzz46a) fuzz46d
+  assertMsg "fuzz46 divQ" (uint256ToHex q46 == fuzz46divQ)
+  assertMsg "fuzz46 divR" (r46 == fuzz46divR)
+  assertMsg "fuzz47 add" (hexAddUint256 fuzz47a fuzz47b == fuzz47add)
+  assertMsg "fuzz47 sub" (hexSubUint256 fuzz47a fuzz47b == fuzz47sub)
+  assertMsg "fuzz47 mul" (hexMulUint256 fuzz47a fuzz47b == fuzz47mul)
+  let (q47, r47) = uint256DivInt (uint256FromHex fuzz47a) fuzz47d
+  assertMsg "fuzz47 divQ" (uint256ToHex q47 == fuzz47divQ)
+  assertMsg "fuzz47 divR" (r47 == fuzz47divR)
+  assertMsg "fuzz48 add" (hexAddUint256 fuzz48a fuzz48b == fuzz48add)
+  assertMsg "fuzz48 sub" (hexSubUint256 fuzz48a fuzz48b == fuzz48sub)
+  assertMsg "fuzz48 mul" (hexMulUint256 fuzz48a fuzz48b == fuzz48mul)
+  let (q48, r48) = uint256DivInt (uint256FromHex fuzz48a) fuzz48d
+  assertMsg "fuzz48 divQ" (uint256ToHex q48 == fuzz48divQ)
+  assertMsg "fuzz48 divR" (r48 == fuzz48divR)
+  assertMsg "fuzz49 add" (hexAddUint256 fuzz49a fuzz49b == fuzz49add)
+  assertMsg "fuzz49 sub" (hexSubUint256 fuzz49a fuzz49b == fuzz49sub)
+  assertMsg "fuzz49 mul" (hexMulUint256 fuzz49a fuzz49b == fuzz49mul)
+  let (q49, r49) = uint256DivInt (uint256FromHex fuzz49a) fuzz49d
+  assertMsg "fuzz49 divQ" (uint256ToHex q49 == fuzz49divQ)
+  assertMsg "fuzz49 divR" (r49 == fuzz49divR)
 -- ---------------------------------------------------------------------------
 -- 49. Boundary sweep: l0 position
 -- ---------------------------------------------------------------------------
@@ -1235,3 +2154,649 @@ testBoundaryL9 = do
     (hexMulUint256 "1000000000000000000000000000000000000000000000000000000000000000"
                    "1000000000000000000000000000000000000000000000000000000000000000"
       == zero)
+
+-- ===========================================================================
+-- 52. Per-limb comparison sweep (l1 through l8)
+-- Must match test/src/test/uint256-vectors.test.ts
+-- ===========================================================================
+
+testComparePerLimb : Script ()
+testComparePerLimb = do
+  -- l1 differs
+  assertMsg "cmp l1 LT"
+    (uint256Compare (uint256FromHex "0000000000000000000000000000000000000000000000000000000010000000")
+                    (uint256FromHex "0000000000000000000000000000000000000000000000000000000020000000") == LT)
+  assertMsg "cmp l1 GT"
+    (uint256Compare (uint256FromHex "0000000000000000000000000000000000000000000000000000000020000000")
+                    (uint256FromHex "0000000000000000000000000000000000000000000000000000000010000000") == GT)
+  -- l2 differs
+  assertMsg "cmp l2 LT"
+    (uint256Compare (uint256FromHex "0000000000000000000000000000000000000000000000000100000000000000")
+                    (uint256FromHex "0000000000000000000000000000000000000000000000000200000000000000") == LT)
+  -- l3 differs
+  assertMsg "cmp l3 LT"
+    (uint256Compare (uint256FromHex "0000000000000000000000000000000000000000001000000000000000000000")
+                    (uint256FromHex "0000000000000000000000000000000000000000002000000000000000000000") == LT)
+  -- l4 differs
+  assertMsg "cmp l4 LT"
+    (uint256Compare (uint256FromHex "0000000000000000000000000000000000010000000000000000000000000000")
+                    (uint256FromHex "0000000000000000000000000000000000020000000000000000000000000000") == LT)
+  -- l5 differs
+  assertMsg "cmp l5 LT"
+    (uint256Compare (uint256FromHex "0000000000000000000000000000100000000000000000000000000000000000")
+                    (uint256FromHex "0000000000000000000000000000200000000000000000000000000000000000") == LT)
+  -- l6 differs
+  assertMsg "cmp l6 LT"
+    (uint256Compare (uint256FromHex "0000000000000000000001000000000000000000000000000000000000000000")
+                    (uint256FromHex "0000000000000000000002000000000000000000000000000000000000000000") == LT)
+  -- l7 differs
+  assertMsg "cmp l7 LT"
+    (uint256Compare (uint256FromHex "0000000000000010000000000000000000000000000000000000000000000000")
+                    (uint256FromHex "0000000000000020000000000000000000000000000000000000000000000000") == LT)
+  -- l8 differs
+  assertMsg "cmp l8 LT"
+    (uint256Compare (uint256FromHex "0000000100000000000000000000000000000000000000000000000000000000")
+                    (uint256FromHex "0000000200000000000000000000000000000000000000000000000000000000") == LT)
+
+-- ---------------------------------------------------------------------------
+-- 53. Comparison: MSB equal, LSB differs (full guard-chain fallthrough)
+-- ---------------------------------------------------------------------------
+
+testCompareFullFallthrough : Script ()
+testCompareFullFallthrough = do
+  -- max vs max-1: identical l9..l1, differ at l0
+  assertMsg "max vs max-1 GT"
+    (uint256Compare uint256Max (uint256FromHex maxMinusOne) == GT)
+  assertMsg "max-1 vs max LT"
+    (uint256Compare (uint256FromHex maxMinusOne) uint256Max == LT)
+  -- Upper limb dominates lower
+  assertMsg "upper limb dominates"
+    (uint256Compare (uint256FromHex "100000000000000000000000000000000000000000000000000000000fffffff")
+                    (uint256FromHex "2000000000000000000000000000000000000000000000000000000000000000") == LT)
+
+-- ---------------------------------------------------------------------------
+-- 54. Comparison: transitivity, Gt/Lt false cases, zero self-equality
+-- ---------------------------------------------------------------------------
+
+testCompareExtended : Script ()
+testCompareExtended = do
+  -- Transitivity: 1 < 2^128 < max
+  assertMsg "transitivity 1<pow128"
+    (uint256Compare (uint256FromHex one) (uint256FromHex pow128) == LT)
+  assertMsg "transitivity pow128<max"
+    (uint256Compare (uint256FromHex pow128) uint256Max == LT)
+  assertMsg "transitivity 1<max"
+    (uint256Compare (uint256FromHex one) uint256Max == LT)
+  -- Gt/Lt return False for equal values
+  assertMsg "gt false for equal (one)" (not (uint256Gt (uint256FromHex one) (uint256FromHex one)))
+  assertMsg "gt false for equal (zero)" (not (uint256Gt uint256Zero uint256Zero))
+  assertMsg "gt false for equal (max)" (not (uint256Gt uint256Max uint256Max))
+  assertMsg "lt false for equal (one)" (not (uint256Lt (uint256FromHex one) (uint256FromHex one)))
+  assertMsg "lt false for equal (zero)" (not (uint256Lt uint256Zero uint256Zero))
+  assertMsg "lt false for equal (max)" (not (uint256Lt uint256Max uint256Max))
+  -- Zero self-equality
+  assertMsg "zero == zero" (uint256Compare uint256Zero uint256Zero == EQ)
+
+-- ---------------------------------------------------------------------------
+-- 55. isZero with single non-zero middle limb
+-- ---------------------------------------------------------------------------
+
+testIsZeroMiddleLimbs : Script ()
+testIsZeroMiddleLimbs = do
+  assertMsg "not isZero l1=1"
+    (not (uint256IsZero (uint256FromHex "0000000000000000000000000000000000000000000000000000000010000000")))
+  assertMsg "not isZero l3=1"
+    (not (uint256IsZero (uint256FromHex "0000000000000000000000000000000000000000001000000000000000000000")))
+  assertMsg "not isZero l5=1"
+    (not (uint256IsZero (uint256FromHex "0000000000000000000000000000100000000000000000000000000000000000")))
+  assertMsg "not isZero l7=1"
+    (not (uint256IsZero (uint256FromHex "0000000000000010000000000000000000000000000000000000000000000000")))
+  assertMsg "not isZero l8=1"
+    (not (uint256IsZero (uint256FromHex "0000000100000000000000000000000000000000000000000000000000000000")))
+
+-- ===========================================================================
+-- AUDIT V2: New constants (oracle: TypeScript BigInt)
+-- Must match test/src/test/uint256-vectors.test.ts
+-- ===========================================================================
+
+pow84 : BytesHex
+pow84 = "0000000000000000000000000000000000000000001000000000000000000000"
+
+pow84MinusOne : BytesHex
+pow84MinusOne = "0000000000000000000000000000000000000000000fffffffffffffffffffff"
+
+pow112 : BytesHex
+pow112 = "0000000000000000000000000000000000010000000000000000000000000000"
+
+pow112MinusOne : BytesHex
+pow112MinusOne = "000000000000000000000000000000000000ffffffffffffffffffffffffffff"
+
+pow168 : BytesHex
+pow168 = "0000000000000000000001000000000000000000000000000000000000000000"
+
+pow168MinusOne : BytesHex
+pow168MinusOne = "0000000000000000000000ffffffffffffffffffffffffffffffffffffffffff"
+
+pow196 : BytesHex
+pow196 = "0000000000000010000000000000000000000000000000000000000000000000"
+
+pow196MinusOne : BytesHex
+pow196MinusOne = "000000000000000fffffffffffffffffffffffffffffffffffffffffffffffff"
+
+pow224 : BytesHex
+pow224 = "0000000100000000000000000000000000000000000000000000000000000000"
+
+pow224MinusOne : BytesHex
+pow224MinusOne = "00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+
+pow127 : BytesHex
+pow127 = "0000000000000000000000000000000080000000000000000000000000000000"
+
+-- ---------------------------------------------------------------------------
+-- 56. Multiplication associativity
+-- ---------------------------------------------------------------------------
+
+testMulAssociativity : Script ()
+testMulAssociativity = do
+  let a1 = uint256FromHex "deadbeefcafebabe1234567890abcdef0011223344556677fedcba9876543210"
+      b1 = uint256FromHex "00000000000000000000000000000000000000000000000000000000000000ff"
+      c1 = uint256FromHex "0000000000000000000000000000000000000000000000000000000000010001"
+  assertMsg "mul assoc 1: (a*b)*c == a*(b*c)"
+    (uint256Mul (uint256Mul a1 b1) c1 == uint256Mul a1 (uint256Mul b1 c1))
+  assertMsg "mul assoc 1 result"
+    (uint256ToHex (uint256Mul (uint256Mul a1 b1) c1) == "ffec649737102576443a3d3a3c333222222222222297ef64bbbbbbbbbbcdddf0")
+  let a2 = uint256FromHex "a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5"
+      b2 = uint256FromHex "0000000000000000000000000000000100000000000000000000000000000001"
+      c2 = uint256FromHex three
+  assertMsg "mul assoc 2: (a*b)*c == a*(b*c)"
+    (uint256Mul (uint256Mul a2 b2) c2 == uint256Mul a2 (uint256Mul b2 c2))
+
+-- ---------------------------------------------------------------------------
+-- 57. a*2 == a+a (cross-validates add and mul)
+-- ---------------------------------------------------------------------------
+
+testDoubleEqualsAddSelf : Script ()
+testDoubleEqualsAddSelf = do
+  let twoU = uint256FromHex two
+      check label x = assertMsg label
+        (uint256Mul x twoU == uint256Add x x)
+  check "dbl oneEth" (uint256FromHex oneEth)
+  check "dbl pow128" (uint256FromHex pow128)
+  check "dbl limbMax" (uint256FromHex hexLimbMax)
+  check "dbl pow255" (uint256FromHex pow255)
+  check "dbl maxDiv2" (uint256FromHex maxDiv2)
+  check "dbl patA" (uint256FromHex patA)
+
+-- ---------------------------------------------------------------------------
+-- 58. Squaring
+-- ---------------------------------------------------------------------------
+
+testSquaring : Script ()
+testSquaring = do
+  let sq x = uint256Mul x x
+  -- (2^64)^2 = 2^128
+  assertMsg "sq 2^64"
+    (uint256ToHex (sq (uint256FromHex "0000000000000000000000000000000000000000000000010000000000000000"))
+      == pow128)
+  -- (0xdeadbeef)^2
+  assertMsg "sq deadbeef"
+    (uint256ToHex (sq (uint256FromHex "00000000000000000000000000000000000000000000000000000000deadbeef"))
+      == "000000000000000000000000000000000000000000000000c1b1cd12216da321")
+  -- (2^192+1)^2
+  assertMsg "sq 2^192+1"
+    (uint256ToHex (sq (uint256FromHex "0000000000000001000000000000000000000000000000000000000000000001"))
+      == "0000000000000002000000000000000000000000000000000000000000000001")
+  -- (2^64-1)^2
+  assertMsg "sq 2^64-1"
+    (uint256ToHex (sq (uint256FromHex "000000000000000000000000000000000000000000000000ffffffffffffffff"))
+      == "00000000000000000000000000000000fffffffffffffffe0000000000000001")
+  -- (2^255-1)^2 mod 2^256 = 1
+  assertMsg "sq 2^255-1"
+    (uint256ToHex (sq (uint256FromHex maxDiv2)) == one)
+
+-- ---------------------------------------------------------------------------
+-- 59. Additive inverse: a + (0 - a) == 0
+-- ---------------------------------------------------------------------------
+
+testAdditiveInverse : Script ()
+testAdditiveInverse = do
+  let check label x = assertMsg label
+        (uint256Add x (uint256Sub uint256Zero x) == uint256Zero)
+  check "inv oneEth" (uint256FromHex oneEth)
+  check "inv pow128" (uint256FromHex pow128)
+  check "inv patA" (uint256FromHex patA)
+  check "inv max" uint256Max
+
+-- ---------------------------------------------------------------------------
+-- 60. Left distributivity: (b+c)*a == b*a + c*a
+-- ---------------------------------------------------------------------------
+
+testLeftDistributive : Script ()
+testLeftDistributive = do
+  let a = uint256FromHex seven
+      b = uint256FromHex oneEth
+      c = uint256FromHex pow128
+  assertMsg "left dist (b+c)*a == b*a + c*a"
+    (uint256Mul (uint256Add b c) a == uint256Add (uint256Mul b a) (uint256Mul c a))
+
+-- ---------------------------------------------------------------------------
+-- 61. Checked vs unchecked consistency
+-- ---------------------------------------------------------------------------
+
+testCheckedUncheckedConsistency : Script ()
+testCheckedUncheckedConsistency = do
+  -- Add: overflow
+  assertMsg "addChecked==add (overflow)"
+    (fst (uint256AddChecked uint256Max uint256One) == uint256Add uint256Max uint256One)
+  -- Add: no overflow
+  assertMsg "addChecked==add (no overflow)"
+    (fst (uint256AddChecked uint256One uint256One) == uint256Add uint256One uint256One)
+  -- Sub: underflow
+  assertMsg "subChecked==sub (underflow)"
+    (fst (uint256SubChecked uint256Zero uint256One) == uint256Sub uint256Zero uint256One)
+  -- Sub: no underflow
+  assertMsg "subChecked==sub (no underflow)"
+    (fst (uint256SubChecked (uint256FromHex five) (uint256FromHex three)) == uint256Sub (uint256FromHex five) (uint256FromHex three))
+  -- Mul: overflow
+  assertMsg "mulChecked==mul (overflow)"
+    (fst (uint256MulChecked uint256Max uint256Max) == uint256Mul uint256Max uint256Max)
+  -- Mul: no overflow
+  assertMsg "mulChecked==mul (no overflow)"
+    (fst (uint256MulChecked (uint256FromHex three) (uint256FromHex seven)) == uint256Mul (uint256FromHex three) (uint256FromHex seven))
+
+-- ---------------------------------------------------------------------------
+-- 62. Reverse hex round-trip: fromHex(toHex(x)) == x
+-- ---------------------------------------------------------------------------
+
+testReverseHexRoundTrip : Script ()
+testReverseHexRoundTrip = do
+  assertMsg "rev rt zero" (uint256FromHex (uint256ToHex uint256Zero) == uint256Zero)
+  assertMsg "rev rt one" (uint256FromHex (uint256ToHex uint256One) == uint256One)
+  assertMsg "rev rt max" (uint256FromHex (uint256ToHex uint256Max) == uint256Max)
+  -- Constructed values with specific limb patterns
+  let limbMaxOnly = UInt256 with limbs = [268435455, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+  assertMsg "rev rt l0=max" (uint256FromHex (uint256ToHex limbMaxOnly) == limbMaxOnly)
+  let midLimb = UInt256 with limbs = [0, 0, 0, 0, 134217728, 0, 0, 0, 0, 0]
+  assertMsg "rev rt l4=half" (uint256FromHex (uint256ToHex midLimb) == midLimb)
+  let topLimb = UInt256 with limbs = [0, 0, 0, 0, 0, 0, 0, 0, 0, 15]
+  assertMsg "rev rt l9=15" (uint256FromHex (uint256ToHex topLimb) == topLimb)
+  -- Ascending limbs
+  let ascending = UInt256 with limbs = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+  assertMsg "rev rt ascending" (uint256FromHex (uint256ToHex ascending) == ascending)
+
+-- ---------------------------------------------------------------------------
+-- 63. AddChecked boundary precision
+-- ---------------------------------------------------------------------------
+
+testAddCheckedBoundary : Script ()
+testAddCheckedBoundary = do
+  -- s9=15 via carry from l8 (no overflow)
+  let (r1, o1) = uint256AddChecked
+        (uint256FromHex "efffffff00000000000000000000000000000000000000000000000000000000")
+        (uint256FromHex "0000000100000000000000000000000000000000000000000000000000000000")
+  assertMsg "addChecked s9=15 via carry result"
+    (uint256ToHex r1 == "f000000000000000000000000000000000000000000000000000000000000000")
+  assertMsg "addChecked s9=15 via carry no overflow" (not o1)
+  -- s9=16 via carry from l8 (overflow)
+  let (r2, o2) = uint256AddChecked
+        (uint256FromHex "efffffff00000000000000000000000000000000000000000000000000000000")
+        (uint256FromHex "1000000100000000000000000000000000000000000000000000000000000000")
+  assertMsg "addChecked s9=16 via carry result" (r2 == uint256Zero)
+  assertMsg "addChecked s9=16 via carry overflow" o2
+  -- (2^255-1) + 2^255 = max, no overflow
+  let (r3, o3) = uint256AddChecked (uint256FromHex maxDiv2) (uint256FromHex pow255)
+  assertMsg "addChecked maxDiv2+pow255=max" (r3 == uint256Max)
+  assertMsg "addChecked maxDiv2+pow255 no overflow" (not o3)
+  -- Simultaneous carry at every limb (no overflow)
+  let (r4, o4) = uint256AddChecked
+        (uint256FromHex "4800000080000008000000800000080000008000000800000080000008000000")
+        (uint256FromHex "4800000080000008000000800000080000008000000800000080000008000000")
+  assertMsg "addChecked simultaneous carry result"
+    (uint256ToHex r4 == "9000000100000010000001000000100000010000001000000100000010000000")
+  assertMsg "addChecked simultaneous carry no overflow" (not o4)
+  -- Simultaneous carry overflow
+  let (r5, o5) = uint256AddChecked
+        (uint256FromHex "8800000080000008000000800000080000008000000800000080000008000000")
+        (uint256FromHex "8800000080000008000000800000080000008000000800000080000008000000")
+  assertMsg "addChecked simultaneous carry overflow result"
+    (uint256ToHex r5 == "1000000100000010000001000000100000010000001000000100000010000000")
+  assertMsg "addChecked simultaneous carry overflow" o5
+
+-- ---------------------------------------------------------------------------
+-- 64. SubChecked boundary cases
+-- ---------------------------------------------------------------------------
+
+testSubCheckedBoundary : Script ()
+testSubCheckedBoundary = do
+  -- Full borrow chain (no underflow)
+  let (r1, u1) = uint256SubChecked
+        (uint256FromHex "1000000000000000000000000000000000000000000000000000000000000001")
+        (uint256FromHex two)
+  assertMsg "subChecked full borrow result"
+    (uint256ToHex r1 == "0fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")
+  assertMsg "subChecked full borrow no underflow" (not u1)
+  -- 2^224 - 1
+  assertMsg "sub 2^224-1"
+    (uint256ToHex (uint256Sub (uint256FromHex pow224) uint256One) == pow224MinusOne)
+  -- 0 - max = 1 (underflow)
+  let (r2, u2) = uint256SubChecked uint256Zero uint256Max
+  assertMsg "subChecked 0-max=1" (r2 == uint256One)
+  assertMsg "subChecked 0-max underflow" u2
+  -- d9=0 borrow absorbed (no underflow)
+  let (r3, u3) = uint256SubChecked
+        (uint256FromHex "2000000000000000000000000000000000000000000000000000000000000001")
+        (uint256FromHex "1000000000000000000000000000000000000000000000000000000000000002")
+  assertMsg "subChecked d9=0 result"
+    (uint256ToHex r3 == "0fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")
+  assertMsg "subChecked d9=0 no underflow" (not u3)
+  -- d9=-1 underflow
+  let (r4, u4) = uint256SubChecked
+        (uint256FromHex "1000000000000000000000000000000000000000000000000000000000000001")
+        (uint256FromHex "1000000000000000000000000000000000000000000000000000000000000002")
+  assertMsg "subChecked d9=-1 result" (r4 == uint256Max)
+  assertMsg "subChecked d9=-1 underflow" u4
+  -- Only l9 borrows
+  assertMsg "sub only l9 borrows"
+    (uint256ToHex (uint256Sub
+      (uint256FromHex "3000000000000000000000000000000000000000000000000000000000000005")
+      (uint256FromHex "5000000000000000000000000000000000000000000000000000000000000003"))
+      == "e000000000000000000000000000000000000000000000000000000000000002")
+  -- Self-subtraction
+  assertMsg "self-sub patA" (uint256Sub (uint256FromHex patA) (uint256FromHex patA) == uint256Zero)
+  assertMsg "self-sub max" (uint256Sub uint256Max uint256Max == uint256Zero)
+  -- SubChecked equal = (zero, False)
+  let (r5, u5) = uint256SubChecked (uint256FromHex pow128) (uint256FromHex pow128)
+  assertMsg "subChecked equal=zero" (r5 == uint256Zero)
+  assertMsg "subChecked equal no underflow" (not u5)
+  -- SubChecked max-0 = (max, False)
+  let (r6, u6) = uint256SubChecked uint256Max uint256Zero
+  assertMsg "subChecked max-0=max" (r6 == uint256Max)
+  assertMsg "subChecked max-0 no underflow" (not u6)
+
+-- ---------------------------------------------------------------------------
+-- 65. Carry/borrow at missing limb boundaries
+-- ---------------------------------------------------------------------------
+
+testCarryBorrowAllBoundaries : Script ()
+testCarryBorrowAllBoundaries = do
+  -- l2/l3 boundary (2^84)
+  assertMsg "carry l2->l3" (hexAddUint256 pow84MinusOne one == pow84)
+  assertMsg "borrow l3->l2" (hexSubUint256 pow84 one == pow84MinusOne)
+  -- l3/l4 boundary (2^112)
+  assertMsg "carry l3->l4" (hexAddUint256 pow112MinusOne one == pow112)
+  assertMsg "borrow l4->l3" (hexSubUint256 pow112 one == pow112MinusOne)
+  -- l5/l6 boundary (2^168)
+  assertMsg "carry l5->l6" (hexAddUint256 pow168MinusOne one == pow168)
+  assertMsg "borrow l6->l5" (hexSubUint256 pow168 one == pow168MinusOne)
+  -- l6/l7 boundary (2^196)
+  assertMsg "carry l6->l7" (hexAddUint256 pow196MinusOne one == pow196)
+  assertMsg "borrow l7->l6" (hexSubUint256 pow196 one == pow196MinusOne)
+  -- l7/l8 boundary (2^224)
+  assertMsg "carry l7->l8" (hexAddUint256 pow224MinusOne one == pow224)
+  assertMsg "borrow l8->l7" (hexSubUint256 pow224 one == pow224MinusOne)
+
+-- ---------------------------------------------------------------------------
+-- 66. Division extended
+-- ---------------------------------------------------------------------------
+
+testDivisionExtended : Script ()
+testDivisionExtended = do
+  -- Dividend < divisor (quotient = 0)
+  let (q1, r1) = uint256DivInt (uint256FromHex three) 7
+  assertMsg "div 3/7 q=0" (q1 == uint256Zero)
+  assertMsg "div 3/7 r=3" (r1 == 3)
+  let (q2, r2) = uint256DivInt (uint256FromHex "0000000000000000000000000000000000000000000000000000000000000063") 100
+  assertMsg "div 99/100 q=0" (q2 == uint256Zero)
+  assertMsg "div 99/100 r=99" (r2 == 99)
+  -- Division by 1
+  let (q3, r3) = uint256DivInt uint256Zero 1
+  assertMsg "div 0/1 q=0" (q3 == uint256Zero)
+  assertMsg "div 0/1 r=0" (r3 == 0)
+  let (q4, r4) = uint256DivInt (uint256FromHex oneEth) 1
+  assertMsg "div 1e18/1 q=1e18" (uint256ToHex q4 == oneEth)
+  assertMsg "div 1e18/1 r=0" (r4 == 0)
+  -- Adjacent: 8/7
+  let (q5, r5) = uint256DivInt (uint256FromSmallInt 8) 7
+  assertMsg "div 8/7 q=1" (uint256ToHex q5 == one)
+  assertMsg "div 8/7 r=1" (r5 == 1)
+  -- Division by 2 sweep
+  let (q6, _) = uint256DivInt (uint256FromHex oneEth) 2
+  assertMsg "div 1e18/2" (uint256ToHex q6 == "00000000000000000000000000000000000000000000000006f05b59d3b20000")
+  let (q7, _) = uint256DivInt (uint256FromHex pow128) 2
+  assertMsg "div pow128/2" (uint256ToHex q7 == pow127)
+  let (q8, _) = uint256DivInt (uint256FromHex pow252) 2
+  assertMsg "div pow252/2" (uint256ToHex q8 == "0800000000000000000000000000000000000000000000000000000000000000")
+  -- Exact pattern quotients
+  let (q9, r9) = uint256DivInt uint256Max 3
+  assertMsg "div max/3 q" (uint256ToHex q9 == "5555555555555555555555555555555555555555555555555555555555555555")
+  assertMsg "div max/3 r=0" (r9 == 0)
+  let (q10, r10) = uint256DivInt uint256Max 17
+  assertMsg "div max/17 q" (uint256ToHex q10 == "0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f")
+  assertMsg "div max/17 r=0" (r10 == 0)
+  let (q11, r11) = uint256DivInt uint256Max 255
+  assertMsg "div max/255 q" (uint256ToHex q11 == "0101010101010101010101010101010101010101010101010101010101010101")
+  assertMsg "div max/255 r=0" (r11 == 0)
+  -- Top-limb-only dividend
+  let (q12, r12) = uint256DivInt (uint256FromHex pow252) 3
+  assertMsg "div pow252/3 q" (uint256ToHex q12 == "0555555555555555555555555555555555555555555555555555555555555555")
+  assertMsg "div pow252/3 r=1" (r12 == 1)
+  let (q13, r13) = uint256DivInt (uint256FromHex pow252) 7
+  assertMsg "div pow252/7 q" (uint256ToHex q13 == "0249249249249249249249249249249249249249249249249249249249249249")
+  assertMsg "div pow252/7 r=1" (r13 == 1)
+  let (q14, r14) = uint256DivInt (uint256FromHex pow252) 268435455
+  assertMsg "div pow252/limbMax q" (uint256ToHex q14 == "0000000100000010000001000000100000010000001000000100000010000001")
+  assertMsg "div pow252/limbMax r=1" (r14 == 1)
+  -- Powers-of-2 sweep
+  let (q15, r15) = uint256DivInt uint256Max 4
+  assertMsg "div max/4 q" (uint256ToHex q15 == "3fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")
+  assertMsg "div max/4 r=3" (r15 == 3)
+  let (q16, r16) = uint256DivInt uint256Max 8
+  assertMsg "div max/8 q" (uint256ToHex q16 == "1fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")
+  assertMsg "div max/8 r=7" (r16 == 7)
+  let (q17, r17) = uint256DivInt uint256Max 32
+  assertMsg "div max/32 q" (uint256ToHex q17 == "07ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")
+  assertMsg "div max/32 r=31" (r17 == 31)
+  let (q18, r18) = uint256DivInt uint256Max 256
+  assertMsg "div max/256 q" (uint256ToHex q18 == "00ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")
+  assertMsg "div max/256 r=255" (r18 == 255)
+  -- limbMax self-division
+  let (q19, r19) = uint256DivInt (uint256FromHex hexLimbMax) 268435455
+  assertMsg "div limbMax/limbMax q=1" (uint256ToHex q19 == one)
+  assertMsg "div limbMax/limbMax r=0" (r19 == 0)
+  -- Reconstruction invariant: max/10
+  let (q20, r20) = uint256DivInt uint256Max 10
+  assertMsg "div max/10 r=5" (r20 == 5)
+  assertMsg "div max/10 reconstruction"
+    (uint256Add (uint256Mul q20 (uint256FromSmallInt 10)) (uint256FromSmallInt r20) == uint256Max)
+  -- Reconstruction invariant: max/100
+  let (q21, r21) = uint256DivInt uint256Max 100
+  assertMsg "div max/100 r=35" (r21 == 35)
+  assertMsg "div max/100 reconstruction"
+    (uint256Add (uint256Mul q21 (uint256FromHex hex100)) (uint256FromSmallInt r21) == uint256Max)
+
+-- ---------------------------------------------------------------------------
+-- 67. MulChecked extended
+-- ---------------------------------------------------------------------------
+
+testMulCheckedExtended : Script ()
+testMulCheckedExtended = do
+  -- 2^127 * 2^128 = 2^255, no overflow
+  let (r1, o1) = uint256MulChecked (uint256FromHex pow127) (uint256FromHex pow128)
+  assertMsg "mulChecked 2^127*2^128=2^255" (uint256ToHex r1 == pow255)
+  assertMsg "mulChecked 2^127*2^128 no overflow" (not o1)
+  -- (2^255-1)*3 overflows
+  let (r2, o2) = uint256MulChecked (uint256FromHex maxDiv2) (uint256FromHex three)
+  assertMsg "mulChecked halfMax*3 result"
+    (uint256ToHex r2 == "7ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffd")
+  assertMsg "mulChecked halfMax*3 overflow" o2
+  -- 0*0, 1*1 no overflow
+  let (_, o3) = uint256MulChecked uint256Zero uint256Zero
+  assertMsg "mulChecked 0*0 no overflow" (not o3)
+  let (r4, o4) = uint256MulChecked uint256One uint256One
+  assertMsg "mulChecked 1*1=1" (r4 == uint256One)
+  assertMsg "mulChecked 1*1 no overflow" (not o4)
+  -- max*3, max*7, max*255
+  assertMsg "max*3"
+    (uint256ToHex (uint256Mul uint256Max (uint256FromHex three))
+      == "fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffd")
+  assertMsg "max*7"
+    (uint256ToHex (uint256Mul uint256Max (uint256FromHex seven))
+      == "fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff9")
+  assertMsg "max*255"
+    (uint256ToHex (uint256Mul uint256Max (uint256FromSmallInt 255))
+      == "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff01")
+  -- patA * patB
+  assertMsg "patA*patB"
+    (hexMulUint256 patA patB == "1c71c71c71c71c71c71c71c71c71c71c71c71c71c71c71c71c71c71c71c71c72")
+  -- patA squared
+  assertMsg "patA^2"
+    (hexMulUint256 patA patA == "38e38e38e38e38e38e38e38e38e38e38e38e38e38e38e38e38e38e38e38e38e4")
+
+-- ---------------------------------------------------------------------------
+-- 68. Euler expansion: (a+b)^2 = a^2 + 2ab + b^2
+-- ---------------------------------------------------------------------------
+
+testEulerExpansion : Script ()
+testEulerExpansion = do
+  let a = uint256FromHex oneEth
+      b = uint256FromHex pow128
+      lhs = uint256Mul (uint256Add a b) (uint256Add a b)
+      rhs = uint256Add
+              (uint256Add (uint256Mul a a) (uint256Mul (uint256FromHex two) (uint256Mul a b)))
+              (uint256Mul b b)
+  assertMsg "euler (a+b)^2 = a^2+2ab+b^2" (lhs == rhs)
+  assertMsg "euler result"
+    (uint256ToHex lhs == "00000000000000001bc16d674ec8000000c097ce7bc90715b34b9f1000000000")
+
+-- ---------------------------------------------------------------------------
+-- 69. EVM subtraction
+-- ---------------------------------------------------------------------------
+
+testEvmSubtraction : Script ()
+testEvmSubtraction = do
+  assertMsg "max - oneEth"
+    (uint256ToHex (uint256Sub uint256Max (uint256FromHex oneEth))
+      == "fffffffffffffffffffffffffffffffffffffffffffffffff21f494c589bffff")
+
+-- ---------------------------------------------------------------------------
+-- 70. Hex round-trip at all limb boundaries
+-- ---------------------------------------------------------------------------
+
+testHexRoundTripAllBoundaries : Script ()
+testHexRoundTripAllBoundaries = do
+  -- Round-trip at every 28-bit limb boundary
+  assertMsg "rt pow84" (uint256ToHex (uint256FromHex pow84) == pow84)
+  assertMsg "rt pow84-1" (uint256ToHex (uint256FromHex pow84MinusOne) == pow84MinusOne)
+  assertMsg "rt pow112" (uint256ToHex (uint256FromHex pow112) == pow112)
+  assertMsg "rt pow112-1" (uint256ToHex (uint256FromHex pow112MinusOne) == pow112MinusOne)
+  assertMsg "rt pow168" (uint256ToHex (uint256FromHex pow168) == pow168)
+  assertMsg "rt pow168-1" (uint256ToHex (uint256FromHex pow168MinusOne) == pow168MinusOne)
+  assertMsg "rt pow196" (uint256ToHex (uint256FromHex pow196) == pow196)
+  assertMsg "rt pow196-1" (uint256ToHex (uint256FromHex pow196MinusOne) == pow196MinusOne)
+  assertMsg "rt pow224" (uint256ToHex (uint256FromHex pow224) == pow224)
+  assertMsg "rt pow224-1" (uint256ToHex (uint256FromHex pow224MinusOne) == pow224MinusOne)
+  assertMsg "rt pow127" (uint256ToHex (uint256FromHex pow127) == pow127)
+
+-- ---------------------------------------------------------------------------
+-- 71. Squaring sweep: (2^k-1)^2 at limb boundaries
+-- Oracle: TypeScript BigInt, identity (2^k-1)^2 = 2^(2k) - 2^(k+1) + 1
+-- ---------------------------------------------------------------------------
+
+testSquaringSweep : Script ()
+testSquaringSweep = do
+  let sq x = uint256Mul x x
+  -- k=28: (2^28-1)^2 (limb boundary l0/l1)
+  assertMsg "sq sweep k=28"
+    (uint256ToHex (sq (uint256FromHex "000000000000000000000000000000000000000000000000000000000fffffff"))
+      == "00000000000000000000000000000000000000000000000000ffffffe0000001")
+  -- k=56: (2^56-1)^2 (limb boundary l1/l2)
+  assertMsg "sq sweep k=56"
+    (uint256ToHex (sq (uint256FromHex "00000000000000000000000000000000000000000000000000ffffffffffffff"))
+      == "000000000000000000000000000000000000fffffffffffffe00000000000001")
+  -- k=84: (2^84-1)^2 (limb boundary l2/l3)
+  assertMsg "sq sweep k=84"
+    (uint256ToHex (sq (uint256FromHex "0000000000000000000000000000000000000000000fffffffffffffffffffff"))
+      == "0000000000000000000000ffffffffffffffffffffe000000000000000000001")
+  -- k=112: (2^112-1)^2 (limb boundary l3/l4)
+  assertMsg "sq sweep k=112"
+    (uint256ToHex (sq (uint256FromHex "000000000000000000000000000000000000ffffffffffffffffffffffffffff"))
+      == "00000000fffffffffffffffffffffffffffe0000000000000000000000000001")
+  -- k=140: (2^140-1)^2 — 2*140=280 > 256, wraps mod 2^256
+  assertMsg "sq sweep k=140"
+    (uint256ToHex (sq (uint256FromHex "00000000000000000000000000000fffffffffffffffffffffffffffffffffff"))
+      == "ffffffffffffffffffffffffffffe00000000000000000000000000000000001")
+  -- k=196: (2^196-1)^2 — 2*196=392 > 256, wraps
+  assertMsg "sq sweep k=196"
+    (uint256ToHex (sq (uint256FromHex "000000000000000fffffffffffffffffffffffffffffffffffffffffffffffff"))
+      == "ffffffffffffffe0000000000000000000000000000000000000000000000001")
+  -- k=224: (2^224-1)^2 — 2*224=448 > 256, wraps
+  assertMsg "sq sweep k=224"
+    (uint256ToHex (sq (uint256FromHex "00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff"))
+      == "fffffffe00000000000000000000000000000000000000000000000000000001")
+
+-- ---------------------------------------------------------------------------
+-- 72. Karatsuba identity sweep: (2^a-1)*(2^b-1) = 2^(a+b) - 2^a - 2^b + 1
+-- Oracle: TypeScript BigInt
+-- ---------------------------------------------------------------------------
+
+testKaratsubaSweep : Script ()
+testKaratsubaSweep = do
+  -- (a=64, b=64): a+b=128, no wrap
+  assertMsg "karat 64x64"
+    (hexMulUint256
+      "000000000000000000000000000000000000000000000000ffffffffffffffff"
+      "000000000000000000000000000000000000000000000000ffffffffffffffff"
+      == "00000000000000000000000000000000fffffffffffffffe0000000000000001")
+  -- (a=64, b=192): a+b=256, wraps
+  assertMsg "karat 64x192"
+    (hexMulUint256
+      "000000000000000000000000000000000000000000000000ffffffffffffffff"
+      "0000000000000000ffffffffffffffffffffffffffffffffffffffffffffffff"
+      == "fffffffffffffffeffffffffffffffffffffffffffffffff0000000000000001")
+  -- (a=128, b=128): a+b=256, wraps
+  assertMsg "karat 128x128"
+    (hexMulUint256
+      "00000000000000000000000000000000ffffffffffffffffffffffffffffffff"
+      "00000000000000000000000000000000ffffffffffffffffffffffffffffffff"
+      == "fffffffffffffffffffffffffffffffe00000000000000000000000000000001")
+  -- (a=192, b=64): a+b=256, wraps (commutative with 64x192)
+  assertMsg "karat 192x64"
+    (hexMulUint256
+      "0000000000000000ffffffffffffffffffffffffffffffffffffffffffffffff"
+      "000000000000000000000000000000000000000000000000ffffffffffffffff"
+      == "fffffffffffffffeffffffffffffffffffffffffffffffff0000000000000001")
+  -- (a=252, b=4): a+b=256, wraps
+  assertMsg "karat 252x4"
+    (hexMulUint256
+      "0fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      "000000000000000000000000000000000000000000000000000000000000000f"
+      == "effffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff1")
+  -- (a=140, b=112): a+b=252, no wrap
+  assertMsg "karat 140x112"
+    (hexMulUint256
+      "00000000000000000000000000000fffffffffffffffffffffffffffffffffff"
+      "000000000000000000000000000000000000ffffffffffffffffffffffffffff"
+      == "0fffffffffffffffffffffffffffefffffff0000000000000000000000000001")
+
+-- ---------------------------------------------------------------------------
+-- 73. Token decimal scaling
+-- Oracle: TypeScript BigInt
+-- ---------------------------------------------------------------------------
+
+testTokenDecimalScaling : Script ()
+testTokenDecimalScaling = do
+  -- USDC upscale: 1e6 * 1e12 = 1e18
+  assertMsg "usdc upscale"
+    (uint256Mul (uint256FromHex oneUsdc) (uint256FromHex oneTrillion)
+      == uint256FromHex oneEth)
+  -- WBTC upscale: 1e8 * 1e10 = 1e18
+  let oneWbtc  = uint256FromHex "0000000000000000000000000000000000000000000000000000000005f5e100"
+      wbtcScale = uint256FromHex "00000000000000000000000000000000000000000000000000000002540be400"
+  assertMsg "wbtc upscale"
+    (uint256Mul oneWbtc wbtcScale == uint256FromHex oneEth)
+  -- Large token balance * price: 1000 ETH * 3500 USD (both 18 decimals)
+  let balance1000Eth = uint256FromHex "00000000000000000000000000000000000000000000003635c9adc5dea00000"
+      price3500Usd   = uint256FromHex "0000000000000000000000000000000000000000000000bdbc41e0348b300000"
+  assertMsg "1000eth * 3500usd"
+    (uint256ToHex (uint256Mul balance1000Eth price3500Usd)
+      == "0000000000000000000000000000282d93588918a93e0cc83d7a9e0000000000")
