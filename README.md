@@ -29,7 +29,7 @@ See `test/.env.example` for all available variables.
 ### 1. Build the DAR and generate codegen
 
 ```bash
-dpm build
+dpm build --all
 cd test
 pnpm run codegen:daml
 pnpm install
@@ -55,7 +55,6 @@ curl -sf http://localhost:7575/docs/openapi > /dev/null && echo "Ready"
 ```bash
 cd test
 pnpm test          # single run (unit + integration)
-pnpm test:watch    # watch mode
 ```
 
 ### One-liner rebuild
@@ -73,8 +72,8 @@ This runs `clean -> daml:build -> codegen:daml -> codegen:api -> install`.
 These don't need the sandbox:
 
 ```bash
-dpm build
-dpm test
+dpm build --all
+dpm test --all
 ```
 
 ## Sepolia E2E Tests
@@ -115,7 +114,7 @@ Send to the faucet address:
 
 ```bash
 # Start sandbox in a separate terminal first, then:
-pnpm test:e2e:sepolia
+pnpm test          # runs all tests including Sepolia e2e when env is set
 ```
 
 ## Design
@@ -136,7 +135,11 @@ From `test/`:
 | `pnpm codegen:daml`      | Regenerate Daml JS codegen from built DAR                     |
 | `pnpm codegen:api`       | Regenerate OpenAPI types (requires running sandbox)           |
 | `pnpm generate`          | Full clean rebuild: DAR + codegen + install                   |
-| `pnpm mpc-service`       | Start the MPC signing service                                 |
 | `pnpm sepolia:preflight` | Check faucet balances and print deposit addresses             |
-| `pnpm check`             | Typecheck + lint + knip + format check                        |
-| `pnpm fix`               | Auto-fix lint + format                                        |
+
+From root:
+
+| Script       | Description                            |
+| ------------ | -------------------------------------- |
+| `pnpm check` | Typecheck + lint + knip + format check |
+| `pnpm fix`   | Auto-fix lint + format                 |

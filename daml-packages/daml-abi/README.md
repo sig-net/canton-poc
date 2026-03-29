@@ -24,7 +24,7 @@ EVM ABI encoding and decoding for Daml. Provides slot-based access to ABI-encode
 - `abiDecodeInt : BytesHex -> Int -> BytesHex` -- decode int (two's complement) at slot i
 - `abiDecodeBool : BytesHex -> Int -> Bool` -- decode bool at slot i
 - `abiDecodeAddress : BytesHex -> Int -> BytesHex` -- decode address at slot i (20 bytes)
-- `abiDecodeBytesN : BytesHex -> Int -> Int -> BytesHex` -- decode bytesN at slot i
+- `abiDecodeBytesN : BytesHex -> Int -> Int -> BytesHex` -- decode bytesN at slot i (second Int is the byte count n)
 
 ### Dynamic Type Decoders
 
@@ -39,7 +39,7 @@ EVM ABI encoding and decoding for Daml. Provides slot-based access to ABI-encode
 
 ### Error Handling
 
-- `hasErrorPrefix : BytesHex -> Bool` -- check for `0xDEADBEEF` error magic prefix
+- `hasErrorPrefix : BytesHex -> Bool` -- check for `deadbeef` error magic prefix
 - `stripErrorPrefix : BytesHex -> BytesHex` -- strip 4-byte error prefix
 
 ## Dependencies

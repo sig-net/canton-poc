@@ -5,7 +5,6 @@ EIP-712 typed structured data hashing for Daml. Implements the domain separator 
 ## Modules
 
 - `Eip712` -- domain separator, struct hashing, keccak256 helpers
-- `RequestId` -- EIP-712 struct hashing for `CantonMpcDepositRequest` and `CantonMpcResponse`
 
 ## API Reference
 
@@ -20,13 +19,6 @@ EIP-712 typed structured data hashing for Daml. Implements the domain separator 
 - `padLeft : BytesHex -> Int -> BytesHex` -- left-pad hex to byte width
 - `assertBytes32 : BytesHex -> BytesHex` -- assert value is exactly 32 bytes
 - `chainIdToDecimalText : BytesHex -> Text` -- convert hex chain ID to decimal string
-
-### RequestId
-
-- `computeRequestId : Text -> EvmTransactionParams -> Text -> Int -> Text -> Text -> Text -> Text -> BytesHex` -- EIP-712 hash of a `CantonMpcDepositRequest` struct
-- `computeResponseHash : BytesHex -> BytesHex -> BytesHex` -- EIP-712 hash of a `CantonMpcResponse(bytes32 requestId, bytes mpcOutput)`
-- `hashEvmParams : EvmTransactionParams -> BytesHex` -- hash an `EvmTransactionParams` struct per EIP-712
-- `evmParamsTypeHash`, `requestTypeHash`, `responseTypeHash` -- pre-computed type hashes
 
 ## Dependencies
 
@@ -45,10 +37,9 @@ data-dependencies:
 
 ```daml
 import Eip712 (eip712Hash, domainSeparator, hashText)
-import RequestId (computeRequestId, computeResponseHash)
 
-let reqId = computeRequestId sender evmParams caip2Id keyVersion path algo dest nonceCid
-let respHash = computeResponseHash reqId mpcOutput
+let structHash = keccak256 (myTypeHash <> hashText myField)
+let digest = eip712Hash structHash
 ```
 
 ## Build & Test

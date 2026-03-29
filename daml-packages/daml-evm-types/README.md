@@ -33,6 +33,9 @@ Shared constants for Daml Script tests:
 - `claimTestPubKey`, `claimTestSignature`, `claimTestRequestId` -- deposit claim test data
 - `refundTestSignature`, `boolFalseTestSignature` -- withdrawal refund/failure test data
 - `boolTrueMpcOutput`, `boolFalseMpcOutput`, `errorPrefixMpcOutput` -- ABI-encoded return values
+- `erc20BoolSchema` -- JSON ABI schema for decoding a single bool return
+- `sampleVaultAddress`, `sampleRecipientAddress`, `sampleErc20Address` -- canonical test addresses
+- `sampleHoldingAmount` -- test token amount (100 USDC in 6-decimal hex)
 - `sampleEvmParams`, `sampleWithdrawalEvmParams` -- pre-built `EvmTransactionParams`
 
 ## Dependencies

@@ -38,13 +38,14 @@ isolation — each user's yield is theirs, no shared balance math needed.
 
 DeFi yield tokens use one of three fundamental models:
 
-| Model | Balance | Price | Canton-friendly? |
-|---|---|---|---|
-| **Rebasing** (aUSDC, stETH) | Changes over time | Stays ~pegged | No — `Erc20Holding.amount` goes stale |
-| **Shares / ERC-4626** (stataUSDC, wstETH, sDAI) | Fixed | Grows | Yes — amount is always correct |
-| **Claimable** (CRV gauges, COMP) | Fixed | Fixed | Needs separate claim choice |
+| Model                                           | Balance           | Price         | Canton-friendly?                      |
+| ----------------------------------------------- | ----------------- | ------------- | ------------------------------------- |
+| **Rebasing** (aUSDC, stETH)                     | Changes over time | Stays ~pegged | No — `Erc20Holding.amount` goes stale |
+| **Shares / ERC-4626** (stataUSDC, wstETH, sDAI) | Fixed             | Grows         | Yes — amount is always correct        |
+| **Claimable** (CRV gauges, COMP)                | Fixed             | Fixed         | Needs separate claim choice           |
 
 We use **stataUSDC** (Aave's ERC-4626 static aToken wrapper):
+
 - Balance stays constant — `Erc20Holding.amount` is always correct
 - Yield accrues in the exchange rate, not the balance
 - Standard ERC-20 — composable with Uniswap, Morpho, etc.
@@ -53,30 +54,49 @@ We use **stataUSDC** (Aave's ERC-4626 static aToken wrapper):
 **No new templates needed.** `Erc20Holding` tracks both USDC and stataUSDC
 — they're both ERC-20 tokens.
 
-### StataToken (Static aToken) — ERC-4626 Wrapper
+### StaticATokenLM (V1) — ERC-4626 Wrapper on Sepolia
 
-The StataToken wraps Aave's rebasing aTokens into non-rebasing ERC-4626
-shares. BGD Labs deploys a `StataTokenFactory` per Aave V3 pool.
+Sepolia deploys the V1 `StaticATokenLM` (from `bgd-labs/static-a-token-v3`),
+not the newer `StataTokenV2`. V1 wraps Aave's rebasing aTokens into
+non-rebasing ERC-4626 shares with explicit `depositToAave`/`withdrawFromAave`
+booleans.
 
-Key properties:
-- `asset()` returns the underlying aToken (aUSDC)
-- Extended `deposit(uint256, address, uint16, bool)` accepts raw underlying
-  (USDC) when `depositToAave = true` — supplies to Aave + wraps in one call
-- `redeem(uint256, address, address)` burns shares, returns underlying
-- `convertToAssets(shares)` returns current value including yield
-- Holders remain eligible for Aave liquidity mining incentives
+Key functions:
+
+- `deposit(uint256, address, uint16, bool) → uint256` — when
+  `depositToAave = true`: takes raw USDC, supplies to Aave internally,
+  mints shares. When `false`: takes aUSDC directly.
+- `redeem(uint256, address, address, bool) → uint256` — when
+  `withdrawFromAave = true`: burns shares, withdraws from Aave, returns raw
+  USDC. When `false`: returns aUSDC.
+- `rate()` — returns current exchange rate
+- `aToken()` — returns the underlying aToken address
+- `convertToAssets(shares)` — returns current USDC value including yield
+- `claimRewards()` — claim Aave liquidity mining incentives
 - No protocol fee for wrapping/unwrapping
+
+**V2 note:** Mainnet uses `StataTokenV2` (from `aave-dao/aave-v3-origin`)
+where the standard ERC-4626 `deposit(uint256, address)` handles raw
+underlying directly (no boolean needed). If Sepolia is upgraded to V2 in
+the future, switch to the 2-arg signatures.
 
 ## Sepolia Addresses
 
-| Contract             | Address                                      |
-| -------------------- | -------------------------------------------- |
-| Aave V3 Pool         | `0x6Ae43d3271ff6888e7Fc43Fd7321a503ff738951` |
-| USDC (test)          | `0x94a9D9AC8a22534E3FaCa9F4e7F2E2cf85d5E4C8` |
-| aUSDC (aToken)       | `0x16dA4541aD1807f4443d92D26044C1147406EB80` |
-| StataTokenFactory    | `0xd210dFB43B694430B8d31762B5199e30c31266C8` |
-| stataUSDC            | TBD — derive from factory via `getStatAToken(aUSDC)` |
-| Aave Faucet          | `0xC959483DBa39aa9E78757139af0e9a2EDEb3f42D` |
+| Contract          | Address                                                  |
+| ----------------- | -------------------------------------------------------- |
+| Aave V3 Pool      | `0x6Ae43d3271ff6888e7Fc43Fd7321a503ff738951`             |
+| USDC (test)       | `0x94a9D9AC8a22534E3FaCa9F4e7F2E2cf85d5E4C8`             |
+| aUSDC (aToken)    | `0x16dA4541aD1807f4443d92D26044C1147406EB80`             |
+| StataTokenFactory | `0xd210dFB43B694430B8d31762B5199e30c31266C8` (V1 legacy) |
+| stataUSDC         | `0x8A88124522dbBF1E56352ba3DE1d9F78C143751e`             |
+| stataDAI          | `0xDE46e43F46ff74A23a65EBb0580cbe3dFE684a17`             |
+| stataWETH         | `0x162B500569F42D9eCe937e6a61EDfef660A12E98`             |
+| Aave Faucet       | `0xC959483DBa39aa9E78757139af0e9a2EDEb3f42D`             |
+
+**Sepolia deploys V1 (`StaticATokenLM`), not V2 (`StataTokenV2`).** The
+function signatures differ — V1 uses 4-arg `deposit`/`redeem` with a
+`depositToAave`/`withdrawFromAave` boolean. See EVM Functions below.
+Factory lookup: `getStaticAToken(underlying)` (NOT `getStataToken`).
 
 ## Sequence Diagram
 
@@ -166,63 +186,71 @@ selector: 0x095ea7b3
 **Schema:** `outputDeserializationSchema = [{"name":"","type":"bool"}]`
 **Schema:** `respondSerializationSchema = [{"name":"","type":"bool"}]`
 
-### 2. StataToken `deposit` (USDC → stataUSDC in one call)
+### 2. StataToken `deposit` — standard ERC-4626 (USDC → stataUSDC)
 
 ```
-function deposit(uint256 assets, address receiver, uint16 referralCode, bool depositToAave)
-    returns (uint256 shares)
-selector: TBD — verify against deployed contract
+function deposit(uint256 assets, address receiver) returns (uint256 shares)
+selector: 0x6e553f65
 ```
 
-When `depositToAave = true`, the StataToken:
+The StataTokenV2 `deposit` takes raw USDC directly and handles Aave
+internally:
+
 1. Pulls USDC from caller via `transferFrom`
-2. Calls `Pool.supply(USDC, amount, address(this), referralCode)`
+2. Calls `Pool.supply(USDC, amount, address(this), 0)` internally
 3. Wraps the resulting aUSDC into stataUSDC shares
 4. Mints shares to `receiver`
 
 **EvmTransactionParams:**
 
-| Field               | Value                                                |
-| ------------------- | ---------------------------------------------------- |
-| `to`                | stataToken address                                   |
-| `functionSignature` | `"deposit(uint256,address,uint16,bool)"`             |
-| `args[0]`           | amount of USDC, left-padded to 32 bytes              |
-| `args[1]`           | receiver = user's derived address, left-padded       |
-| `args[2]`           | `00..00` (referralCode = 0)                          |
-| `args[3]`           | `00..01` (depositToAave = true)                      |
-| `value`             | `00..00` (32 bytes zero)                             |
+| Field               | Value                                          |
+| ------------------- | ---------------------------------------------- |
+| `to`                | stataToken address                             |
+| `functionSignature` | `"deposit(uint256,address)"`                   |
+| `args[0]`           | amount of USDC, left-padded to 32 bytes        |
+| `args[1]`           | receiver = user's derived address, left-padded |
+| `value`             | `00..00` (32 bytes zero)                       |
 
 **Schema:** `outputDeserializationSchema = [{"name":"shares","type":"uint256"}]`
 **Schema:** `respondSerializationSchema = [{"name":"shares","type":"uint256"}]`
 
-**Fallback:** If the extended `deposit` is not available on Sepolia, use the
-standard ERC-4626 path: `Pool.supply()` + `aUSDC.approve(stataToken)` +
-`stataToken.deposit(uint256,address)`. This is 4 EVM txs instead of 2.
+**V1 fallback:** If Sepolia has the older `StaticATokenLM` (V1) instead of
+`StataTokenV2`, use `deposit(uint256,address,uint16,bool)` with
+`referralCode=0, depositToAave=true`. Detect via TS simulation at startup.
+If the standard `deposit(uint256,address)` reverts, fall back to V1 sig.
 
-### 3. StataToken `redeem` (stataUSDC → USDC + yield)
+### 3. StataToken `redeem` — standard ERC-4626 (stataUSDC → USDC + yield)
 
 ```
-function redeem(uint256 shares, address receiver, address owner)
-    returns (uint256 assets)
+function redeem(uint256 shares, address receiver, address owner) returns (uint256 assets)
+selector: 0xba087652
 ```
 
-Standard ERC-4626 redeem. If the StataToken supports `withdrawToAave = true`
-(withdrawing the raw underlying instead of aUSDC), use that. Otherwise,
-redeem returns aUSDC which must be followed by `Pool.withdraw()`.
+The StataTokenV2 `redeem` returns raw USDC directly — it calls
+`Pool.withdraw()` internally. No separate withdrawal step needed.
 
-**EvmTransactionParams (if direct underlying withdrawal supported):**
+**EvmTransactionParams:**
 
-| Field               | Value                                                |
-| ------------------- | ---------------------------------------------------- |
-| `to`                | stataToken address                                   |
-| `functionSignature` | `"redeem(uint256,address,address)"`                  |
-| `args[0]`           | shares amount (= `Erc20Holding.amount`), 32 bytes    |
-| `args[1]`           | receiver = user's derived address, left-padded       |
-| `args[2]`           | owner = user's derived address, left-padded          |
-| `value`             | `00..00` (32 bytes zero)                             |
+| Field               | Value                                             |
+| ------------------- | ------------------------------------------------- |
+| `to`                | stataToken address                                |
+| `functionSignature` | `"redeem(uint256,address,address)"`               |
+| `args[0]`           | shares amount (= `Erc20Holding.amount`), 32 bytes |
+| `args[1]`           | receiver = user's derived address, left-padded    |
+| `args[2]`           | owner = user's derived address, left-padded       |
+| `value`             | `00..00` (32 bytes zero)                          |
 
 **Schema:** `outputDeserializationSchema = [{"name":"assets","type":"uint256"}]`
 **Schema:** `respondSerializationSchema = [{"name":"assets","type":"uint256"}]`
+
+### Transaction Count Summary
+
+| Operation                             | EVM Transactions | Details                                      |
+| ------------------------------------- | ---------------- | -------------------------------------------- |
+| Approve (one-time)                    | 1                | `USDC.approve(stataToken, max)`              |
+| Supply                                | 1                | `stataToken.deposit(amount, receiver)`       |
+| Withdraw                              | 1                | `stataToken.redeem(shares, receiver, owner)` |
+| **Total for supply + withdraw cycle** | **3**            | (approve is one-time)                        |
 
 ## Daml Contract Changes
 
@@ -322,7 +350,7 @@ nonconsuming choice RequestAaveSupply : ContractId PendingEvmTx
     assertMsg "owner mismatch" $ holding.owner == requester
     assertMsg "issuer mismatch" $ holding.issuer == issuer
     assertMsg "must be deposit" $
-      evmParams.functionSignature == "deposit(uint256,address,uint16,bool)"
+      evmParams.functionSignature == "deposit(uint256,address)"
     assertMsg "to must be stataToken" $ evmParams.to == stataToken
 
     -- validate amount matches holding
@@ -504,7 +532,7 @@ support rebasing tokens and yield would be permanently lost.
 **Test 1: Supply USDC to Aave via stataToken (300s):**
 
 1. Create `Erc20Holding(USDC)` via standard deposit flow
-2. Build `EvmTransactionParams` for `stataToken.deposit(amount, addr, 0, true)`
+2. Build `EvmTransactionParams` for `stataToken.deposit(amount, addr)`
 3. Exercise `RequestAaveSupply` with holding
 4. Wait for MPC to sign + submit deposit tx
 5. Exercise `ClaimAaveSupply`

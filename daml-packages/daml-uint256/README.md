@@ -69,7 +69,11 @@ let isGreater = hexGtUint sum "0de0b6b3a7640000"  -- True
 
 ## Limitations
 
-Full uint256/uint256 division (`uint256Div`, `uint256Mod`) is not implemented. Use `uint256DivInt` for divisors that fit in a single limb (< 2^28).
+Full uint256/uint256 division (`uint256Div`, `uint256Mod`, `uint256DivMod`) is not implemented. Use `uint256DivInt` for divisors that fit in a single limb (< 2^28).
+
+## Cross-language Test Vectors
+
+A TypeScript oracle test suite (`test/uint256-vectors.test.ts`) generates expected values using native `BigInt` arithmetic. The Daml tests in `TestUInt256.daml` assert identical results, ensuring the limb-based implementation matches a well-known reference.
 
 ## Build & Test
 
