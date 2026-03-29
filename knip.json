@@ -1,10 +1,10 @@
 {
   "$schema": "https://unpkg.com/knip@5/schema.json",
   "ignoreBinaries": ["dpm", "build"],
-  "ignore": ["**/scripts/**"],
+  "ignore": [],
   "workspaces": {
     "test": {},
-    "packages/canton-sig": {
+    "ts-packages/canton-sig": {
       "ignoreDependencies": ["@daml/types", "@mojotech/json-type-validation"]
     }
   }

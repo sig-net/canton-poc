@@ -1,0 +1,1641 @@
+module TestUInt256 where
+
+import Daml.Script
+import DA.Crypto.Text (BytesHex)
+import UInt256
+
+-- ---------------------------------------------------------------------------
+-- Cross-language vectors (oracle: TypeScript BigInt)
+-- Must match test/src/test/uint256-vectors.test.ts
+-- ---------------------------------------------------------------------------
+
+-- ---------------------------------------------------------------------------
+-- Test vectors (32-byte / 64 hex char slots)
+-- ---------------------------------------------------------------------------
+
+zero : BytesHex
+zero = "0000000000000000000000000000000000000000000000000000000000000000"
+
+one : BytesHex
+one = "0000000000000000000000000000000000000000000000000000000000000001"
+
+two : BytesHex
+two = "0000000000000000000000000000000000000000000000000000000000000002"
+
+three : BytesHex
+three = "0000000000000000000000000000000000000000000000000000000000000003"
+
+five : BytesHex
+five = "0000000000000000000000000000000000000000000000000000000000000005"
+
+seven : BytesHex
+seven = "0000000000000000000000000000000000000000000000000000000000000007"
+
+twentyOne : BytesHex
+twentyOne = "0000000000000000000000000000000000000000000000000000000000000015"
+
+maxVal : BytesHex
+maxVal = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+
+hexLimbMax : BytesHex  -- 2^28 - 1
+hexLimbMax = "000000000000000000000000000000000000000000000000000000000fffffff"
+
+hexLimbBase : BytesHex  -- 2^28
+hexLimbBase = "0000000000000000000000000000000000000000000000000000000010000000"
+
+pow128 : BytesHex  -- 2^128
+pow128 = "0000000000000000000000000000000100000000000000000000000000000000"
+
+pow129 : BytesHex  -- 2^129
+pow129 = "0000000000000000000000000000000200000000000000000000000000000000"
+
+oneEth : BytesHex  -- 1e18 = 0xde0b6b3a7640000
+oneEth = "0000000000000000000000000000000000000000000000000de0b6b3a7640000"
+
+twoEth : BytesHex  -- 2e18 = 0x1bc16d674ec80000
+twoEth = "0000000000000000000000000000000000000000000000001bc16d674ec80000"
+
+oneUsdc : BytesHex  -- 1e6 = 0xf4240
+oneUsdc = "00000000000000000000000000000000000000000000000000000000000f4240"
+
+oneTrillion : BytesHex  -- 1e12 = 0xe8d4a51000
+oneTrillion = "000000000000000000000000000000000000000000000000000000e8d4a51000"
+
+maxDiv2 : BytesHex  -- 2^255 - 1
+maxDiv2 = "7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+
+pow252 : BytesHex  -- 2^252 (differs at l9 only: l9=1, rest=0)
+pow252 = "1000000000000000000000000000000000000000000000000000000000000000"
+
+twoPow252 : BytesHex  -- 2 * 2^252 (l9=2, rest=0)
+twoPow252 = "2000000000000000000000000000000000000000000000000000000000000000"
+
+-- ---------------------------------------------------------------------------
+-- 1. Constants
+-- ---------------------------------------------------------------------------
+
+testConstants : Script ()
+testConstants = do
+  assertMsg "uint256Zero hex" (uint256ToHex uint256Zero == zero)
+  assertMsg "uint256One hex" (uint256ToHex uint256One == one)
+  assertMsg "uint256Max hex" (uint256ToHex uint256Max == maxVal)
+
+-- ---------------------------------------------------------------------------
+-- 2. Hex round-trip
+-- ---------------------------------------------------------------------------
+
+testHexRoundTrip : Script ()
+testHexRoundTrip = do
+  assertMsg "round-trip zero" (uint256ToHex (uint256FromHex zero) == zero)
+  assertMsg "round-trip one" (uint256ToHex (uint256FromHex one) == one)
+  assertMsg "round-trip max" (uint256ToHex (uint256FromHex maxVal) == maxVal)
+  assertMsg "round-trip 2^28-1" (uint256ToHex (uint256FromHex hexLimbMax) == hexLimbMax)
+  assertMsg "round-trip 2^28" (uint256ToHex (uint256FromHex hexLimbBase) == hexLimbBase)
+  assertMsg "round-trip 2^128" (uint256ToHex (uint256FromHex pow128) == pow128)
+  assertMsg "round-trip 1e18" (uint256ToHex (uint256FromHex oneEth) == oneEth)
+  -- Mixed case input normalizes to lowercase
+  assertMsg "round-trip mixed case"
+    (uint256ToHex (uint256FromHex "000000000000000000000000000000000000000000000000000000000FFFFFFF")
+      == hexLimbMax)
+  -- Short input (gets padded internally)
+  assertMsg "round-trip short input"
+    (uint256ToHex (uint256FromHex "1") == one)
+
+-- ---------------------------------------------------------------------------
+-- 3. Addition identity
+-- ---------------------------------------------------------------------------
+
+testAddIdentity : Script ()
+testAddIdentity = do
+  let check label hex = assertMsg label
+        (uint256Add (uint256FromHex hex) uint256Zero == uint256FromHex hex)
+  check "add identity zero" zero
+  check "add identity one" one
+  check "add identity max" maxVal
+  check "add identity 2^128" pow128
+  check "add identity 1e18" oneEth
+
+-- ---------------------------------------------------------------------------
+-- 4. Addition carry
+-- ---------------------------------------------------------------------------
+
+testAddCarry : Script ()
+testAddCarry = do
+  -- 0x0fffffff + 1 = 0x10000000 (carry from l0 to l1)
+  assertMsg "add carry l0->l1"
+    (uint256ToHex (uint256Add (uint256FromHex hexLimbMax) uint256One) == hexLimbBase)
+  -- max + 1 = 0 (full carry chain, overflow wrap)
+  assertMsg "add max+1 wraps to zero"
+    (uint256ToHex (uint256Add uint256Max uint256One) == zero)
+
+-- ---------------------------------------------------------------------------
+-- 5. Addition commutativity
+-- ---------------------------------------------------------------------------
+
+testAddCommutativity : Script ()
+testAddCommutativity = do
+  let a = uint256FromHex oneEth
+      b = uint256FromHex pow128
+  assertMsg "add commutative 1e18 + 2^128"
+    (uint256Add a b == uint256Add b a)
+  let c = uint256FromHex hexLimbMax
+      d = uint256FromHex hexLimbBase
+  assertMsg "add commutative hexLimbMax + hexLimbBase"
+    (uint256Add c d == uint256Add d c)
+  assertMsg "add commutative max + one"
+    (uint256Add uint256Max uint256One == uint256Add uint256One uint256Max)
+
+-- ---------------------------------------------------------------------------
+-- 6. Addition checked
+-- ---------------------------------------------------------------------------
+
+testAddChecked : Script ()
+testAddChecked = do
+  let (result, overflow) = uint256AddChecked uint256Max uint256One
+  assertMsg "addChecked max+1 result is zero" (result == uint256Zero)
+  assertMsg "addChecked max+1 overflows" overflow
+  let (result2, overflow2) = uint256AddChecked uint256One uint256One
+  assertMsg "addChecked 1+1 result is two" (uint256ToHex result2 == two)
+  assertMsg "addChecked 1+1 no overflow" (not overflow2)
+
+-- ---------------------------------------------------------------------------
+-- 7. Subtraction identity
+-- ---------------------------------------------------------------------------
+
+testSubIdentity : Script ()
+testSubIdentity = do
+  let check label hex = assertMsg label
+        (uint256Sub (uint256FromHex hex) uint256Zero == uint256FromHex hex)
+  check "sub identity zero" zero
+  check "sub identity one" one
+  check "sub identity max" maxVal
+  check "sub identity 2^128" pow128
+  check "sub identity 1e18" oneEth
+
+-- ---------------------------------------------------------------------------
+-- 8. Subtraction simple
+-- ---------------------------------------------------------------------------
+
+testSubSimple : Script ()
+testSubSimple = do
+  assertMsg "sub 5 - 3 = 2"
+    (uint256ToHex (uint256Sub (uint256FromHex five) (uint256FromHex three)) == two)
+  assertMsg "sub 7 - 1 = 6"
+    (uint256ToHex (uint256Sub (uint256FromHex seven) uint256One)
+      == "0000000000000000000000000000000000000000000000000000000000000006")
+  assertMsg "sub 1 - 1 = 0"
+    (uint256Sub uint256One uint256One == uint256Zero)
+
+-- ---------------------------------------------------------------------------
+-- 9. Subtraction borrow
+-- ---------------------------------------------------------------------------
+
+testSubBorrow : Script ()
+testSubBorrow = do
+  -- 0x10000000 - 1 = 0x0fffffff (borrow from l1 to l0)
+  assertMsg "sub borrow l1->l0"
+    (uint256ToHex (uint256Sub (uint256FromHex hexLimbBase) uint256One) == hexLimbMax)
+  -- 0 - 1 = max (underflow wrap)
+  assertMsg "sub 0-1 wraps to max"
+    (uint256ToHex (uint256Sub uint256Zero uint256One) == maxVal)
+
+-- ---------------------------------------------------------------------------
+-- 10. Subtraction inverse
+-- ---------------------------------------------------------------------------
+
+testSubInverse : Script ()
+testSubInverse = do
+  let a = uint256FromHex oneEth
+      b = uint256FromHex pow128
+  assertMsg "sub inverse (a+b)-b == a"
+    (uint256Sub (uint256Add a b) b == a)
+  let c = uint256FromHex hexLimbMax
+      d = uint256FromHex one
+  assertMsg "sub inverse (c+d)-d == c"
+    (uint256Sub (uint256Add c d) d == c)
+
+-- ---------------------------------------------------------------------------
+-- 11. Subtraction checked
+-- ---------------------------------------------------------------------------
+
+testSubChecked : Script ()
+testSubChecked = do
+  let (result, underflow) = uint256SubChecked uint256Zero uint256One
+  assertMsg "subChecked 0-1 result is max" (result == uint256Max)
+  assertMsg "subChecked 0-1 underflows" underflow
+  let (result2, underflow2) = uint256SubChecked (uint256FromHex five) (uint256FromHex three)
+  assertMsg "subChecked 5-3 result is 2" (uint256ToHex result2 == two)
+  assertMsg "subChecked 5-3 no underflow" (not underflow2)
+
+-- ---------------------------------------------------------------------------
+-- 12. Multiplication identity
+-- ---------------------------------------------------------------------------
+
+testMulIdentity : Script ()
+testMulIdentity = do
+  let check label hex = assertMsg label
+        (uint256Mul (uint256FromHex hex) uint256One == uint256FromHex hex)
+  check "mul identity zero" zero
+  check "mul identity one" one
+  check "mul identity max" maxVal
+  check "mul identity 2^128" pow128
+  check "mul identity 1e18" oneEth
+
+-- ---------------------------------------------------------------------------
+-- 13. Multiplication by zero
+-- ---------------------------------------------------------------------------
+
+testMulZero : Script ()
+testMulZero = do
+  assertMsg "mul zero * one" (uint256Mul uint256Zero uint256One == uint256Zero)
+  assertMsg "mul one * zero" (uint256Mul uint256One uint256Zero == uint256Zero)
+  assertMsg "mul max * zero" (uint256Mul uint256Max uint256Zero == uint256Zero)
+  assertMsg "mul 1e18 * zero"
+    (uint256Mul (uint256FromHex oneEth) uint256Zero == uint256Zero)
+
+-- ---------------------------------------------------------------------------
+-- 14. Multiplication small
+-- ---------------------------------------------------------------------------
+
+testMulSmall : Script ()
+testMulSmall = do
+  -- 3 * 7 = 21
+  assertMsg "mul 3*7=21"
+    (uint256ToHex (uint256Mul (uint256FromHex three) (uint256FromHex seven)) == twentyOne)
+  -- 2 * 5 = 10
+  assertMsg "mul 2*5=10"
+    (uint256ToHex (uint256Mul (uint256FromHex two) (uint256FromHex five))
+      == "000000000000000000000000000000000000000000000000000000000000000a")
+
+-- ---------------------------------------------------------------------------
+-- 15. Multiplication large
+-- ---------------------------------------------------------------------------
+
+testMulLarge : Script ()
+testMulLarge = do
+  -- 2^128 * 2^128 = 2^256 wraps to 0
+  assertMsg "mul 2^128 * 2^128 wraps to 0"
+    (uint256Mul (uint256FromHex pow128) (uint256FromHex pow128) == uint256Zero)
+  -- max * max mod 2^256 = 1
+  assertMsg "mul max*max mod 2^256 = 1"
+    (uint256ToHex (uint256Mul uint256Max uint256Max) == one)
+
+-- ---------------------------------------------------------------------------
+-- 16. Multiplication commutativity
+-- ---------------------------------------------------------------------------
+
+testMulCommutativity : Script ()
+testMulCommutativity = do
+  let a = uint256FromHex oneEth
+      b = uint256FromHex three
+  assertMsg "mul commutative 1e18 * 3"
+    (uint256Mul a b == uint256Mul b a)
+  let c = uint256FromHex hexLimbMax
+      d = uint256FromHex seven
+  assertMsg "mul commutative hexLimbMax * 7"
+    (uint256Mul c d == uint256Mul d c)
+
+-- ---------------------------------------------------------------------------
+-- 17. Short division
+-- ---------------------------------------------------------------------------
+
+testShortDivision : Script ()
+testShortDivision = do
+  -- x / 1 == (x, 0)
+  let (q1, r1) = uint256DivInt uint256Max 1
+  assertMsg "divInt max/1 quotient" (q1 == uint256Max)
+  assertMsg "divInt max/1 remainder" (r1 == 0)
+  -- 7 / 2 = (3, 1)
+  let (q2, r2) = uint256DivInt (uint256FromHex seven) 2
+  assertMsg "divInt 7/2 quotient" (uint256ToHex q2 == three)
+  assertMsg "divInt 7/2 remainder" (r2 == 1)
+  -- 1e18 / 1000000 = (1e12, 0)
+  let (q3, r3) = uint256DivInt (uint256FromHex oneEth) 1000000
+  assertMsg "divInt 1e18/1e6 quotient" (uint256ToHex q3 == oneTrillion)
+  assertMsg "divInt 1e18/1e6 remainder" (r3 == 0)
+  -- max / 2 = (maxDiv2, 1)
+  let (q4, r4) = uint256DivInt uint256Max 2
+  assertMsg "divInt max/2 quotient" (uint256ToHex q4 == maxDiv2)
+  assertMsg "divInt max/2 remainder" (r4 == 1)
+
+-- ---------------------------------------------------------------------------
+-- 18. Short division remainder invariant
+-- ---------------------------------------------------------------------------
+
+testDivRemainderInvariant : Script ()
+testDivRemainderInvariant = do
+  -- For x / d: q*d + r == x
+  let x = uint256FromHex oneEth
+      d = 7
+      (q, r) = uint256DivInt x d
+      -- Reconstruct: q * fromHex("7") + fromHex(r)
+      reconstructed = uint256Add
+        (uint256Mul q (uint256FromHex seven))
+        (uint256FromHex (intToSmallHex r))
+  assertMsg "div remainder invariant 1e18/7" (reconstructed == x)
+  -- Another: max / 3
+  let x2 = uint256Max
+      d2 = 3
+      (q2, r2) = uint256DivInt x2 d2
+      reconstructed2 = uint256Add
+        (uint256Mul q2 (uint256FromHex three))
+        (uint256FromHex (intToSmallHex r2))
+  assertMsg "div remainder invariant max/3" (reconstructed2 == x2)
+
+-- | Helper: convert small non-negative Int to 64-char hex for test vectors.
+intToSmallHex : Int -> BytesHex
+intToSmallHex n
+  | n == 0 = zero
+  | n == 1 = one
+  | n == 2 = two
+  | n == 3 = three
+  | n == 5 = five
+  | n == 7 = seven
+  | otherwise = uint256ToHex (uint256FromSmallInt n)
+
+-- | Build UInt256 from a small non-negative Int (fits in l0).
+uint256FromSmallInt : Int -> UInt256
+uint256FromSmallInt n = UInt256 with limbs = [n, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+-- ---------------------------------------------------------------------------
+-- 19. Comparison
+-- ---------------------------------------------------------------------------
+
+testComparison : Script ()
+testComparison = do
+  -- Basic LT, EQ, GT
+  assertMsg "cmp 1 < 2" (uint256Compare (uint256FromHex one) (uint256FromHex two) == LT)
+  assertMsg "cmp 2 > 1" (uint256Compare (uint256FromHex two) (uint256FromHex one) == GT)
+  assertMsg "cmp 1 == 1" (uint256Compare (uint256FromHex one) (uint256FromHex one) == EQ)
+  assertMsg "cmp 0 < max" (uint256Compare uint256Zero uint256Max == LT)
+  assertMsg "cmp max > 0" (uint256Compare uint256Max uint256Zero == GT)
+  assertMsg "cmp max == max" (uint256Compare uint256Max uint256Max == EQ)
+  -- Differ at l9 only (top 4 bits)
+  assertMsg "cmp differ l9 only"
+    (uint256Compare (uint256FromHex pow252) (uint256FromHex twoPow252) == LT)
+  assertMsg "cmp differ l9 only (reversed)"
+    (uint256Compare (uint256FromHex twoPow252) (uint256FromHex pow252) == GT)
+  -- Differ at l0 only
+  assertMsg "cmp differ l0 only"
+    (uint256Compare (uint256FromHex one) (uint256FromHex two) == LT)
+  -- Convenience wrappers
+  assertMsg "eq" (uint256Eq (uint256FromHex one) (uint256FromHex one))
+  assertMsg "not eq" (not (uint256Eq (uint256FromHex one) (uint256FromHex two)))
+  assertMsg "gt" (uint256Gt (uint256FromHex two) (uint256FromHex one))
+  assertMsg "gte (greater)" (uint256Gte (uint256FromHex two) (uint256FromHex one))
+  assertMsg "gte (equal)" (uint256Gte (uint256FromHex one) (uint256FromHex one))
+  assertMsg "lt" (uint256Lt (uint256FromHex one) (uint256FromHex two))
+  assertMsg "lte (less)" (uint256Lte (uint256FromHex one) (uint256FromHex two))
+  assertMsg "lte (equal)" (uint256Lte (uint256FromHex one) (uint256FromHex one))
+
+-- ---------------------------------------------------------------------------
+-- 20. IsZero
+-- ---------------------------------------------------------------------------
+
+testIsZero : Script ()
+testIsZero = do
+  assertMsg "isZero zero" (uint256IsZero uint256Zero)
+  assertMsg "isZero fromHex zero" (uint256IsZero (uint256FromHex zero))
+  assertMsg "not isZero one" (not (uint256IsZero uint256One))
+  assertMsg "not isZero max" (not (uint256IsZero uint256Max))
+  assertMsg "not isZero 1e18" (not (uint256IsZero (uint256FromHex oneEth)))
+
+-- ---------------------------------------------------------------------------
+-- 21. Hex convenience wrappers
+-- ---------------------------------------------------------------------------
+
+testHexConvenienceWrappers : Script ()
+testHexConvenienceWrappers = do
+  -- hexAddUint256
+  assertMsg "hexAdd 1+1=2" (hexAddUint256 one one == two)
+  assertMsg "hexAdd hexLimbMax+1=hexLimbBase" (hexAddUint256 hexLimbMax one == hexLimbBase)
+  assertMsg "hexAdd 1e18+1e18=2e18" (hexAddUint256 oneEth oneEth == twoEth)
+  -- hexSubUint256
+  assertMsg "hexSub 5-3=2" (hexSubUint256 five three == two)
+  assertMsg "hexSub hexLimbBase-1=hexLimbMax" (hexSubUint256 hexLimbBase one == hexLimbMax)
+  assertMsg "hexSub 2e18-1e18=1e18" (hexSubUint256 twoEth oneEth == oneEth)
+  -- hexMulUint256
+  assertMsg "hexMul 3*7=21" (hexMulUint256 three seven == twentyOne)
+  assertMsg "hexMul 1e18*2=2e18" (hexMulUint256 oneEth two == twoEth)
+
+-- ---------------------------------------------------------------------------
+-- 22. EVM-relevant values
+-- ---------------------------------------------------------------------------
+
+testEvmValues : Script ()
+testEvmValues = do
+  -- 1e18 + 1e18 = 2e18
+  assertMsg "evm 1e18+1e18=2e18"
+    (uint256ToHex (uint256Add (uint256FromHex oneEth) (uint256FromHex oneEth)) == twoEth)
+  -- 1e18 * 2 = 2e18
+  assertMsg "evm 1e18*2=2e18"
+    (uint256ToHex (uint256Mul (uint256FromHex oneEth) (uint256FromHex two)) == twoEth)
+  -- 2e18 - 1e18 = 1e18
+  assertMsg "evm 2e18-1e18=1e18"
+    (uint256ToHex (uint256Sub (uint256FromHex twoEth) (uint256FromHex oneEth)) == oneEth)
+  -- 1e18 / 1e6 = 1e12
+  let (q, r) = uint256DivInt (uint256FromHex oneEth) 1000000
+  assertMsg "evm 1e18/1e6=1e12" (uint256ToHex q == oneTrillion)
+  assertMsg "evm 1e18/1e6 remainder 0" (r == 0)
+  -- 1 USDC = 1e6 in hex
+  assertMsg "evm 1 USDC hex" (uint256ToHex (uint256FromHex oneUsdc) == oneUsdc)
+  -- max (type(uint256).max) round-trips
+  assertMsg "evm uint256.max round-trip" (uint256ToHex (uint256FromHex maxVal) == maxVal)
+
+-- ---------------------------------------------------------------------------
+-- Additional test vectors for comprehensive coverage
+-- Must match test/src/test/uint256-vectors.test.ts
+-- ---------------------------------------------------------------------------
+
+pow56 : BytesHex  -- 2^56
+pow56 = "0000000000000000000000000000000000000000000000000100000000000000"
+
+pow56MinusOne : BytesHex  -- 2^56 - 1
+pow56MinusOne = "00000000000000000000000000000000000000000000000000ffffffffffffff"
+
+pow140 : BytesHex  -- 2^140
+pow140 = "0000000000000000000000000000100000000000000000000000000000000000"
+
+pow140MinusOne : BytesHex  -- 2^140 - 1 (35 hex F's)
+pow140MinusOne = "00000000000000000000000000000fffffffffffffffffffffffffffffffffff"
+
+pow252MinusOne : BytesHex  -- 2^252 - 1
+pow252MinusOne = "0fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+
+pow255 : BytesHex  -- 2^255
+pow255 = "8000000000000000000000000000000000000000000000000000000000000000"
+
+pow128MinusOne : BytesHex  -- 2^128 - 1
+pow128MinusOne = "00000000000000000000000000000000ffffffffffffffffffffffffffffffff"
+
+pow128PlusOne : BytesHex  -- 2^128 + 1
+pow128PlusOne = "0000000000000000000000000000000100000000000000000000000000000001"
+
+patA : BytesHex  -- alternating bits 0xAAA...A
+patA = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+patB : BytesHex  -- alternating bits 0x555...5
+patB = "5555555555555555555555555555555555555555555555555555555555555555"
+
+hex100 : BytesHex  -- 100 decimal
+hex100 = "0000000000000000000000000000000000000000000000000000000000000064"
+
+-- ---------------------------------------------------------------------------
+-- 23. Multiplication checked
+-- ---------------------------------------------------------------------------
+
+testMulChecked : Script ()
+testMulChecked = do
+  -- No overflow: 3 * 7 = 21
+  let (r1, o1) = uint256MulChecked (uint256FromHex three) (uint256FromHex seven)
+  assertMsg "mulChecked 3*7 result" (uint256ToHex r1 == twentyOne)
+  assertMsg "mulChecked 3*7 no overflow" (o1 == False)
+  -- No overflow: 1e18 * 2
+  let (r2, o2) = uint256MulChecked (uint256FromHex oneEth) (uint256FromHex two)
+  assertMsg "mulChecked 1e18*2 result" (uint256ToHex r2 == twoEth)
+  assertMsg "mulChecked 1e18*2 no overflow" (o2 == False)
+  -- Overflow: 2^128 * 2^128 = 0 mod 2^256
+  let (r3, o3) = uint256MulChecked (uint256FromHex pow128) (uint256FromHex pow128)
+  assertMsg "mulChecked 2^128*2^128 result is zero" (r3 == uint256Zero)
+  assertMsg "mulChecked 2^128*2^128 overflows" (o3 == True)
+  -- Overflow: max * max = 1 mod 2^256
+  let (r4, o4) = uint256MulChecked uint256Max uint256Max
+  assertMsg "mulChecked max*max result is one" (uint256ToHex r4 == one)
+  assertMsg "mulChecked max*max overflows" (o4 == True)
+  -- Boundary: (2^128-1) * (2^128+1) = 2^256-1 = max (no overflow)
+  let (r5, o5) = uint256MulChecked (uint256FromHex pow128MinusOne) (uint256FromHex pow128PlusOne)
+  assertMsg "mulChecked (2^128-1)*(2^128+1) = max" (uint256ToHex r5 == maxVal)
+  assertMsg "mulChecked (2^128-1)*(2^128+1) no overflow" (o5 == False)
+
+-- ---------------------------------------------------------------------------
+-- 24. Addition associativity
+-- ---------------------------------------------------------------------------
+
+testAddAssociativity : Script ()
+testAddAssociativity = do
+  let a = uint256FromHex "1000000000000000000000000000000000000000000000000000000000000000"
+      b = uint256FromHex "2000000000000000000000000000000000000000000000000000000000000000"
+      c = uint256FromHex "3000000000000000000000000000000000000000000000000000000000000000"
+  assertMsg "add associativity (a+b)+c == a+(b+c)"
+    (uint256Add (uint256Add a b) c == uint256Add a (uint256Add b c))
+  -- With carry propagation
+  let d = uint256FromHex oneEth
+      e = uint256FromHex "000000000000000000000000000000000000000000000000000000000fffffff"
+      f = uint256One
+  assertMsg "add associativity with carry"
+    (uint256Add (uint256Add d e) f == uint256Add d (uint256Add e f))
+
+-- ---------------------------------------------------------------------------
+-- 25. Distributive property
+-- ---------------------------------------------------------------------------
+
+testDistributive : Script ()
+testDistributive = do
+  let a = uint256FromHex oneEth
+      b = uint256FromHex pow128
+      c = uint256FromHex seven
+      lhs = uint256Mul a (uint256Add b c)
+      rhs = uint256Add (uint256Mul a b) (uint256Mul a c)
+  assertMsg "distributive a*(b+c) == a*b + a*c" (lhs == rhs)
+
+-- ---------------------------------------------------------------------------
+-- 26. Carry at every limb boundary
+-- ---------------------------------------------------------------------------
+
+testCarryAtEveryLimb : Script ()
+testCarryAtEveryLimb = do
+  -- Carry l1->l2: (2^56-1) + 1 = 2^56
+  assertMsg "carry l1->l2" (hexAddUint256 pow56MinusOne one == pow56)
+  -- Carry l4->l5: (2^140-1) + 1 = 2^140
+  assertMsg "carry l4->l5" (hexAddUint256 pow140MinusOne one == pow140)
+  -- Carry l8->l9: (2^252-1) + 1 = 2^252
+  assertMsg "carry l8->l9" (hexAddUint256 pow252MinusOne one == pow252)
+
+-- ---------------------------------------------------------------------------
+-- 27. Borrow at every limb boundary
+-- ---------------------------------------------------------------------------
+
+testBorrowAtEveryLimb : Script ()
+testBorrowAtEveryLimb = do
+  -- Borrow into l0 from l1: 2^28 - 1 = limbMax
+  assertMsg "borrow l1->l0" (hexSubUint256 hexLimbBase one == hexLimbMax)
+  -- Borrow cascading l0..l4 from l5: 2^140 - 1
+  assertMsg "borrow l5->l4..l0" (hexSubUint256 pow140 one == pow140MinusOne)
+  -- Borrow l9->l8..l0: 2^252 - 1
+  assertMsg "borrow l9->l8..l0" (hexSubUint256 pow252 one == pow252MinusOne)
+
+-- ---------------------------------------------------------------------------
+-- 28. Alternating bit patterns
+-- ---------------------------------------------------------------------------
+
+testAlternatingBits : Script ()
+testAlternatingBits = do
+  assertMsg "0xAAA...+0x555...=max" (hexAddUint256 patA patB == maxVal)
+  -- Round-trip
+  assertMsg "alternating A round-trip" (uint256ToHex (uint256FromHex patA) == patA)
+  assertMsg "alternating 5 round-trip" (uint256ToHex (uint256FromHex patB) == patB)
+
+-- ---------------------------------------------------------------------------
+-- 29. Multiplication by limb base (shifts limbs)
+-- ---------------------------------------------------------------------------
+
+testMulByLimbBase : Script ()
+testMulByLimbBase = do
+  -- 1 * 2^28 = 2^28
+  assertMsg "mul 1 * limbBase" (hexMulUint256 one hexLimbBase == hexLimbBase)
+  -- limbMax * limbBase = (2^28-1)*2^28 = 2^56 - 2^28
+  let expected = "00000000000000000000000000000000000000000000000000fffffff0000000"
+  assertMsg "mul limbMax * limbBase" (hexMulUint256 hexLimbMax hexLimbBase == expected)
+
+-- ---------------------------------------------------------------------------
+-- 30. Multiplication index boundary
+-- ---------------------------------------------------------------------------
+
+testMulIndexBoundary : Script ()
+testMulIndexBoundary = do
+  -- 2^28 * 2^28 = 2^56 (product lands at index 2)
+  assertMsg "mul 2^28 * 2^28 = 2^56" (hexMulUint256 hexLimbBase hexLimbBase == pow56)
+  -- 2^0 * 2^252 = 2^252 (product at index 9)
+  assertMsg "mul 1 * 2^252 = 2^252" (hexMulUint256 one pow252 == pow252)
+
+-- ---------------------------------------------------------------------------
+-- 31. Short division max divisor
+-- ---------------------------------------------------------------------------
+
+testShortDivMaxDivisor : Script ()
+testShortDivMaxDivisor = do
+  -- max / (2^28 - 1) = known quotient with remainder 15
+  let d = 268435455  -- 2^28 - 1
+      (q, r) = uint256DivInt uint256Max d
+  assertMsg "max / (2^28-1) remainder < divisor" (r >= 0 && r < d)
+  assertMsg "max / (2^28-1) remainder is 15" (r == 15)
+  -- Verify reconstruction: q * d + r == max
+  let reconstructed = uint256Add
+        (uint256Mul q (uint256FromHex hexLimbMax))
+        (uint256FromHex (intToSmallHex r))
+  assertMsg "max / (2^28-1) reconstruction" (reconstructed == uint256Max)
+
+-- ---------------------------------------------------------------------------
+-- 32. Cross-operation round-trip
+-- ---------------------------------------------------------------------------
+
+testCrossOperationRoundTrip : Script ()
+testCrossOperationRoundTrip = do
+  -- (a * d) / d == a (when d fits in limb)
+  let a = uint256FromHex oneEth
+      d = 100
+      product = uint256Mul a (uint256FromHex hex100)
+      (q, r) = uint256DivInt product d
+  assertMsg "cross (a*100)/100 == a" (q == a)
+  assertMsg "cross (a*100)/100 remainder 0" (r == 0)
+  -- (a - b) + b == a
+  let b = uint256FromHex pow128
+  assertMsg "cross (max-b)+b == max" (uint256Add (uint256Sub uint256Max b) b == uint256Max)
+
+-- ---------------------------------------------------------------------------
+-- 33. Single-bit limb boundaries
+-- ---------------------------------------------------------------------------
+
+testSingleBitLimbBoundaries : Script ()
+testSingleBitLimbBoundaries = do
+  -- 2^55 = 2^28 * 2^27 — top of limb 1
+  let pow27 = "0000000000000000000000000000000000000000000000000000000008000000"
+      pow55 = "0000000000000000000000000000000000000000000000000080000000000000"
+  assertMsg "2^28 * 2^27 = 2^55" (hexMulUint256 hexLimbBase pow27 == pow55)
+  -- Round-trip 2^255
+  assertMsg "round-trip 2^255" (uint256ToHex (uint256FromHex pow255) == pow255)
+  -- 2^255 + 2^255 = 0 (overflow wrap at top limb)
+  assertMsg "2^255 + 2^255 wraps to 0"
+    (hexAddUint256 pow255 pow255 == zero)
+
+-- ---------------------------------------------------------------------------
+-- Audit vector constants
+-- ---------------------------------------------------------------------------
+
+maxMinusOne : BytesHex
+maxMinusOne = "fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe"
+
+subThreeMinusSeven : BytesHex
+subThreeMinusSeven = "fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffc"
+
+oneMinusPow128 : BytesHex
+oneMinusPow128 = "ffffffffffffffffffffffffffffffff00000000000000000000000000000001"
+
+karatsubaResult : BytesHex
+karatsubaResult = "fffffffffffffffffffffffffffffffe00000000000000000000000000000001"
+
+divMaxBy16Quotient : BytesHex
+divMaxBy16Quotient = "0fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+
+divMaxByPow27Quotient : BytesHex
+divMaxByPow27Quotient = "0000001fffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+
+randAddA : BytesHex
+randAddA = "c4043e2c4cc49e4d6870103ce7c2ff2d512bf4b1b67553ba410db514ee0af888"
+
+randAddB : BytesHex
+randAddB = "3bf9c1d3b33b61b2978fefc31843d00d2aed40b4e498aac45bef24aeb11f5877"
+
+randAddResult : BytesHex
+randAddResult = "fffe000000000000000000000006cf3a7c1935669b0dfe7e9cfcd9c39f2a50ff"
+
+randAdd2A : BytesHex
+randAdd2A = "a1b2c3d4e5f60718293a4b5c6d7e8f9001122334455667788990aabbccddeeff"
+
+randAdd2B : BytesHex
+randAdd2B = "05e4d3c2b1a09f8e7d6c5b4a39281706ffeedccbbaa998877665543210012301"
+
+randAdd2Result : BytesHex
+randAdd2Result = "a79797979796a6a6a6a6a6a6a6a6a6970100fffffffffffffff5feeddcdf1200"
+
+randAdd3A : BytesHex
+randAdd3A = "deadbeefcafebabe1234567890abcdef0011223344556677fedcba9876543210"
+
+randAdd3B : BytesHex
+randAdd3B = "1111111111111111111111111111111122222222222222224444444444444444"
+
+randAdd3Result : BytesHex
+randAdd3Result = "efbed000dc0fcbcf23456789a1bcdf00223344556677889a4320fedcba987654"
+
+mulAsym1A : BytesHex
+mulAsym1A = "deadbeefcafebabe1234567890abcdef0011223344556677fedcba9876543210"
+
+mulAsym1B : BytesHex
+mulAsym1B = "00000000000000000000000000000000000000000000000000000000000000ff"
+
+mulAsym1Result : BytesHex
+mulAsym1Result = "cf1130db33bc0354222222181b2221111111111111111186ddddddddddddddf0"
+
+mulAsym2A : BytesHex
+mulAsym2A = "ffffffffffffffffffffffffffffffff00000000000000000000000000000000"
+
+mulAsym2B : BytesHex
+mulAsym2B = "0000000000000000000000000000000000000000000000000000000000000003"
+
+mulAsym2Result : BytesHex
+mulAsym2Result = "fffffffffffffffffffffffffffffffd00000000000000000000000000000000"
+
+mulAsym3A : BytesHex
+mulAsym3A = "a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5"
+
+mulAsym3B : BytesHex
+mulAsym3B = "0000000000000000000000000000000000000000000000000000000000010001"
+
+mulAsym3Result : BytesHex
+mulAsym3Result = "4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4aa5a5"
+
+-- ---------------------------------------------------------------------------
+-- 34. AddChecked: MAX + MAX
+-- ---------------------------------------------------------------------------
+
+testAddCheckedMaxMax : Script ()
+testAddCheckedMaxMax = do
+  let (result, overflow) = uint256AddChecked uint256Max uint256Max
+  assertMsg "addChecked max+max result is max-1" (uint256ToHex result == maxMinusOne)
+  assertMsg "addChecked max+max overflows" overflow
+
+-- ---------------------------------------------------------------------------
+-- 35. MulChecked: MAX * 2
+-- ---------------------------------------------------------------------------
+
+testMulCheckedMax2 : Script ()
+testMulCheckedMax2 = do
+  let (result, overflow) = uint256MulChecked uint256Max (uint256FromHex two)
+  assertMsg "mulChecked max*2 result is max-1" (uint256ToHex result == maxMinusOne)
+  assertMsg "mulChecked max*2 overflows" overflow
+
+-- ---------------------------------------------------------------------------
+-- 36. MulChecked: 0 * large (no overflow)
+-- ---------------------------------------------------------------------------
+
+testMulCheckedZeroTimesMax : Script ()
+testMulCheckedZeroTimesMax = do
+  let (result, overflow) = uint256MulChecked uint256Zero uint256Max
+  assertMsg "mulChecked 0*max result is zero" (result == uint256Zero)
+  assertMsg "mulChecked 0*max no overflow" (not overflow)
+
+-- ---------------------------------------------------------------------------
+-- 37. SubChecked: general underflow (3 - 7)
+-- ---------------------------------------------------------------------------
+
+testSubCheckedGeneralUnderflow : Script ()
+testSubCheckedGeneralUnderflow = do
+  let (result, underflow) = uint256SubChecked (uint256FromHex three) (uint256FromHex seven)
+  assertMsg "subChecked 3-7 result is max-3" (uint256ToHex result == subThreeMinusSeven)
+  assertMsg "subChecked 3-7 underflows" underflow
+
+-- ---------------------------------------------------------------------------
+-- 38. Zero dividend in short division
+-- ---------------------------------------------------------------------------
+
+testDivZeroDividend : Script ()
+testDivZeroDividend = do
+  let (q, r) = uint256DivInt uint256Zero 7
+  assertMsg "divInt 0/7 quotient is zero" (q == uint256Zero)
+  assertMsg "divInt 0/7 remainder is 0" (r == 0)
+
+-- ---------------------------------------------------------------------------
+-- 39. Self-division in short division
+-- ---------------------------------------------------------------------------
+
+testDivSelfDivision : Script ()
+testDivSelfDivision = do
+  let (q, r) = uint256DivInt (uint256FromHex seven) 7
+  assertMsg "divInt 7/7 quotient is one" (uint256ToHex q == one)
+  assertMsg "divInt 7/7 remainder is 0" (r == 0)
+
+-- ---------------------------------------------------------------------------
+-- 40. Anti-symmetry of subtraction
+-- ---------------------------------------------------------------------------
+
+testAntiSymmetry : Script ()
+testAntiSymmetry = do
+  let a = uint256FromHex pow128
+      b = uint256One
+      aMinusB = uint256Sub a b
+      bMinusA = uint256Sub b a
+      s = uint256Add aMinusB bMinusA
+  assertMsg "anti-symmetry: (a-b)+(b-a) == 0" (s == uint256Zero)
+  assertMsg "anti-symmetry: (1-pow128) value" (uint256ToHex bMinusA == oneMinusPow128)
+
+-- ---------------------------------------------------------------------------
+-- 41. Double-complement
+-- ---------------------------------------------------------------------------
+
+testDoubleComplement : Script ()
+testDoubleComplement = do
+  -- max - (max - oneEth) == oneEth
+  let x1 = uint256FromHex oneEth
+      inner1 = uint256Sub uint256Max x1
+      result1 = uint256Sub uint256Max inner1
+  assertMsg "double-complement oneEth" (result1 == x1)
+  -- max - (max - pow128) == pow128
+  let x2 = uint256FromHex pow128
+      inner2 = uint256Sub uint256Max x2
+      result2 = uint256Sub uint256Max inner2
+  assertMsg "double-complement pow128" (result2 == x2)
+
+-- ---------------------------------------------------------------------------
+-- 42. Remainder bound
+-- ---------------------------------------------------------------------------
+
+testRemainderBound : Script ()
+testRemainderBound = do
+  -- max / 2
+  let (_, r1) = uint256DivInt uint256Max 2
+  assertMsg "rem bound max/2" (r1 >= 0 && r1 < 2)
+  -- 1e18 / 1e6
+  let (_, r2) = uint256DivInt (uint256FromHex oneEth) 1000000
+  assertMsg "rem bound 1e18/1e6" (r2 >= 0 && r2 < 1000000)
+  -- 7 / 2
+  let (_, r3) = uint256DivInt (uint256FromHex seven) 2
+  assertMsg "rem bound 7/2" (r3 >= 0 && r3 < 2)
+  -- max / (2^28-1)
+  let (_, r4) = uint256DivInt uint256Max 268435455
+  assertMsg "rem bound max/(2^28-1)" (r4 >= 0 && r4 < 268435455)
+  -- 1e18 / 7
+  let (_, r5) = uint256DivInt (uint256FromHex oneEth) 7
+  assertMsg "rem bound 1e18/7" (r5 >= 0 && r5 < 7)
+  -- max / 3
+  let (_, r6) = uint256DivInt uint256Max 3
+  assertMsg "rem bound max/3" (r6 >= 0 && r6 < 3)
+  -- 0 / 7
+  let (_, r7) = uint256DivInt uint256Zero 7
+  assertMsg "rem bound 0/7" (r7 >= 0 && r7 < 7)
+  -- 7 / 7
+  let (_, r8) = uint256DivInt (uint256FromHex seven) 7
+  assertMsg "rem bound 7/7" (r8 >= 0 && r8 < 7)
+  -- max / 16
+  let (_, r9) = uint256DivInt uint256Max 16
+  assertMsg "rem bound max/16" (r9 >= 0 && r9 < 16)
+  -- max / 2^27
+  let (_, r10) = uint256DivInt uint256Max 134217728
+  assertMsg "rem bound max/2^27" (r10 >= 0 && r10 < 134217728)
+
+-- ---------------------------------------------------------------------------
+-- 43. Powers-of-2 divisors
+-- ---------------------------------------------------------------------------
+
+testPowerOf2Divisors : Script ()
+testPowerOf2Divisors = do
+  -- max / 16
+  let (q1, r1) = uint256DivInt uint256Max 16
+  assertMsg "max/16 quotient" (uint256ToHex q1 == divMaxBy16Quotient)
+  assertMsg "max/16 remainder is 15" (r1 == 15)
+  -- Reconstruction: q*16 + 15 == max
+  let reconstructed1 = uint256Add
+        (uint256Mul q1 (uint256FromHex "0000000000000000000000000000000000000000000000000000000000000010"))
+        (uint256FromHex "000000000000000000000000000000000000000000000000000000000000000f")
+  assertMsg "max/16 reconstruction" (reconstructed1 == uint256Max)
+  -- max / 2^27
+  let (q2, r2) = uint256DivInt uint256Max 134217728
+  assertMsg "max/2^27 quotient" (uint256ToHex q2 == divMaxByPow27Quotient)
+  assertMsg "max/2^27 remainder is 2^27-1" (r2 == 134217727)
+
+-- ---------------------------------------------------------------------------
+-- 44. max * 2 wrapping (explicit wrapping mul)
+-- ---------------------------------------------------------------------------
+
+testMaxTimes2Wrapping : Script ()
+testMaxTimes2Wrapping = do
+  assertMsg "max * 2 = max-1"
+    (uint256ToHex (uint256Mul uint256Max (uint256FromHex two)) == maxMinusOne)
+
+-- ---------------------------------------------------------------------------
+-- 45. Karatsuba identity
+-- ---------------------------------------------------------------------------
+
+testKaratsubaIdentity : Script ()
+testKaratsubaIdentity = do
+  -- (2^128-1)^2 mod 2^256 = 2^256 - 2^129 + 1 mod 2^256
+  let p128m1 = uint256FromHex pow128MinusOne
+      result = uint256Mul p128m1 p128m1
+  assertMsg "karatsuba (2^128-1)^2" (uint256ToHex result == karatsubaResult)
+
+-- ---------------------------------------------------------------------------
+-- 46. Random multi-limb addition vectors
+-- ---------------------------------------------------------------------------
+
+testRandomMultiLimbAdd : Script ()
+testRandomMultiLimbAdd = do
+  assertMsg "randAdd" (hexAddUint256 randAddA randAddB == randAddResult)
+  assertMsg "randAdd2" (hexAddUint256 randAdd2A randAdd2B == randAdd2Result)
+  assertMsg "randAdd3" (hexAddUint256 randAdd3A randAdd3B == randAdd3Result)
+
+-- ---------------------------------------------------------------------------
+-- 47. Asymmetric multiplication vectors
+-- ---------------------------------------------------------------------------
+
+testAsymmetricMul : Script ()
+testAsymmetricMul = do
+  assertMsg "mulAsym1 large*0xff" (hexMulUint256 mulAsym1A mulAsym1B == mulAsym1Result)
+  assertMsg "mulAsym2 upper-half-max*3" (hexMulUint256 mulAsym2A mulAsym2B == mulAsym2Result)
+  assertMsg "mulAsym3 a5*0x10001" (hexMulUint256 mulAsym3A mulAsym3B == mulAsym3Result)
+
+-- ---------------------------------------------------------------------------
+-- 49. Boundary sweep: l0 position
+-- ---------------------------------------------------------------------------
+
+testBoundaryL0 : Script ()
+testBoundaryL0 = do
+  -- l0(0,B-1): 0 + (B-1), 0 - (B-1) wraps, 0*(B-1) = 0
+  assertMsg "bnd l0 0+0" (hexAddUint256 zero zero == zero)
+  assertMsg "bnd l0 0-0" (hexSubUint256 zero zero == zero)
+  assertMsg "bnd l0 1+1=2" (hexAddUint256 one one == two)
+  assertMsg "bnd l0 1-1=0" (hexSubUint256 one one == zero)
+  assertMsg "bnd l0 1*1=1" (hexMulUint256 one one == one)
+  -- (B-2)+(B-1) = 2B-3 (carry into l1)
+  assertMsg "bnd l0 (B-2)+(B-1)"
+    (hexAddUint256 "000000000000000000000000000000000000000000000000000000000ffffffe"
+                   "000000000000000000000000000000000000000000000000000000000fffffff"
+      == "000000000000000000000000000000000000000000000000000000001ffffffd")
+  -- (B-1)*(B-1) = B^2 - 2B + 1
+  assertMsg "bnd l0 (B-1)*(B-1)"
+    (hexMulUint256 "000000000000000000000000000000000000000000000000000000000fffffff"
+                   "000000000000000000000000000000000000000000000000000000000fffffff"
+      == "00000000000000000000000000000000000000000000000000ffffffe0000001")
+  -- (B-2)-(B-1) wraps (underflow)
+  assertMsg "bnd l0 (B-2)-(B-1) wraps"
+    (hexSubUint256 "000000000000000000000000000000000000000000000000000000000ffffffe"
+                   "000000000000000000000000000000000000000000000000000000000fffffff"
+      == "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")
+
+-- ---------------------------------------------------------------------------
+-- 50. Boundary sweep: l4 position (mid-limb, shift by 2^112)
+-- ---------------------------------------------------------------------------
+
+testBoundaryL4 : Script ()
+testBoundaryL4 = do
+  -- 1*1 at l4 = 1 at l8
+  assertMsg "bnd l4 1*1"
+    (hexMulUint256 "0000000000000000000000000000000000010000000000000000000000000000"
+                   "0000000000000000000000000000000000010000000000000000000000000000"
+      == "0000000100000000000000000000000000000000000000000000000000000000")
+  -- (B-1)+(B-1) at l4 = 2*(B-1)*shift4
+  assertMsg "bnd l4 (B-1)+(B-1)"
+    (hexAddUint256 "00000000000000000000000000000fffffff0000000000000000000000000000"
+                   "00000000000000000000000000000fffffff0000000000000000000000000000"
+      == "00000000000000000000000000001ffffffe0000000000000000000000000000")
+  -- (B-1)-(B-1) at l4 = 0
+  assertMsg "bnd l4 (B-1)-(B-1)=0"
+    (hexSubUint256 "00000000000000000000000000000fffffff0000000000000000000000000000"
+                   "00000000000000000000000000000fffffff0000000000000000000000000000"
+      == zero)
+
+-- ---------------------------------------------------------------------------
+-- 51. Boundary sweep: l9 position (top 4-bit limb, shift by 2^252)
+-- ---------------------------------------------------------------------------
+
+testBoundaryL9 : Script ()
+testBoundaryL9 = do
+  -- 1+14 at l9 = 15 (F) at l9
+  assertMsg "bnd l9 1+14=15"
+    (hexAddUint256 "1000000000000000000000000000000000000000000000000000000000000000"
+                   "e000000000000000000000000000000000000000000000000000000000000000"
+      == "f000000000000000000000000000000000000000000000000000000000000000")
+  -- 15+1 at l9 wraps to 0
+  assertMsg "bnd l9 15+1 wraps"
+    (hexAddUint256 "f000000000000000000000000000000000000000000000000000000000000000"
+                   "1000000000000000000000000000000000000000000000000000000000000000"
+      == zero)
+  -- 14+14 at l9 wraps (28 mod 16 = 12 = C)
+  assertMsg "bnd l9 14+14 wraps to C"
+    (hexAddUint256 "e000000000000000000000000000000000000000000000000000000000000000"
+                   "e000000000000000000000000000000000000000000000000000000000000000"
+      == "c000000000000000000000000000000000000000000000000000000000000000")
+  -- 1-15 at l9 wraps (underflow)
+  assertMsg "bnd l9 1-15 wraps"
+    (hexSubUint256 "1000000000000000000000000000000000000000000000000000000000000000"
+                   "f000000000000000000000000000000000000000000000000000000000000000"
+      == "2000000000000000000000000000000000000000000000000000000000000000")
+  -- All l9 products are 0 (overflow mod 2^256)
+  assertMsg "bnd l9 1*1=0 (overflow)"
+    (hexMulUint256 "1000000000000000000000000000000000000000000000000000000000000000"
+                   "1000000000000000000000000000000000000000000000000000000000000000"
+      == zero)
+
+-- ===========================================================================
+-- 52. Per-limb comparison sweep (l1 through l8)
+-- Must match test/src/test/uint256-vectors.test.ts
+-- ===========================================================================
+
+testComparePerLimb : Script ()
+testComparePerLimb = do
+  -- l1 differs
+  assertMsg "cmp l1 LT"
+    (uint256Compare (uint256FromHex "0000000000000000000000000000000000000000000000000000000010000000")
+                    (uint256FromHex "0000000000000000000000000000000000000000000000000000000020000000") == LT)
+  assertMsg "cmp l1 GT"
+    (uint256Compare (uint256FromHex "0000000000000000000000000000000000000000000000000000000020000000")
+                    (uint256FromHex "0000000000000000000000000000000000000000000000000000000010000000") == GT)
+  -- l2 differs
+  assertMsg "cmp l2 LT"
+    (uint256Compare (uint256FromHex "0000000000000000000000000000000000000000000000000100000000000000")
+                    (uint256FromHex "0000000000000000000000000000000000000000000000000200000000000000") == LT)
+  -- l3 differs
+  assertMsg "cmp l3 LT"
+    (uint256Compare (uint256FromHex "0000000000000000000000000000000000000000001000000000000000000000")
+                    (uint256FromHex "0000000000000000000000000000000000000000002000000000000000000000") == LT)
+  -- l4 differs
+  assertMsg "cmp l4 LT"
+    (uint256Compare (uint256FromHex "0000000000000000000000000000000000010000000000000000000000000000")
+                    (uint256FromHex "0000000000000000000000000000000000020000000000000000000000000000") == LT)
+  -- l5 differs
+  assertMsg "cmp l5 LT"
+    (uint256Compare (uint256FromHex "0000000000000000000000000000100000000000000000000000000000000000")
+                    (uint256FromHex "0000000000000000000000000000200000000000000000000000000000000000") == LT)
+  -- l6 differs
+  assertMsg "cmp l6 LT"
+    (uint256Compare (uint256FromHex "0000000000000000000001000000000000000000000000000000000000000000")
+                    (uint256FromHex "0000000000000000000002000000000000000000000000000000000000000000") == LT)
+  -- l7 differs
+  assertMsg "cmp l7 LT"
+    (uint256Compare (uint256FromHex "0000000000000010000000000000000000000000000000000000000000000000")
+                    (uint256FromHex "0000000000000020000000000000000000000000000000000000000000000000") == LT)
+  -- l8 differs
+  assertMsg "cmp l8 LT"
+    (uint256Compare (uint256FromHex "0000000100000000000000000000000000000000000000000000000000000000")
+                    (uint256FromHex "0000000200000000000000000000000000000000000000000000000000000000") == LT)
+
+-- ---------------------------------------------------------------------------
+-- 53. Comparison: MSB equal, LSB differs (full guard-chain fallthrough)
+-- ---------------------------------------------------------------------------
+
+testCompareFullFallthrough : Script ()
+testCompareFullFallthrough = do
+  -- max vs max-1: identical l9..l1, differ at l0
+  assertMsg "max vs max-1 GT"
+    (uint256Compare uint256Max (uint256FromHex maxMinusOne) == GT)
+  assertMsg "max-1 vs max LT"
+    (uint256Compare (uint256FromHex maxMinusOne) uint256Max == LT)
+  -- Upper limb dominates lower
+  assertMsg "upper limb dominates"
+    (uint256Compare (uint256FromHex "100000000000000000000000000000000000000000000000000000000fffffff")
+                    (uint256FromHex "2000000000000000000000000000000000000000000000000000000000000000") == LT)
+
+-- ---------------------------------------------------------------------------
+-- 54. Comparison: transitivity, Gt/Lt false cases, zero self-equality
+-- ---------------------------------------------------------------------------
+
+testCompareExtended : Script ()
+testCompareExtended = do
+  -- Transitivity: 1 < 2^128 < max
+  assertMsg "transitivity 1<pow128"
+    (uint256Compare (uint256FromHex one) (uint256FromHex pow128) == LT)
+  assertMsg "transitivity pow128<max"
+    (uint256Compare (uint256FromHex pow128) uint256Max == LT)
+  assertMsg "transitivity 1<max"
+    (uint256Compare (uint256FromHex one) uint256Max == LT)
+  -- Gt/Lt return False for equal values
+  assertMsg "gt false for equal (one)" (not (uint256Gt (uint256FromHex one) (uint256FromHex one)))
+  assertMsg "gt false for equal (zero)" (not (uint256Gt uint256Zero uint256Zero))
+  assertMsg "gt false for equal (max)" (not (uint256Gt uint256Max uint256Max))
+  assertMsg "lt false for equal (one)" (not (uint256Lt (uint256FromHex one) (uint256FromHex one)))
+  assertMsg "lt false for equal (zero)" (not (uint256Lt uint256Zero uint256Zero))
+  assertMsg "lt false for equal (max)" (not (uint256Lt uint256Max uint256Max))
+  -- Zero self-equality
+  assertMsg "zero == zero" (uint256Compare uint256Zero uint256Zero == EQ)
+
+-- ---------------------------------------------------------------------------
+-- 55. isZero with single non-zero middle limb
+-- ---------------------------------------------------------------------------
+
+testIsZeroMiddleLimbs : Script ()
+testIsZeroMiddleLimbs = do
+  assertMsg "not isZero l1=1"
+    (not (uint256IsZero (uint256FromHex "0000000000000000000000000000000000000000000000000000000010000000")))
+  assertMsg "not isZero l3=1"
+    (not (uint256IsZero (uint256FromHex "0000000000000000000000000000000000000000001000000000000000000000")))
+  assertMsg "not isZero l5=1"
+    (not (uint256IsZero (uint256FromHex "0000000000000000000000000000100000000000000000000000000000000000")))
+  assertMsg "not isZero l7=1"
+    (not (uint256IsZero (uint256FromHex "0000000000000010000000000000000000000000000000000000000000000000")))
+  assertMsg "not isZero l8=1"
+    (not (uint256IsZero (uint256FromHex "0000000100000000000000000000000000000000000000000000000000000000")))
+
+-- ===========================================================================
+-- AUDIT V2: New constants (oracle: TypeScript BigInt)
+-- Must match test/src/test/uint256-vectors.test.ts
+-- ===========================================================================
+
+pow84 : BytesHex
+pow84 = "0000000000000000000000000000000000000000001000000000000000000000"
+
+pow84MinusOne : BytesHex
+pow84MinusOne = "0000000000000000000000000000000000000000000fffffffffffffffffffff"
+
+pow112 : BytesHex
+pow112 = "0000000000000000000000000000000000010000000000000000000000000000"
+
+pow112MinusOne : BytesHex
+pow112MinusOne = "000000000000000000000000000000000000ffffffffffffffffffffffffffff"
+
+pow168 : BytesHex
+pow168 = "0000000000000000000001000000000000000000000000000000000000000000"
+
+pow168MinusOne : BytesHex
+pow168MinusOne = "0000000000000000000000ffffffffffffffffffffffffffffffffffffffffff"
+
+pow196 : BytesHex
+pow196 = "0000000000000010000000000000000000000000000000000000000000000000"
+
+pow196MinusOne : BytesHex
+pow196MinusOne = "000000000000000fffffffffffffffffffffffffffffffffffffffffffffffff"
+
+pow224 : BytesHex
+pow224 = "0000000100000000000000000000000000000000000000000000000000000000"
+
+pow224MinusOne : BytesHex
+pow224MinusOne = "00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+
+pow127 : BytesHex
+pow127 = "0000000000000000000000000000000080000000000000000000000000000000"
+
+-- ---------------------------------------------------------------------------
+-- 56. Multiplication associativity
+-- ---------------------------------------------------------------------------
+
+testMulAssociativity : Script ()
+testMulAssociativity = do
+  let a1 = uint256FromHex "deadbeefcafebabe1234567890abcdef0011223344556677fedcba9876543210"
+      b1 = uint256FromHex "00000000000000000000000000000000000000000000000000000000000000ff"
+      c1 = uint256FromHex "0000000000000000000000000000000000000000000000000000000000010001"
+  assertMsg "mul assoc 1: (a*b)*c == a*(b*c)"
+    (uint256Mul (uint256Mul a1 b1) c1 == uint256Mul a1 (uint256Mul b1 c1))
+  assertMsg "mul assoc 1 result"
+    (uint256ToHex (uint256Mul (uint256Mul a1 b1) c1) == "ffec649737102576443a3d3a3c333222222222222297ef64bbbbbbbbbbcdddf0")
+  let a2 = uint256FromHex "a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5"
+      b2 = uint256FromHex "0000000000000000000000000000000100000000000000000000000000000001"
+      c2 = uint256FromHex three
+  assertMsg "mul assoc 2: (a*b)*c == a*(b*c)"
+    (uint256Mul (uint256Mul a2 b2) c2 == uint256Mul a2 (uint256Mul b2 c2))
+
+-- ---------------------------------------------------------------------------
+-- 57. a*2 == a+a (cross-validates add and mul)
+-- ---------------------------------------------------------------------------
+
+testDoubleEqualsAddSelf : Script ()
+testDoubleEqualsAddSelf = do
+  let twoU = uint256FromHex two
+      check label x = assertMsg label
+        (uint256Mul x twoU == uint256Add x x)
+  check "dbl oneEth" (uint256FromHex oneEth)
+  check "dbl pow128" (uint256FromHex pow128)
+  check "dbl limbMax" (uint256FromHex hexLimbMax)
+  check "dbl pow255" (uint256FromHex pow255)
+  check "dbl maxDiv2" (uint256FromHex maxDiv2)
+  check "dbl patA" (uint256FromHex patA)
+
+-- ---------------------------------------------------------------------------
+-- 58. Squaring
+-- ---------------------------------------------------------------------------
+
+testSquaring : Script ()
+testSquaring = do
+  let sq x = uint256Mul x x
+  -- (2^64)^2 = 2^128
+  assertMsg "sq 2^64"
+    (uint256ToHex (sq (uint256FromHex "0000000000000000000000000000000000000000000000010000000000000000"))
+      == pow128)
+  -- (0xdeadbeef)^2
+  assertMsg "sq deadbeef"
+    (uint256ToHex (sq (uint256FromHex "00000000000000000000000000000000000000000000000000000000deadbeef"))
+      == "000000000000000000000000000000000000000000000000c1b1cd12216da321")
+  -- (2^192+1)^2
+  assertMsg "sq 2^192+1"
+    (uint256ToHex (sq (uint256FromHex "0000000000000001000000000000000000000000000000000000000000000001"))
+      == "0000000000000002000000000000000000000000000000000000000000000001")
+  -- (2^64-1)^2
+  assertMsg "sq 2^64-1"
+    (uint256ToHex (sq (uint256FromHex "000000000000000000000000000000000000000000000000ffffffffffffffff"))
+      == "00000000000000000000000000000000fffffffffffffffe0000000000000001")
+  -- (2^255-1)^2 mod 2^256 = 1
+  assertMsg "sq 2^255-1"
+    (uint256ToHex (sq (uint256FromHex maxDiv2)) == one)
+
+-- ---------------------------------------------------------------------------
+-- 59. Additive inverse: a + (0 - a) == 0
+-- ---------------------------------------------------------------------------
+
+testAdditiveInverse : Script ()
+testAdditiveInverse = do
+  let check label x = assertMsg label
+        (uint256Add x (uint256Sub uint256Zero x) == uint256Zero)
+  check "inv oneEth" (uint256FromHex oneEth)
+  check "inv pow128" (uint256FromHex pow128)
+  check "inv patA" (uint256FromHex patA)
+  check "inv max" uint256Max
+
+-- ---------------------------------------------------------------------------
+-- 60. Left distributivity: (b+c)*a == b*a + c*a
+-- ---------------------------------------------------------------------------
+
+testLeftDistributive : Script ()
+testLeftDistributive = do
+  let a = uint256FromHex seven
+      b = uint256FromHex oneEth
+      c = uint256FromHex pow128
+  assertMsg "left dist (b+c)*a == b*a + c*a"
+    (uint256Mul (uint256Add b c) a == uint256Add (uint256Mul b a) (uint256Mul c a))
+
+-- ---------------------------------------------------------------------------
+-- 61. Checked vs unchecked consistency
+-- ---------------------------------------------------------------------------
+
+testCheckedUncheckedConsistency : Script ()
+testCheckedUncheckedConsistency = do
+  -- Add: overflow
+  assertMsg "addChecked==add (overflow)"
+    (fst (uint256AddChecked uint256Max uint256One) == uint256Add uint256Max uint256One)
+  -- Add: no overflow
+  assertMsg "addChecked==add (no overflow)"
+    (fst (uint256AddChecked uint256One uint256One) == uint256Add uint256One uint256One)
+  -- Sub: underflow
+  assertMsg "subChecked==sub (underflow)"
+    (fst (uint256SubChecked uint256Zero uint256One) == uint256Sub uint256Zero uint256One)
+  -- Sub: no underflow
+  assertMsg "subChecked==sub (no underflow)"
+    (fst (uint256SubChecked (uint256FromHex five) (uint256FromHex three)) == uint256Sub (uint256FromHex five) (uint256FromHex three))
+  -- Mul: overflow
+  assertMsg "mulChecked==mul (overflow)"
+    (fst (uint256MulChecked uint256Max uint256Max) == uint256Mul uint256Max uint256Max)
+  -- Mul: no overflow
+  assertMsg "mulChecked==mul (no overflow)"
+    (fst (uint256MulChecked (uint256FromHex three) (uint256FromHex seven)) == uint256Mul (uint256FromHex three) (uint256FromHex seven))
+
+-- ---------------------------------------------------------------------------
+-- 62. Reverse hex round-trip: fromHex(toHex(x)) == x
+-- ---------------------------------------------------------------------------
+
+testReverseHexRoundTrip : Script ()
+testReverseHexRoundTrip = do
+  assertMsg "rev rt zero" (uint256FromHex (uint256ToHex uint256Zero) == uint256Zero)
+  assertMsg "rev rt one" (uint256FromHex (uint256ToHex uint256One) == uint256One)
+  assertMsg "rev rt max" (uint256FromHex (uint256ToHex uint256Max) == uint256Max)
+  -- Constructed values with specific limb patterns
+  let limbMaxOnly = UInt256 with limbs = [268435455, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+  assertMsg "rev rt l0=max" (uint256FromHex (uint256ToHex limbMaxOnly) == limbMaxOnly)
+  let midLimb = UInt256 with limbs = [0, 0, 0, 0, 134217728, 0, 0, 0, 0, 0]
+  assertMsg "rev rt l4=half" (uint256FromHex (uint256ToHex midLimb) == midLimb)
+  let topLimb = UInt256 with limbs = [0, 0, 0, 0, 0, 0, 0, 0, 0, 15]
+  assertMsg "rev rt l9=15" (uint256FromHex (uint256ToHex topLimb) == topLimb)
+  -- Ascending limbs
+  let ascending = UInt256 with limbs = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+  assertMsg "rev rt ascending" (uint256FromHex (uint256ToHex ascending) == ascending)
+
+-- ---------------------------------------------------------------------------
+-- 63. AddChecked boundary precision
+-- ---------------------------------------------------------------------------
+
+testAddCheckedBoundary : Script ()
+testAddCheckedBoundary = do
+  -- s9=15 via carry from l8 (no overflow)
+  let (r1, o1) = uint256AddChecked
+        (uint256FromHex "efffffff00000000000000000000000000000000000000000000000000000000")
+        (uint256FromHex "0000000100000000000000000000000000000000000000000000000000000000")
+  assertMsg "addChecked s9=15 via carry result"
+    (uint256ToHex r1 == "f000000000000000000000000000000000000000000000000000000000000000")
+  assertMsg "addChecked s9=15 via carry no overflow" (not o1)
+  -- s9=16 via carry from l8 (overflow)
+  let (r2, o2) = uint256AddChecked
+        (uint256FromHex "efffffff00000000000000000000000000000000000000000000000000000000")
+        (uint256FromHex "1000000100000000000000000000000000000000000000000000000000000000")
+  assertMsg "addChecked s9=16 via carry result" (r2 == uint256Zero)
+  assertMsg "addChecked s9=16 via carry overflow" o2
+  -- (2^255-1) + 2^255 = max, no overflow
+  let (r3, o3) = uint256AddChecked (uint256FromHex maxDiv2) (uint256FromHex pow255)
+  assertMsg "addChecked maxDiv2+pow255=max" (r3 == uint256Max)
+  assertMsg "addChecked maxDiv2+pow255 no overflow" (not o3)
+  -- Simultaneous carry at every limb (no overflow)
+  let (r4, o4) = uint256AddChecked
+        (uint256FromHex "4800000080000008000000800000080000008000000800000080000008000000")
+        (uint256FromHex "4800000080000008000000800000080000008000000800000080000008000000")
+  assertMsg "addChecked simultaneous carry result"
+    (uint256ToHex r4 == "9000000100000010000001000000100000010000001000000100000010000000")
+  assertMsg "addChecked simultaneous carry no overflow" (not o4)
+  -- Simultaneous carry overflow
+  let (r5, o5) = uint256AddChecked
+        (uint256FromHex "8800000080000008000000800000080000008000000800000080000008000000")
+        (uint256FromHex "8800000080000008000000800000080000008000000800000080000008000000")
+  assertMsg "addChecked simultaneous carry overflow result"
+    (uint256ToHex r5 == "1000000100000010000001000000100000010000001000000100000010000000")
+  assertMsg "addChecked simultaneous carry overflow" o5
+
+-- ---------------------------------------------------------------------------
+-- 64. SubChecked boundary cases
+-- ---------------------------------------------------------------------------
+
+testSubCheckedBoundary : Script ()
+testSubCheckedBoundary = do
+  -- Full borrow chain (no underflow)
+  let (r1, u1) = uint256SubChecked
+        (uint256FromHex "1000000000000000000000000000000000000000000000000000000000000001")
+        (uint256FromHex two)
+  assertMsg "subChecked full borrow result"
+    (uint256ToHex r1 == "0fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")
+  assertMsg "subChecked full borrow no underflow" (not u1)
+  -- 2^224 - 1
+  assertMsg "sub 2^224-1"
+    (uint256ToHex (uint256Sub (uint256FromHex pow224) uint256One) == pow224MinusOne)
+  -- 0 - max = 1 (underflow)
+  let (r2, u2) = uint256SubChecked uint256Zero uint256Max
+  assertMsg "subChecked 0-max=1" (r2 == uint256One)
+  assertMsg "subChecked 0-max underflow" u2
+  -- d9=0 borrow absorbed (no underflow)
+  let (r3, u3) = uint256SubChecked
+        (uint256FromHex "2000000000000000000000000000000000000000000000000000000000000001")
+        (uint256FromHex "1000000000000000000000000000000000000000000000000000000000000002")
+  assertMsg "subChecked d9=0 result"
+    (uint256ToHex r3 == "0fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")
+  assertMsg "subChecked d9=0 no underflow" (not u3)
+  -- d9=-1 underflow
+  let (r4, u4) = uint256SubChecked
+        (uint256FromHex "1000000000000000000000000000000000000000000000000000000000000001")
+        (uint256FromHex "1000000000000000000000000000000000000000000000000000000000000002")
+  assertMsg "subChecked d9=-1 result" (r4 == uint256Max)
+  assertMsg "subChecked d9=-1 underflow" u4
+  -- Only l9 borrows
+  assertMsg "sub only l9 borrows"
+    (uint256ToHex (uint256Sub
+      (uint256FromHex "3000000000000000000000000000000000000000000000000000000000000005")
+      (uint256FromHex "5000000000000000000000000000000000000000000000000000000000000003"))
+      == "e000000000000000000000000000000000000000000000000000000000000002")
+  -- Self-subtraction
+  assertMsg "self-sub patA" (uint256Sub (uint256FromHex patA) (uint256FromHex patA) == uint256Zero)
+  assertMsg "self-sub max" (uint256Sub uint256Max uint256Max == uint256Zero)
+  -- SubChecked equal = (zero, False)
+  let (r5, u5) = uint256SubChecked (uint256FromHex pow128) (uint256FromHex pow128)
+  assertMsg "subChecked equal=zero" (r5 == uint256Zero)
+  assertMsg "subChecked equal no underflow" (not u5)
+  -- SubChecked max-0 = (max, False)
+  let (r6, u6) = uint256SubChecked uint256Max uint256Zero
+  assertMsg "subChecked max-0=max" (r6 == uint256Max)
+  assertMsg "subChecked max-0 no underflow" (not u6)
+
+-- ---------------------------------------------------------------------------
+-- 65. Carry/borrow at missing limb boundaries
+-- ---------------------------------------------------------------------------
+
+testCarryBorrowAllBoundaries : Script ()
+testCarryBorrowAllBoundaries = do
+  -- l2/l3 boundary (2^84)
+  assertMsg "carry l2->l3" (hexAddUint256 pow84MinusOne one == pow84)
+  assertMsg "borrow l3->l2" (hexSubUint256 pow84 one == pow84MinusOne)
+  -- l3/l4 boundary (2^112)
+  assertMsg "carry l3->l4" (hexAddUint256 pow112MinusOne one == pow112)
+  assertMsg "borrow l4->l3" (hexSubUint256 pow112 one == pow112MinusOne)
+  -- l5/l6 boundary (2^168)
+  assertMsg "carry l5->l6" (hexAddUint256 pow168MinusOne one == pow168)
+  assertMsg "borrow l6->l5" (hexSubUint256 pow168 one == pow168MinusOne)
+  -- l6/l7 boundary (2^196)
+  assertMsg "carry l6->l7" (hexAddUint256 pow196MinusOne one == pow196)
+  assertMsg "borrow l7->l6" (hexSubUint256 pow196 one == pow196MinusOne)
+  -- l7/l8 boundary (2^224)
+  assertMsg "carry l7->l8" (hexAddUint256 pow224MinusOne one == pow224)
+  assertMsg "borrow l8->l7" (hexSubUint256 pow224 one == pow224MinusOne)
+
+-- ---------------------------------------------------------------------------
+-- 66. Division extended
+-- ---------------------------------------------------------------------------
+
+testDivisionExtended : Script ()
+testDivisionExtended = do
+  -- Dividend < divisor (quotient = 0)
+  let (q1, r1) = uint256DivInt (uint256FromHex three) 7
+  assertMsg "div 3/7 q=0" (q1 == uint256Zero)
+  assertMsg "div 3/7 r=3" (r1 == 3)
+  let (q2, r2) = uint256DivInt (uint256FromHex "0000000000000000000000000000000000000000000000000000000000000063") 100
+  assertMsg "div 99/100 q=0" (q2 == uint256Zero)
+  assertMsg "div 99/100 r=99" (r2 == 99)
+  -- Division by 1
+  let (q3, r3) = uint256DivInt uint256Zero 1
+  assertMsg "div 0/1 q=0" (q3 == uint256Zero)
+  assertMsg "div 0/1 r=0" (r3 == 0)
+  let (q4, r4) = uint256DivInt (uint256FromHex oneEth) 1
+  assertMsg "div 1e18/1 q=1e18" (uint256ToHex q4 == oneEth)
+  assertMsg "div 1e18/1 r=0" (r4 == 0)
+  -- Adjacent: 8/7
+  let (q5, r5) = uint256DivInt (uint256FromSmallInt 8) 7
+  assertMsg "div 8/7 q=1" (uint256ToHex q5 == one)
+  assertMsg "div 8/7 r=1" (r5 == 1)
+  -- Division by 2 sweep
+  let (q6, _) = uint256DivInt (uint256FromHex oneEth) 2
+  assertMsg "div 1e18/2" (uint256ToHex q6 == "00000000000000000000000000000000000000000000000006f05b59d3b20000")
+  let (q7, _) = uint256DivInt (uint256FromHex pow128) 2
+  assertMsg "div pow128/2" (uint256ToHex q7 == pow127)
+  let (q8, _) = uint256DivInt (uint256FromHex pow252) 2
+  assertMsg "div pow252/2" (uint256ToHex q8 == "0800000000000000000000000000000000000000000000000000000000000000")
+  -- Exact pattern quotients
+  let (q9, r9) = uint256DivInt uint256Max 3
+  assertMsg "div max/3 q" (uint256ToHex q9 == "5555555555555555555555555555555555555555555555555555555555555555")
+  assertMsg "div max/3 r=0" (r9 == 0)
+  let (q10, r10) = uint256DivInt uint256Max 17
+  assertMsg "div max/17 q" (uint256ToHex q10 == "0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f")
+  assertMsg "div max/17 r=0" (r10 == 0)
+  let (q11, r11) = uint256DivInt uint256Max 255
+  assertMsg "div max/255 q" (uint256ToHex q11 == "0101010101010101010101010101010101010101010101010101010101010101")
+  assertMsg "div max/255 r=0" (r11 == 0)
+  -- Top-limb-only dividend
+  let (q12, r12) = uint256DivInt (uint256FromHex pow252) 3
+  assertMsg "div pow252/3 q" (uint256ToHex q12 == "0555555555555555555555555555555555555555555555555555555555555555")
+  assertMsg "div pow252/3 r=1" (r12 == 1)
+  let (q13, r13) = uint256DivInt (uint256FromHex pow252) 7
+  assertMsg "div pow252/7 q" (uint256ToHex q13 == "0249249249249249249249249249249249249249249249249249249249249249")
+  assertMsg "div pow252/7 r=1" (r13 == 1)
+  let (q14, r14) = uint256DivInt (uint256FromHex pow252) 268435455
+  assertMsg "div pow252/limbMax q" (uint256ToHex q14 == "0000000100000010000001000000100000010000001000000100000010000001")
+  assertMsg "div pow252/limbMax r=1" (r14 == 1)
+  -- Powers-of-2 sweep
+  let (q15, r15) = uint256DivInt uint256Max 4
+  assertMsg "div max/4 q" (uint256ToHex q15 == "3fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")
+  assertMsg "div max/4 r=3" (r15 == 3)
+  let (q16, r16) = uint256DivInt uint256Max 8
+  assertMsg "div max/8 q" (uint256ToHex q16 == "1fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")
+  assertMsg "div max/8 r=7" (r16 == 7)
+  let (q17, r17) = uint256DivInt uint256Max 32
+  assertMsg "div max/32 q" (uint256ToHex q17 == "07ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")
+  assertMsg "div max/32 r=31" (r17 == 31)
+  let (q18, r18) = uint256DivInt uint256Max 256
+  assertMsg "div max/256 q" (uint256ToHex q18 == "00ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")
+  assertMsg "div max/256 r=255" (r18 == 255)
+  -- limbMax self-division
+  let (q19, r19) = uint256DivInt (uint256FromHex hexLimbMax) 268435455
+  assertMsg "div limbMax/limbMax q=1" (uint256ToHex q19 == one)
+  assertMsg "div limbMax/limbMax r=0" (r19 == 0)
+  -- Reconstruction invariant: max/10
+  let (q20, r20) = uint256DivInt uint256Max 10
+  assertMsg "div max/10 r=5" (r20 == 5)
+  assertMsg "div max/10 reconstruction"
+    (uint256Add (uint256Mul q20 (uint256FromSmallInt 10)) (uint256FromSmallInt r20) == uint256Max)
+  -- Reconstruction invariant: max/100
+  let (q21, r21) = uint256DivInt uint256Max 100
+  assertMsg "div max/100 r=35" (r21 == 35)
+  assertMsg "div max/100 reconstruction"
+    (uint256Add (uint256Mul q21 (uint256FromHex hex100)) (uint256FromSmallInt r21) == uint256Max)
+
+-- ---------------------------------------------------------------------------
+-- 67. MulChecked extended
+-- ---------------------------------------------------------------------------
+
+testMulCheckedExtended : Script ()
+testMulCheckedExtended = do
+  -- 2^127 * 2^128 = 2^255, no overflow
+  let (r1, o1) = uint256MulChecked (uint256FromHex pow127) (uint256FromHex pow128)
+  assertMsg "mulChecked 2^127*2^128=2^255" (uint256ToHex r1 == pow255)
+  assertMsg "mulChecked 2^127*2^128 no overflow" (not o1)
+  -- (2^255-1)*3 overflows
+  let (r2, o2) = uint256MulChecked (uint256FromHex maxDiv2) (uint256FromHex three)
+  assertMsg "mulChecked halfMax*3 result"
+    (uint256ToHex r2 == "7ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffd")
+  assertMsg "mulChecked halfMax*3 overflow" o2
+  -- 0*0, 1*1 no overflow
+  let (_, o3) = uint256MulChecked uint256Zero uint256Zero
+  assertMsg "mulChecked 0*0 no overflow" (not o3)
+  let (r4, o4) = uint256MulChecked uint256One uint256One
+  assertMsg "mulChecked 1*1=1" (r4 == uint256One)
+  assertMsg "mulChecked 1*1 no overflow" (not o4)
+  -- max*3, max*7, max*255
+  assertMsg "max*3"
+    (uint256ToHex (uint256Mul uint256Max (uint256FromHex three))
+      == "fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffd")
+  assertMsg "max*7"
+    (uint256ToHex (uint256Mul uint256Max (uint256FromHex seven))
+      == "fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff9")
+  assertMsg "max*255"
+    (uint256ToHex (uint256Mul uint256Max (uint256FromSmallInt 255))
+      == "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff01")
+  -- patA * patB
+  assertMsg "patA*patB"
+    (hexMulUint256 patA patB == "1c71c71c71c71c71c71c71c71c71c71c71c71c71c71c71c71c71c71c71c71c72")
+  -- patA squared
+  assertMsg "patA^2"
+    (hexMulUint256 patA patA == "38e38e38e38e38e38e38e38e38e38e38e38e38e38e38e38e38e38e38e38e38e4")
+
+-- ---------------------------------------------------------------------------
+-- 68. Euler expansion: (a+b)^2 = a^2 + 2ab + b^2
+-- ---------------------------------------------------------------------------
+
+testEulerExpansion : Script ()
+testEulerExpansion = do
+  let a = uint256FromHex oneEth
+      b = uint256FromHex pow128
+      lhs = uint256Mul (uint256Add a b) (uint256Add a b)
+      rhs = uint256Add
+              (uint256Add (uint256Mul a a) (uint256Mul (uint256FromHex two) (uint256Mul a b)))
+              (uint256Mul b b)
+  assertMsg "euler (a+b)^2 = a^2+2ab+b^2" (lhs == rhs)
+  assertMsg "euler result"
+    (uint256ToHex lhs == "00000000000000001bc16d674ec8000000c097ce7bc90715b34b9f1000000000")
+
+-- ---------------------------------------------------------------------------
+-- 69. EVM subtraction
+-- ---------------------------------------------------------------------------
+
+testEvmSubtraction : Script ()
+testEvmSubtraction = do
+  assertMsg "max - oneEth"
+    (uint256ToHex (uint256Sub uint256Max (uint256FromHex oneEth))
+      == "fffffffffffffffffffffffffffffffffffffffffffffffff21f494c589bffff")
+
+-- ---------------------------------------------------------------------------
+-- 70. Hex round-trip at all limb boundaries
+-- ---------------------------------------------------------------------------
+
+testHexRoundTripAllBoundaries : Script ()
+testHexRoundTripAllBoundaries = do
+  -- Round-trip at every 28-bit limb boundary
+  assertMsg "rt pow84" (uint256ToHex (uint256FromHex pow84) == pow84)
+  assertMsg "rt pow84-1" (uint256ToHex (uint256FromHex pow84MinusOne) == pow84MinusOne)
+  assertMsg "rt pow112" (uint256ToHex (uint256FromHex pow112) == pow112)
+  assertMsg "rt pow112-1" (uint256ToHex (uint256FromHex pow112MinusOne) == pow112MinusOne)
+  assertMsg "rt pow168" (uint256ToHex (uint256FromHex pow168) == pow168)
+  assertMsg "rt pow168-1" (uint256ToHex (uint256FromHex pow168MinusOne) == pow168MinusOne)
+  assertMsg "rt pow196" (uint256ToHex (uint256FromHex pow196) == pow196)
+  assertMsg "rt pow196-1" (uint256ToHex (uint256FromHex pow196MinusOne) == pow196MinusOne)
+  assertMsg "rt pow224" (uint256ToHex (uint256FromHex pow224) == pow224)
+  assertMsg "rt pow224-1" (uint256ToHex (uint256FromHex pow224MinusOne) == pow224MinusOne)
+  assertMsg "rt pow127" (uint256ToHex (uint256FromHex pow127) == pow127)
+
+-- ---------------------------------------------------------------------------
+-- 71. Squaring sweep: (2^k-1)^2 at limb boundaries
+-- Oracle: TypeScript BigInt, identity (2^k-1)^2 = 2^(2k) - 2^(k+1) + 1
+-- ---------------------------------------------------------------------------
+
+testSquaringSweep : Script ()
+testSquaringSweep = do
+  let sq x = uint256Mul x x
+  -- k=28: (2^28-1)^2 (limb boundary l0/l1)
+  assertMsg "sq sweep k=28"
+    (uint256ToHex (sq (uint256FromHex "000000000000000000000000000000000000000000000000000000000fffffff"))
+      == "00000000000000000000000000000000000000000000000000ffffffe0000001")
+  -- k=56: (2^56-1)^2 (limb boundary l1/l2)
+  assertMsg "sq sweep k=56"
+    (uint256ToHex (sq (uint256FromHex "00000000000000000000000000000000000000000000000000ffffffffffffff"))
+      == "000000000000000000000000000000000000fffffffffffffe00000000000001")
+  -- k=84: (2^84-1)^2 (limb boundary l2/l3)
+  assertMsg "sq sweep k=84"
+    (uint256ToHex (sq (uint256FromHex "0000000000000000000000000000000000000000000fffffffffffffffffffff"))
+      == "0000000000000000000000ffffffffffffffffffffe000000000000000000001")
+  -- k=112: (2^112-1)^2 (limb boundary l3/l4)
+  assertMsg "sq sweep k=112"
+    (uint256ToHex (sq (uint256FromHex "000000000000000000000000000000000000ffffffffffffffffffffffffffff"))
+      == "00000000fffffffffffffffffffffffffffe0000000000000000000000000001")
+  -- k=140: (2^140-1)^2 — 2*140=280 > 256, wraps mod 2^256
+  assertMsg "sq sweep k=140"
+    (uint256ToHex (sq (uint256FromHex "00000000000000000000000000000fffffffffffffffffffffffffffffffffff"))
+      == "ffffffffffffffffffffffffffffe00000000000000000000000000000000001")
+  -- k=196: (2^196-1)^2 — 2*196=392 > 256, wraps
+  assertMsg "sq sweep k=196"
+    (uint256ToHex (sq (uint256FromHex "000000000000000fffffffffffffffffffffffffffffffffffffffffffffffff"))
+      == "ffffffffffffffe0000000000000000000000000000000000000000000000001")
+  -- k=224: (2^224-1)^2 — 2*224=448 > 256, wraps
+  assertMsg "sq sweep k=224"
+    (uint256ToHex (sq (uint256FromHex "00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff"))
+      == "fffffffe00000000000000000000000000000000000000000000000000000001")
+
+-- ---------------------------------------------------------------------------
+-- 72. Karatsuba identity sweep: (2^a-1)*(2^b-1) = 2^(a+b) - 2^a - 2^b + 1
+-- Oracle: TypeScript BigInt
+-- ---------------------------------------------------------------------------
+
+testKaratsubaSweep : Script ()
+testKaratsubaSweep = do
+  -- (a=64, b=64): a+b=128, no wrap
+  assertMsg "karat 64x64"
+    (hexMulUint256
+      "000000000000000000000000000000000000000000000000ffffffffffffffff"
+      "000000000000000000000000000000000000000000000000ffffffffffffffff"
+      == "00000000000000000000000000000000fffffffffffffffe0000000000000001")
+  -- (a=64, b=192): a+b=256, wraps
+  assertMsg "karat 64x192"
+    (hexMulUint256
+      "000000000000000000000000000000000000000000000000ffffffffffffffff"
+      "0000000000000000ffffffffffffffffffffffffffffffffffffffffffffffff"
+      == "fffffffffffffffeffffffffffffffffffffffffffffffff0000000000000001")
+  -- (a=128, b=128): a+b=256, wraps
+  assertMsg "karat 128x128"
+    (hexMulUint256
+      "00000000000000000000000000000000ffffffffffffffffffffffffffffffff"
+      "00000000000000000000000000000000ffffffffffffffffffffffffffffffff"
+      == "fffffffffffffffffffffffffffffffe00000000000000000000000000000001")
+  -- (a=192, b=64): a+b=256, wraps (commutative with 64x192)
+  assertMsg "karat 192x64"
+    (hexMulUint256
+      "0000000000000000ffffffffffffffffffffffffffffffffffffffffffffffff"
+      "000000000000000000000000000000000000000000000000ffffffffffffffff"
+      == "fffffffffffffffeffffffffffffffffffffffffffffffff0000000000000001")
+  -- (a=252, b=4): a+b=256, wraps
+  assertMsg "karat 252x4"
+    (hexMulUint256
+      "0fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      "000000000000000000000000000000000000000000000000000000000000000f"
+      == "effffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff1")
+  -- (a=140, b=112): a+b=252, no wrap
+  assertMsg "karat 140x112"
+    (hexMulUint256
+      "00000000000000000000000000000fffffffffffffffffffffffffffffffffff"
+      "000000000000000000000000000000000000ffffffffffffffffffffffffffff"
+      == "0fffffffffffffffffffffffffffefffffff0000000000000000000000000001")
+
+-- ---------------------------------------------------------------------------
+-- 73. Token decimal scaling
+-- Oracle: TypeScript BigInt
+-- ---------------------------------------------------------------------------
+
+testTokenDecimalScaling : Script ()
+testTokenDecimalScaling = do
+  -- USDC upscale: 1e6 * 1e12 = 1e18
+  assertMsg "usdc upscale"
+    (uint256Mul (uint256FromHex oneUsdc) (uint256FromHex oneTrillion)
+      == uint256FromHex oneEth)
+  -- WBTC upscale: 1e8 * 1e10 = 1e18
+  let oneWbtc  = uint256FromHex "0000000000000000000000000000000000000000000000000000000005f5e100"
+      wbtcScale = uint256FromHex "00000000000000000000000000000000000000000000000000000002540be400"
+  assertMsg "wbtc upscale"
+    (uint256Mul oneWbtc wbtcScale == uint256FromHex oneEth)
+  -- Large token balance * price: 1000 ETH * 3500 USD (both 18 decimals)
+  let balance1000Eth = uint256FromHex "00000000000000000000000000000000000000000000003635c9adc5dea00000"
+      price3500Usd   = uint256FromHex "0000000000000000000000000000000000000000000000bdbc41e0348b300000"
+  assertMsg "1000eth * 3500usd"
+    (uint256ToHex (uint256Mul balance1000Eth price3500Usd)
+      == "0000000000000000000000000000282d93588918a93e0cc83d7a9e0000000000")

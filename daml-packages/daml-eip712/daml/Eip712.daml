@@ -1,0 +1,69 @@
+module Eip712 where
+
+import DA.Optional (fromSome)
+import qualified DA.Text
+
+import DA.Crypto.Text
+  ( BytesHex
+  , byteCount
+  , keccak256
+  , packHexBytes
+  , toHex
+  , fromHex
+  )
+
+-- ---------------------------------------------------------------------------
+-- Hex utilities
+-- ---------------------------------------------------------------------------
+
+-- | Left-pad hex to the given byte width (for uint, int, address).
+padLeft : BytesHex -> Int -> BytesHex
+padLeft hex width = fromSome (packHexBytes hex width)
+
+-- | Assert the value is exactly 32 bytes. Use for bytes32 fields.
+assertBytes32 : BytesHex -> BytesHex
+assertBytes32 hex =
+  if byteCount hex == 32 then hex
+  else error ("Expected bytes32, got " <> show (byteCount hex) <> " bytes")
+
+ensureEvenHex : BytesHex -> BytesHex
+ensureEvenHex hex =
+  if DA.Text.length hex % 2 == 1 then "0" <> hex else hex
+
+hexToInt : BytesHex -> Int
+hexToInt hex =
+  let val : Optional Int = fromHex (ensureEvenHex hex)
+  in fromSome val
+
+chainIdToDecimalText : BytesHex -> Text
+chainIdToDecimalText hex =
+  show (hexToInt hex)
+
+-- ---------------------------------------------------------------------------
+-- Keccak helpers
+-- ---------------------------------------------------------------------------
+
+keccak256Empty : BytesHex
+keccak256Empty = "c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470"
+
+safeKeccak256 : BytesHex -> BytesHex
+safeKeccak256 hex = if hex == "" then keccak256Empty else keccak256 hex
+
+hashText : Text -> BytesHex
+hashText t = safeKeccak256 (toHex t)
+
+hashBytesList : [BytesHex] -> BytesHex
+hashBytesList xs = safeKeccak256 (foldl (<>) "" (map keccak256 xs))
+
+-- ---------------------------------------------------------------------------
+-- EIP-712 domain (shared envelope used by RequestId and future modules)
+-- ---------------------------------------------------------------------------
+
+domainTypeHash : BytesHex
+domainTypeHash = keccak256 (toHex "EIP712Domain(string name,string version)")
+
+domainSeparator : BytesHex
+domainSeparator = keccak256 (domainTypeHash <> keccak256 (toHex "CantonMpc") <> keccak256 (toHex "1"))
+
+eip712Hash : BytesHex -> BytesHex
+eip712Hash structHash = keccak256 ("1901" <> domainSeparator <> structHash)

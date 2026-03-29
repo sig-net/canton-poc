@@ -32,7 +32,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.dpm
-          key: dpm-${{ hashFiles('daml.yaml') }}
+          key: dpm-${{ hashFiles('daml-packages/daml-vault/daml.yaml') }}
 
       - name: Install Daml SDK
         run: |
@@ -43,14 +43,14 @@ jobs:
 
       - name: Build DAR, run Daml tests & generate codegen
         run: |
-          dpm build
-          dpm test
-          dpm codegen-js .daml/dist/canton-mpc-poc-0.0.1.dar -o packages/canton-sig/generated/model -s daml.js
+          dpm build --all
+          dpm test --all
+          dpm codegen-js daml-packages/daml-vault/.daml/dist/daml-vault-0.0.1.dar -o ts-packages/canton-sig/generated/model -s daml.js
 
       - run: pnpm install --frozen-lockfile
 
       - name: Start Canton sandbox
-        run: dpm sandbox --json-api-port 7575 --dar .daml/dist/canton-mpc-poc-0.0.1.dar &
+        run: dpm sandbox --json-api-port 7575 --dar daml-packages/daml-vault/.daml/dist/daml-vault-0.0.1.dar &
 
       - name: Wait for Canton JSON API
         run: |
@@ -68,15 +68,18 @@ jobs:
         working-directory: test
         run: |
           curl -sf http://localhost:7575/docs/openapi -o openapi.yaml
-          pnpm exec openapi-typescript openapi.yaml -o ../packages/canton-sig/generated/api/ledger-api.ts
+          pnpm exec openapi-typescript openapi.yaml -o ../ts-packages/canton-sig/generated/api/ledger-api.ts
 
       - name: Build library
-        working-directory: packages/canton-sig
+        working-directory: ts-packages/canton-sig
         run: pnpm build
 
       - name: Test library
-        working-directory: packages/canton-sig
+        working-directory: ts-packages/canton-sig
         run: pnpm test
+
+      - name: Test Daml oracle suites
+        run: pnpm -r --filter='@canton/*' run test
 
       - name: Check
         run: pnpm check
