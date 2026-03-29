@@ -124,6 +124,122 @@ const VECTORS = {
   mulAsym3A: "a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5",
   mulAsym3B: "0000000000000000000000000000000000000000000000000000000000010001",
   mulAsym3Result: "4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4aa5a5",
+
+  // --- Audit v2: per-limb comparison ---
+  cmpL1Val1: toHex256(1n << 28n),
+  cmpL1Val2: toHex256(2n << 28n),
+  cmpL5Val1: toHex256(1n << 140n),
+  cmpL5Val2: toHex256(2n << 140n),
+
+  // --- Audit v2: powers at all limb boundaries ---
+  pow84: toHex256(1n << 84n),
+  pow84MinusOne: toHex256((1n << 84n) - 1n),
+  pow112: toHex256(1n << 112n),
+  pow112MinusOne: toHex256((1n << 112n) - 1n),
+  pow168: toHex256(1n << 168n),
+  pow168MinusOne: toHex256((1n << 168n) - 1n),
+  pow196: toHex256(1n << 196n),
+  pow196MinusOne: toHex256((1n << 196n) - 1n),
+  pow224: toHex256(1n << 224n),
+  pow224MinusOne: toHex256((1n << 224n) - 1n),
+  pow127: toHex256(1n << 127n),
+
+  // --- Audit v2: multiplication ---
+  mulAssocResult1: toHex256(((BigInt("0xdeadbeefcafebabe1234567890abcdef0011223344556677fedcba9876543210") * 0xffn) % (1n << 256n) * 0x10001n) % (1n << 256n)),
+  mulAssocResult2: toHex256(((BigInt("0xa5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5") * ((1n << 128n) + 1n)) % (1n << 256n) * 3n) % (1n << 256n)),
+  squareDeadbeef: toHex256(0xdeadbeefn * 0xdeadbeefn),
+  square2p192p1: toHex256(((1n << 192n) + 1n) ** 2n),
+  square2p64m1: toHex256(((1n << 64n) - 1n) ** 2n),
+  patAxPatB: toHex256(BigInt("0x" + "aa".repeat(32)) * BigInt("0x" + "55".repeat(32))),
+  patASquared: toHex256(BigInt("0x" + "aa".repeat(32)) ** 2n),
+  maxTimes3: toHex256(((1n << 256n) - 1n) * 3n),
+  maxTimes7: toHex256(((1n << 256n) - 1n) * 7n),
+  maxTimes255: toHex256(((1n << 256n) - 1n) * 255n),
+  mulHalfMaxTimes3: toHex256(((1n << 255n) - 1n) * 3n),
+
+  // --- Audit v2: division ---
+  divMaxBy3Q: toHex256(((1n << 256n) - 1n) / 3n),
+  divMaxBy10Q: toHex256(((1n << 256n) - 1n) / 10n),
+  divMaxBy17Q: toHex256(((1n << 256n) - 1n) / 17n),
+  divMaxBy255Q: toHex256(((1n << 256n) - 1n) / 255n),
+  divMaxBy4Q: toHex256(((1n << 256n) - 1n) / 4n),
+  divMaxBy8Q: toHex256(((1n << 256n) - 1n) / 8n),
+  divMaxBy32Q: toHex256(((1n << 256n) - 1n) / 32n),
+  divMaxBy256Q: toHex256(((1n << 256n) - 1n) / 256n),
+  divPow252By3Q: toHex256((1n << 252n) / 3n),
+  divPow252By7Q: toHex256((1n << 252n) / 7n),
+  divPow252ByLimbMaxQ: toHex256((1n << 252n) / ((1n << 28n) - 1n)),
+  div1e18By2Q: toHex256((10n ** 18n) / 2n),
+  div1e18By10Q: toHex256((10n ** 18n) / 10n),
+  divMaxBy100Q: toHex256(((1n << 256n) - 1n) / 100n),
+
+  // --- Audit v2: subtraction ---
+  maxMinusOneEth: toHex256(((1n << 256n) - 1n) - (10n ** 18n)),
+
+  // --- Audit v2: addChecked boundary ---
+  addCheckedS15CarryA: "efffffff00000000000000000000000000000000000000000000000000000000",
+  addCheckedS15CarryB: "0000000100000000000000000000000000000000000000000000000000000000",
+  addCheckedS15CarryR: "f000000000000000000000000000000000000000000000000000000000000000",
+  addCheckedS16CarryB: "1000000100000000000000000000000000000000000000000000000000000000",
+
+  // --- Audit v2: euler ---
+  eulerResult: toHex256(((10n ** 18n) + (1n << 128n)) ** 2n),
+
+  // --- Audit v2: compare fallthrough ---
+  cmpUpperDominatesA: "100000000000000000000000000000000000000000000000000000000fffffff",
+  cmpUpperDominatesB: "2000000000000000000000000000000000000000000000000000000000000000",
+
+  // --- Audit v2: isZero middle limb values ---
+  limbL1Only: toHex256(1n << 28n),
+  limbL3Only: toHex256(1n << 84n),
+  limbL5Only: toHex256(1n << 140n),
+  limbL7Only: toHex256(1n << 196n),
+  limbL8Only: toHex256(1n << 224n),
+
+  // --- Audit v2: single-bit boundaries ---
+  pow27: toHex256(1n << 27n),
+  pow55: toHex256(1n << 55n),
+
+  // --- Audit v2: small values ---
+  five: toHex256(5n),
+  six: toHex256(6n),
+  ten: toHex256(10n),
+  hex100: toHex256(100n),
+
+  // --- Audit v2: sub simple ---
+  subFiveMinusThree: toHex256(5n - 3n),
+  subSevenMinusOne: toHex256(7n - 1n),
+
+  // --- Audit v2: mul small ---
+  mulTwoTimesFive: toHex256(2n * 5n),
+
+  // --- Audit v2: simultaneous carry ---
+  simultCarryInput: toHex256(4n * ((1n << 28n) ** 9n) + Array.from({length: 9}, (_, i) => (1n << 27n) * ((1n << 28n) ** BigInt(i))).reduce((a, b) => a + b, 0n)),
+  simultCarryResult: toHex256((4n * ((1n << 28n) ** 9n) + Array.from({length: 9}, (_, i) => (1n << 27n) * ((1n << 28n) ** BigInt(i))).reduce((a, b) => a + b, 0n)) * 2n),
+  simultCarryOvInput: toHex256(8n * ((1n << 28n) ** 9n) + Array.from({length: 9}, (_, i) => (1n << 27n) * ((1n << 28n) ** BigInt(i))).reduce((a, b) => a + b, 0n)),
+  simultCarryOvResult: toHex256((8n * ((1n << 28n) ** 9n) + Array.from({length: 9}, (_, i) => (1n << 27n) * ((1n << 28n) ** BigInt(i))).reduce((a, b) => a + b, 0n)) * 2n),
+
+  // --- Audit v2: subChecked boundary ---
+  subFullBorrowA: toHex256((1n << 252n) + 1n),
+  subFullBorrowResult: toHex256((1n << 252n) + 1n - 2n),
+  subD9AbsorbedA: toHex256(2n * ((1n << 28n) ** 9n) + 1n),
+  subD9AbsorbedB: toHex256(1n * ((1n << 28n) ** 9n) + 2n),
+  subD9AbsorbedResult: toHex256((2n * ((1n << 28n) ** 9n) + 1n) - (1n * ((1n << 28n) ** 9n) + 2n)),
+  subD9UnderflowA: toHex256(1n * ((1n << 28n) ** 9n) + 1n),
+  subD9UnderflowB: toHex256(1n * ((1n << 28n) ** 9n) + 2n),
+  subOnlyL9A: toHex256(3n * ((1n << 28n) ** 9n) + 5n),
+  subOnlyL9B: toHex256(5n * ((1n << 28n) ** 9n) + 3n),
+  subOnlyL9Result2: toHex256(((3n * ((1n << 28n) ** 9n) + 5n) - (5n * ((1n << 28n) ** 9n) + 3n) + (1n << 256n)) % (1n << 256n)),
+
+  // --- Audit v2: boundary l0 inline results ---
+  bndL0BmTwoPlusBmOne: toHex256(((1n << 28n) - 2n) + ((1n << 28n) - 1n)),
+  bndL0BmOneSquared: toHex256(((1n << 28n) - 1n) ** 2n),
+
+  // --- Audit v2: div quotients ---
+  divPow252By2Q: toHex256((1n << 252n) / 2n),
+  divMax4Q: toHex256(((1n << 256n) - 1n) / 4n),
+  divMax8Q: toHex256(((1n << 256n) - 1n) / 8n),
+  divMax32Q: toHex256(((1n << 256n) - 1n) / 32n),
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -1014,5 +1130,516 @@ describe("UInt256 arithmetic vectors (cross-language ground truth)", () => {
         expect(toHex256(a * b)).toBe(v.mul);
       });
     }
+  });
+
+  // -------------------------------------------------------------------------
+  // Audit v2: Per-limb comparison (l1 through l8)
+  // -------------------------------------------------------------------------
+  describe("Per-limb comparison", () => {
+    const B = 1n << 28n;
+    for (let i = 1; i <= 8; i++) {
+      it(`values differing only at l${i}`, () => {
+        const val1 = 1n * B ** BigInt(i);
+        const val2 = 2n * B ** BigInt(i);
+        expect(val1 < val2).toBe(true);
+        expect(val2 > val1).toBe(true);
+        expect(toHex256(val1)).toBe(toHex256(1n * B ** BigInt(i)));
+      });
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // Audit v2: Multiplication associativity
+  // -------------------------------------------------------------------------
+  describe("Multiplication associativity", () => {
+    it("(a*b)*c == a*(b*c) for deadbeef pattern", () => {
+      const a = BigInt("0xdeadbeefcafebabe1234567890abcdef0011223344556677fedcba9876543210");
+      const b = 0xffn;
+      const c = 0x10001n;
+      const lhs = toHex256((a * b) % (1n << 256n) * c);
+      const rhs = toHex256(a * ((b * c) % (1n << 256n)));
+      expect(lhs).toBe(rhs);
+      expect(lhs).toBe(VECTORS.mulAssocResult1);
+    });
+
+    it("(a*b)*c == a*(b*c) for a5 pattern with 2^128+1", () => {
+      const a = BigInt("0xa5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5");
+      const b = (1n << 128n) + 1n;
+      const c = 3n;
+      const lhs = toHex256((a * b) % (1n << 256n) * c);
+      const rhs = toHex256(a * ((b * c) % (1n << 256n)));
+      expect(lhs).toBe(rhs);
+      expect(lhs).toBe(VECTORS.mulAssocResult2);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Audit v2: a*2 == a+a
+  // -------------------------------------------------------------------------
+  describe("Double equals add-to-self", () => {
+    const cases: [string, bigint][] = [
+      ["oneEth", 10n ** 18n],
+      ["pow128", 1n << 128n],
+      ["limbMax", (1n << 28n) - 1n],
+      ["pow255", 1n << 255n],
+      ["maxDiv2", (1n << 255n) - 1n],
+      ["patA", BigInt("0x" + "aa".repeat(32))],
+    ];
+    for (const [label, v] of cases) {
+      it(`${label}: v*2 == v+v`, () => {
+        expect(toHex256(v * 2n)).toBe(toHex256(v + v));
+      });
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // Audit v2: Squaring
+  // -------------------------------------------------------------------------
+  describe("Squaring", () => {
+    it("(2^64)^2 = 2^128", () => {
+      expect(toHex256((1n << 64n) ** 2n)).toBe(VECTORS.pow128);
+    });
+    it("(0xdeadbeef)^2", () => {
+      expect(toHex256(0xdeadbeefn ** 2n)).toBe(VECTORS.squareDeadbeef);
+    });
+    it("(2^192+1)^2", () => {
+      expect(toHex256(((1n << 192n) + 1n) ** 2n)).toBe(VECTORS.square2p192p1);
+    });
+    it("(2^64-1)^2", () => {
+      expect(toHex256(((1n << 64n) - 1n) ** 2n)).toBe(VECTORS.square2p64m1);
+    });
+    it("(2^255-1)^2 mod 2^256 = 1", () => {
+      expect(toHex256(((1n << 255n) - 1n) ** 2n)).toBe(VECTORS.one);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Audit v2: Additive inverse
+  // -------------------------------------------------------------------------
+  describe("Additive inverse a + (0-a) == 0", () => {
+    const cases: [string, bigint][] = [
+      ["oneEth", 10n ** 18n],
+      ["pow128", 1n << 128n],
+      ["patA", BigInt("0x" + "aa".repeat(32))],
+      ["max", UINT256_MAX],
+    ];
+    for (const [label, v] of cases) {
+      it(`${label}`, () => {
+        const neg = ((1n << 256n) - v) % (1n << 256n);
+        expect(toHex256(v + neg)).toBe(VECTORS.zero);
+      });
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // Audit v2: Left distributivity
+  // -------------------------------------------------------------------------
+  describe("Left distributivity (b+c)*a == b*a + c*a", () => {
+    it("a=7, b=oneEth, c=pow128", () => {
+      const a = 7n;
+      const b = 10n ** 18n;
+      const c = 1n << 128n;
+      const lhs = toHex256((b + c) * a);
+      const rhs = toHex256(b * a + c * a);
+      expect(lhs).toBe(rhs);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Audit v2: Checked vs unchecked consistency
+  // -------------------------------------------------------------------------
+  describe("Checked vs unchecked consistency", () => {
+    it("add: overflow case and non-overflow produce same mod result", () => {
+      // max + 1 = 0
+      expect(toHex256(UINT256_MAX + 1n)).toBe(VECTORS.zero);
+      // 1 + 1 = 2
+      expect(toHex256(1n + 1n)).toBe(VECTORS.two);
+    });
+    it("sub: underflow and non-underflow produce same mod result", () => {
+      expect(toHex256(0n - 1n)).toBe(VECTORS.max);
+      expect(toHex256(5n - 3n)).toBe(VECTORS.two);
+    });
+    it("mul: overflow and non-overflow produce same mod result", () => {
+      expect(toHex256(UINT256_MAX * UINT256_MAX)).toBe(VECTORS.one);
+      expect(toHex256(3n * 7n)).toBe(VECTORS.twentyOne);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Audit v2: Carry/borrow at all limb boundaries
+  // -------------------------------------------------------------------------
+  describe("Carry/borrow at all limb boundaries", () => {
+    const boundaries = [84, 112, 168, 196, 224];
+    for (const bits of boundaries) {
+      it(`carry: (2^${bits}-1) + 1 = 2^${bits}`, () => {
+        expect(toHex256((1n << BigInt(bits)) - 1n + 1n)).toBe(toHex256(1n << BigInt(bits)));
+      });
+      it(`borrow: 2^${bits} - 1 = 2^${bits}-1`, () => {
+        expect(toHex256((1n << BigInt(bits)) - 1n)).toBe(toHex256((1n << BigInt(bits)) - 1n));
+      });
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // Audit v2: AddChecked boundary precision
+  // -------------------------------------------------------------------------
+  describe("AddChecked boundary precision", () => {
+    it("(2^255-1) + 2^255 = max, no overflow", () => {
+      const sum = (1n << 255n) - 1n + (1n << 255n);
+      expect(sum).toBe(UINT256_MAX);
+      expect(sum <= UINT256_MAX).toBe(true);
+    });
+    it("2^255 + 2^255 = 0, overflow", () => {
+      const sum = (1n << 255n) + (1n << 255n);
+      expect(sum > UINT256_MAX).toBe(true);
+      expect(toHex256(sum)).toBe(VECTORS.zero);
+    });
+    it("s9=15 via carry from l8 (no overflow)", () => {
+      const a = BigInt("0x" + VECTORS.addCheckedS15CarryA);
+      const b = BigInt("0x" + VECTORS.addCheckedS15CarryB);
+      expect(a + b <= UINT256_MAX).toBe(true);
+      expect(toHex256(a + b)).toBe(VECTORS.addCheckedS15CarryR);
+    });
+    it("s9=16 via carry from l8 (overflow)", () => {
+      const a = BigInt("0x" + VECTORS.addCheckedS15CarryA);
+      const b = BigInt("0x" + VECTORS.addCheckedS16CarryB);
+      expect(a + b > UINT256_MAX).toBe(true);
+      expect(toHex256(a + b)).toBe(VECTORS.zero);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Audit v2: Division extended
+  // -------------------------------------------------------------------------
+  describe("Division extended", () => {
+    it("dividend < divisor: 3/7 = (0, 3)", () => {
+      expect(3n / 7n).toBe(0n);
+      expect(3n % 7n).toBe(3n);
+    });
+    it("dividend < divisor: 99/100 = (0, 99)", () => {
+      expect(99n / 100n).toBe(0n);
+      expect(99n % 100n).toBe(99n);
+    });
+    it("max/3: exact quotient 0x555...5, r=0", () => {
+      expect(toHex256(UINT256_MAX / 3n)).toBe(VECTORS.divMaxBy3Q);
+      expect(UINT256_MAX % 3n).toBe(0n);
+    });
+    it("max/17: exact quotient 0x0f0f...0f, r=0", () => {
+      expect(toHex256(UINT256_MAX / 17n)).toBe(VECTORS.divMaxBy17Q);
+      expect(UINT256_MAX % 17n).toBe(0n);
+    });
+    it("max/255: exact quotient 0x0101...01, r=0", () => {
+      expect(toHex256(UINT256_MAX / 255n)).toBe(VECTORS.divMaxBy255Q);
+      expect(UINT256_MAX % 255n).toBe(0n);
+    });
+    it("max/10: r=5", () => {
+      expect(toHex256(UINT256_MAX / 10n)).toBe(VECTORS.divMaxBy10Q);
+      expect(UINT256_MAX % 10n).toBe(5n);
+    });
+    it("max/100: r=35", () => {
+      expect(toHex256(UINT256_MAX / 100n)).toBe(VECTORS.divMaxBy100Q);
+      expect(UINT256_MAX % 100n).toBe(35n);
+    });
+    it("pow252/3: r=1", () => {
+      expect(toHex256((1n << 252n) / 3n)).toBe(VECTORS.divPow252By3Q);
+      expect((1n << 252n) % 3n).toBe(1n);
+    });
+    it("pow252/7: r=1", () => {
+      expect(toHex256((1n << 252n) / 7n)).toBe(VECTORS.divPow252By7Q);
+      expect((1n << 252n) % 7n).toBe(1n);
+    });
+    it("pow252/(2^28-1): r=1", () => {
+      const d = (1n << 28n) - 1n;
+      expect(toHex256((1n << 252n) / d)).toBe(VECTORS.divPow252ByLimbMaxQ);
+      expect((1n << 252n) % d).toBe(1n);
+    });
+    it("1e18/2: r=0", () => {
+      expect(toHex256((10n ** 18n) / 2n)).toBe(VECTORS.div1e18By2Q);
+    });
+    it("1e18/10: r=0", () => {
+      expect(toHex256((10n ** 18n) / 10n)).toBe(VECTORS.div1e18By10Q);
+    });
+    it("powers of 2 sweep", () => {
+      for (const [k, rExpected] of [[2, 3], [3, 7], [5, 31], [8, 255]] as [number, number][]) {
+        const d = 1n << BigInt(k);
+        const q = UINT256_MAX / d;
+        const r = UINT256_MAX % d;
+        expect(r).toBe(BigInt(rExpected));
+        expect(q * d + r).toBe(UINT256_MAX);
+      }
+    });
+    it("reconstruction: max/10", () => {
+      const q = UINT256_MAX / 10n;
+      const r = UINT256_MAX % 10n;
+      expect(q * 10n + r).toBe(UINT256_MAX);
+    });
+    it("reconstruction: max/100", () => {
+      const q = UINT256_MAX / 100n;
+      const r = UINT256_MAX % 100n;
+      expect(q * 100n + r).toBe(UINT256_MAX);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Audit v2: MulChecked extended
+  // -------------------------------------------------------------------------
+  describe("MulChecked extended", () => {
+    it("2^127 * 2^128 = 2^255, no overflow", () => {
+      const full = (1n << 127n) * (1n << 128n);
+      expect(full <= UINT256_MAX).toBe(true);
+      expect(toHex256(full)).toBe(VECTORS.pow255);
+    });
+    it("(2^255-1)*3 overflows", () => {
+      const full = ((1n << 255n) - 1n) * 3n;
+      expect(full > UINT256_MAX).toBe(true);
+      expect(toHex256(full)).toBe(VECTORS.mulHalfMaxTimes3);
+    });
+    it("max*3 = max-2", () => {
+      expect(toHex256(UINT256_MAX * 3n)).toBe(VECTORS.maxTimes3);
+    });
+    it("max*7 = max-6", () => {
+      expect(toHex256(UINT256_MAX * 7n)).toBe(VECTORS.maxTimes7);
+    });
+    it("max*255 = max-254", () => {
+      expect(toHex256(UINT256_MAX * 255n)).toBe(VECTORS.maxTimes255);
+    });
+    it("patA * patB", () => {
+      const a = BigInt("0x" + "aa".repeat(32));
+      const b = BigInt("0x" + "55".repeat(32));
+      expect(toHex256(a * b)).toBe(VECTORS.patAxPatB);
+    });
+    it("patA squared", () => {
+      const a = BigInt("0x" + "aa".repeat(32));
+      expect(toHex256(a * a)).toBe(VECTORS.patASquared);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Audit v2: Euler expansion (a+b)^2 = a^2 + 2ab + b^2
+  // -------------------------------------------------------------------------
+  describe("Euler expansion", () => {
+    it("(oneEth + pow128)^2 = oneEth^2 + 2*oneEth*pow128 + pow128^2", () => {
+      const a = 10n ** 18n;
+      const b = 1n << 128n;
+      const lhs = (a + b) ** 2n;
+      const rhs = a ** 2n + 2n * a * b + b ** 2n;
+      expect(toHex256(lhs)).toBe(toHex256(rhs));
+      expect(toHex256(lhs)).toBe(VECTORS.eulerResult);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Audit v2: SubChecked boundary
+  // -------------------------------------------------------------------------
+  describe("SubChecked boundary", () => {
+    it("0 - max = 1 (underflow)", () => {
+      expect(toHex256(0n - UINT256_MAX)).toBe(VECTORS.one);
+    });
+    it("max - oneEth", () => {
+      expect(toHex256(UINT256_MAX - (10n ** 18n))).toBe(VECTORS.maxMinusOneEth);
+    });
+    it("2^224 - 1 (borrow through l0..l7)", () => {
+      expect(toHex256((1n << 224n) - 1n)).toBe(VECTORS.pow224MinusOne);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Audit v2: Hex round-trip at all limb boundaries
+  // -------------------------------------------------------------------------
+  describe("Hex round-trip at all limb boundaries", () => {
+    const boundaries = [28, 56, 84, 112, 140, 168, 196, 224, 252];
+    for (const bits of boundaries) {
+      it(`2^${bits} round-trips`, () => {
+        const val = 1n << BigInt(bits);
+        expect(BigInt("0x" + toHex256(val))).toBe(val);
+      });
+      it(`2^${bits}-1 round-trips`, () => {
+        const val = (1n << BigInt(bits)) - 1n;
+        expect(BigInt("0x" + toHex256(val))).toBe(val);
+      });
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // Audit v2: Compare fallthrough (anchors Daml section 53)
+  // -------------------------------------------------------------------------
+  describe("Compare fallthrough", () => {
+    it("max vs max-1 (differ at l0 only)", () => {
+      expect(UINT256_MAX > UINT256_MAX - 1n).toBe(true);
+      expect(toHex256(UINT256_MAX - 1n)).toBe(VECTORS.maxMinusOne);
+    });
+    it("upper limb dominates lower", () => {
+      const a = BigInt("0x" + VECTORS.cmpUpperDominatesA);
+      const b = BigInt("0x" + VECTORS.cmpUpperDominatesB);
+      expect(a < b).toBe(true);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Audit v2: IsZero anchors (Daml sections 20, 55)
+  // -------------------------------------------------------------------------
+  describe("IsZero anchors", () => {
+    it("single non-zero limb values are non-zero", () => {
+      expect(BigInt("0x" + VECTORS.limbL1Only)).toBe(1n << 28n);
+      expect(BigInt("0x" + VECTORS.limbL3Only)).toBe(1n << 84n);
+      expect(BigInt("0x" + VECTORS.limbL5Only)).toBe(1n << 140n);
+      expect(BigInt("0x" + VECTORS.limbL7Only)).toBe(1n << 196n);
+      expect(BigInt("0x" + VECTORS.limbL8Only)).toBe(1n << 224n);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Audit v2: Single-bit boundaries (Daml section 33)
+  // -------------------------------------------------------------------------
+  describe("Single-bit boundaries", () => {
+    it("2^28 * 2^27 = 2^55", () => {
+      expect(toHex256((1n << 28n) * (1n << 27n))).toBe(VECTORS.pow55);
+    });
+    it("2^255 + 2^255 = 0 (overflow)", () => {
+      expect(toHex256((1n << 255n) + (1n << 255n))).toBe(VECTORS.zero);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Audit v2: Sub simple anchors (Daml section 8)
+  // -------------------------------------------------------------------------
+  describe("Sub simple anchors", () => {
+    it("5 - 3 = 2", () => expect(toHex256(5n - 3n)).toBe(VECTORS.two));
+    it("7 - 1 = 6", () => expect(toHex256(7n - 1n)).toBe(VECTORS.six));
+  });
+
+  // -------------------------------------------------------------------------
+  // Audit v2: Mul small anchors (Daml section 14)
+  // -------------------------------------------------------------------------
+  describe("Mul small anchors", () => {
+    it("2 * 5 = 10", () => expect(toHex256(2n * 5n)).toBe(VECTORS.ten));
+  });
+
+  // -------------------------------------------------------------------------
+  // Audit v2: Simultaneous carry anchors (Daml section 63)
+  // -------------------------------------------------------------------------
+  describe("Simultaneous carry anchors", () => {
+    it("simultaneous carry no overflow", () => {
+      const a = BigInt("0x" + VECTORS.simultCarryInput);
+      expect(a + a <= UINT256_MAX).toBe(true);
+      expect(toHex256(a + a)).toBe(VECTORS.simultCarryResult);
+    });
+    it("simultaneous carry overflow", () => {
+      const a = BigInt("0x" + VECTORS.simultCarryOvInput);
+      expect(a + a > UINT256_MAX).toBe(true);
+      expect(toHex256(a + a)).toBe(VECTORS.simultCarryOvResult);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Audit v2: SubChecked boundary anchors (Daml section 64)
+  // -------------------------------------------------------------------------
+  describe("SubChecked boundary anchors", () => {
+    it("full borrow chain: (2^252+1) - 2 = 2^252-1", () => {
+      const a = BigInt("0x" + VECTORS.subFullBorrowA);
+      expect(toHex256(a - 2n)).toBe(VECTORS.subFullBorrowResult);
+      expect(a >= 2n).toBe(true); // no underflow
+    });
+    it("d9=0 borrow absorbed", () => {
+      const a = BigInt("0x" + VECTORS.subD9AbsorbedA);
+      const b = BigInt("0x" + VECTORS.subD9AbsorbedB);
+      expect(a >= b).toBe(true); // no underflow
+      expect(toHex256(a - b)).toBe(VECTORS.subD9AbsorbedResult);
+    });
+    it("d9=-1 underflow", () => {
+      const a = BigInt("0x" + VECTORS.subD9UnderflowA);
+      const b = BigInt("0x" + VECTORS.subD9UnderflowB);
+      expect(a < b).toBe(true); // underflow
+      expect(toHex256(a - b)).toBe(VECTORS.max); // wraps to max
+    });
+    it("only l9 borrows", () => {
+      const a = BigInt("0x" + VECTORS.subOnlyL9A);
+      const b = BigInt("0x" + VECTORS.subOnlyL9B);
+      expect(a < b).toBe(true); // underflow
+      expect(toHex256(a - b)).toBe(VECTORS.subOnlyL9Result2);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Audit v2: Boundary l0 inline anchors (Daml section 49)
+  // -------------------------------------------------------------------------
+  describe("Boundary l0 inline anchors", () => {
+    it("(B-2)+(B-1) carry into l1", () => {
+      const B = 1n << 28n;
+      expect(toHex256((B - 2n) + (B - 1n))).toBe(VECTORS.bndL0BmTwoPlusBmOne);
+    });
+    it("(B-1)^2", () => {
+      const B = 1n << 28n;
+      expect(toHex256((B - 1n) ** 2n)).toBe(VECTORS.bndL0BmOneSquared);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Audit v2: Division quotient anchors (Daml section 66)
+  // -------------------------------------------------------------------------
+  describe("Division quotient anchors", () => {
+    it("pow252/2", () => expect(toHex256((1n << 252n) / 2n)).toBe(VECTORS.divPow252By2Q));
+    it("max/4", () => expect(toHex256(UINT256_MAX / 4n)).toBe(VECTORS.divMax4Q));
+    it("max/8", () => expect(toHex256(UINT256_MAX / 8n)).toBe(VECTORS.divMax8Q));
+    it("max/32", () => expect(toHex256(UINT256_MAX / 32n)).toBe(VECTORS.divMax32Q));
+    it("max/256", () => expect(toHex256(UINT256_MAX / 256n)).toBe(VECTORS.divMaxBy256Q));
+  });
+
+  // -------------------------------------------------------------------------
+  // Audit v2: Squaring sweep (2^k-1)^2 at limb boundaries
+  // -------------------------------------------------------------------------
+  describe("Squaring sweep", () => {
+    // CPython test_long.py checks (2^k-1)^2 == 2^(2k) - 2^(k+1) + 1 for k=1..399
+    // We check at every limb boundary (28n multiples) plus key positions
+    const kValues = [1, 4, 14, 27, 28, 32, 56, 64, 84, 96, 112, 127, 128, 140, 168, 192, 196, 224, 252, 255];
+    for (const k of kValues) {
+      it(`(2^${k}-1)^2 identity`, () => {
+        const val = (1n << BigInt(k)) - 1n;
+        const squared = val * val;
+        // Verify identity: (2^k-1)^2 = 2^(2k) - 2^(k+1) + 1
+        const expected = (1n << BigInt(2 * k)) - (1n << BigInt(k + 1)) + 1n;
+        expect(squared).toBe(expected);
+        // Verify mod 2^256 matches
+        expect(toHex256(squared)).toBe(toHex256(expected));
+      });
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // Audit v2: Karatsuba identity sweep
+  // -------------------------------------------------------------------------
+  describe("Karatsuba identity sweep", () => {
+    // (2^a-1)*(2^b-1) = 2^(a+b) - 2^a - 2^b + 1
+    const pairs: [number, number][] = [[64, 64], [64, 192], [128, 128], [192, 64], [252, 4], [140, 112]];
+    for (const [a, b] of pairs) {
+      it(`(2^${a}-1)*(2^${b}-1)`, () => {
+        const va = (1n << BigInt(a)) - 1n;
+        const vb = (1n << BigInt(b)) - 1n;
+        const product = va * vb;
+        const expected = (1n << BigInt(a + b)) - (1n << BigInt(a)) - (1n << BigInt(b)) + 1n;
+        expect(product).toBe(expected);
+        expect(toHex256(product)).toBe(toHex256(expected));
+      });
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // Audit v2: Token decimal scaling
+  // -------------------------------------------------------------------------
+  describe("Token decimal scaling", () => {
+    it("USDC upscale: 1e6 * 1e12 = 1e18", () => {
+      expect(toHex256(10n ** 6n * 10n ** 12n)).toBe(toHex256(10n ** 18n));
+    });
+    it("WBTC upscale: 1e8 * 1e10 = 1e18", () => {
+      expect(toHex256(10n ** 8n * 10n ** 10n)).toBe(toHex256(10n ** 18n));
+    });
+    it("large token balance * price", () => {
+      // 1000 ETH * 3500 USD (both in 18 decimals)
+      const balance = 1000n * 10n ** 18n;
+      const price = 3500n * 10n ** 18n;
+      const value = balance * price;
+      expect(value <= UINT256_MAX).toBe(true);
+      expect(toHex256(value)).toBe(toHex256(balance * price));
+    });
   });
 });
