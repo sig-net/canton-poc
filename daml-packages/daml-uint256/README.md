@@ -71,9 +71,26 @@ let isGreater = hexGtUint sum "0de0b6b3a7640000"  -- True
 
 Full uint256/uint256 division (`uint256Div`, `uint256Mod`, `uint256DivMod`) is not implemented. Use `uint256DivInt` for divisors that fit in a single limb (< 2^28).
 
+## Reference Implementations
+
+The implementation design and test suite are inspired by established uint256 / bignum libraries:
+
+| Library                                                                                                        | Language   | What we drew from                                                                                                                          |
+| -------------------------------------------------------------------------------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| [Go `math/big`](https://pkg.go.dev/math/big)                                                                   | Go         | Limb-based representation, schoolbook multiplication, carry/borrow chain patterns                                                          |
+| [holiman/uint256](https://github.com/holiman/uint256)                                                          | Go         | Fixed-width 256-bit overflow detection, `AddOverflow`/`SubOverflow`/`MulOverflow` boundary tests, 41 `binTestCases` pairs                  |
+| [CPython `int`](https://github.com/python/cpython/blob/main/Lib/test/test_long.py)                             | Python     | `test_long.py` squaring sweep `(2^k-1)^2` identity, Karatsuba threshold tests, algebraic property checks                                   |
+| [parity-common `uint`](https://github.com/parity-tech/parity-common)                                           | Rust       | Checked arithmetic patterns, EVM-specific uint256 test vectors                                                                             |
+| [TypeScript `BigInt`](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/BigInt) | TypeScript | Oracle for all test vectors — every hardcoded hex value in `TestUInt256.daml` is generated and verified against native `BigInt` arithmetic |
+
 ## Cross-language Test Vectors
 
-A TypeScript oracle test suite (`test/uint256-vectors.test.ts`) generates expected values using native `BigInt` arithmetic. The Daml tests in `TestUInt256.daml` assert identical results, ensuring the limb-based implementation matches a well-known reference.
+The test suite uses a two-file oracle pattern:
+
+- **`test/uint256-vectors.test.ts`** (592 tests) — TypeScript `BigInt` computes expected values for every operation (add, sub, mul, div, compare, checked variants). Includes 50 frozen fuzz vectors from a deterministic keccak256 PRNG, squaring sweeps, Karatsuba identity checks, and Euler expansion.
+- **`TestUInt256.daml`** (73 test functions) — Daml asserts identical hex results against the TS oracle. Every hardcoded hex constant in Daml has a 1:1 counterpart in the TS file.
+
+Both files must stay in sync — any change to test vectors must be reflected in both.
 
 ## Build & Test
 
