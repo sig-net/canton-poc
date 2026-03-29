@@ -355,7 +355,7 @@ intToSmallHex n
 
 -- | Build UInt256 from a small non-negative Int (fits in l0).
 uint256FromSmallInt : Int -> UInt256
-uint256FromSmallInt n = uint256Zero with { l0 = n }
+uint256FromSmallInt n = UInt256 with limbs = [n, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 
 -- ---------------------------------------------------------------------------
 -- 19. Comparison

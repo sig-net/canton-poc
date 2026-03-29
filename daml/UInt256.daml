@@ -1,5 +1,5 @@
 -- | Limb-based unsigned 256-bit integer arithmetic.
--- Representation: 10 limbs in base 2^28, little-endian (l0 = LSB).
+-- Representation: 10 limbs in base 2^28, little-endian (limbs[0] = LSB).
 -- Matches GMP/Python/Go bignum approach, adapted for Daml's 64-bit Int.
 --
 -- Supported: add, sub, mul, compare, short division (divisor < 2^28).
@@ -19,31 +19,24 @@ limbBase : Int
 limbBase = 268435456 -- 2^28
 
 topLimbMod : Int
-topLimbMod = 16 -- 2^4  (l9 is only 4 bits: 256 - 9*28 = 4)
+topLimbMod = 16 -- 2^4  (limbs[9] is only 4 bits: 256 - 9*28 = 4)
 
 -- ---------------------------------------------------------------------------
 -- Data type
 -- ---------------------------------------------------------------------------
 
 data UInt256 = UInt256 with
-    l0 : Int; l1 : Int; l2 : Int; l3 : Int; l4 : Int
-    l5 : Int; l6 : Int; l7 : Int; l8 : Int; l9 : Int
+    limbs : [Int]  -- 10 limbs in base 2^28, little-endian
   deriving (Eq, Show)
 
 uint256Zero : UInt256
-uint256Zero = UInt256 with
-  l0 = 0; l1 = 0; l2 = 0; l3 = 0; l4 = 0
-  l5 = 0; l6 = 0; l7 = 0; l8 = 0; l9 = 0
+uint256Zero = UInt256 with limbs = replicate 10 0
 
 uint256One : UInt256
-uint256One = UInt256 with
-  l0 = 1; l1 = 0; l2 = 0; l3 = 0; l4 = 0
-  l5 = 0; l6 = 0; l7 = 0; l8 = 0; l9 = 0
+uint256One = UInt256 with limbs = [1, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 
 uint256Max : UInt256
-uint256Max = UInt256 with
-  l0 = 268435455; l1 = 268435455; l2 = 268435455; l3 = 268435455; l4 = 268435455
-  l5 = 268435455; l6 = 268435455; l7 = 268435455; l8 = 268435455; l9 = 15
+uint256Max = UInt256 with limbs = replicate 9 268435455 <> [15]
 
 -- ---------------------------------------------------------------------------
 -- Internal: hex conversion helpers
@@ -84,6 +77,41 @@ intToHexPad val width =
      else raw
 
 -- ---------------------------------------------------------------------------
+-- Internal: list-based limb helpers
+-- ---------------------------------------------------------------------------
+
+listGet : [Int] -> Int -> Int
+listGet xs i = xs !! i
+
+listSet : [Int] -> Int -> Int -> [Int]
+listSet xs i val = take i xs <> [val] <> drop (i + 1) xs
+
+-- | Add limb lists with carry propagation. All limbs use limbBase;
+-- callers must clamp limbs[9] with topLimbMod.
+addLimbs : [Int] -> [Int] -> ([Int], Int)
+addLimbs aLimbs bLimbs =
+  foldl step ([], 0) (zip aLimbs bLimbs)
+  where
+    step (result, carry) (ai, bi) =
+      let s = ai + bi + carry
+      in (result <> [s % limbBase], s / limbBase)
+
+-- | Subtract limb lists with borrow propagation. All limbs use limbBase;
+-- callers must fix limbs[9] using topLimbMod.
+subLimbs : [Int] -> [Int] -> ([Int], Int)
+subLimbs aLimbs bLimbs =
+  foldl step ([], 0) (zip aLimbs bLimbs)
+  where
+    step (result, borrow) (ai, bi) =
+      let d = ai - bi - borrow
+      in if d < 0 then (result <> [d + limbBase], 1)
+                  else (result <> [d], 0)
+
+-- | Clamp limbs[9] to topLimbMod range after add/mul.
+clampL9 : [Int] -> [Int]
+clampL9 ls = take 9 ls <> [listGet ls 9 % topLimbMod]
+
+-- ---------------------------------------------------------------------------
 -- Hex <-> UInt256 conversion
 -- ---------------------------------------------------------------------------
 
@@ -92,34 +120,17 @@ intToHexPad val width =
 uint256FromHex : BytesHex -> UInt256
 uint256FromHex hex =
   let padded = hexPadUint256 (DA.Text.asciiToLower hex)  -- normalize to 64 lowercase chars
-      -- Pad to 70 chars so we can slice 10 uniform 7-char chunks
       padded70 = "000000" <> padded
       chunk i = DA.Text.take 7 (DA.Text.drop (63 - i * 7) padded70)
-  in UInt256 with
-       l0 = hexChunkToInt (chunk 0)
-       l1 = hexChunkToInt (chunk 1)
-       l2 = hexChunkToInt (chunk 2)
-       l3 = hexChunkToInt (chunk 3)
-       l4 = hexChunkToInt (chunk 4)
-       l5 = hexChunkToInt (chunk 5)
-       l6 = hexChunkToInt (chunk 6)
-       l7 = hexChunkToInt (chunk 7)
-       l8 = hexChunkToInt (chunk 8)
-       l9 = hexChunkToInt (chunk 9)
+  in UInt256 with limbs = map (\i -> hexChunkToInt (chunk i)) [0..9]
 
 -- | Convert a UInt256 to a 64-char lowercase hex string.
 uint256ToHex : UInt256 -> BytesHex
 uint256ToHex u =
-  intToHexPad u.l9 1
-    <> intToHexPad u.l8 7
-    <> intToHexPad u.l7 7
-    <> intToHexPad u.l6 7
-    <> intToHexPad u.l5 7
-    <> intToHexPad u.l4 7
-    <> intToHexPad u.l3 7
-    <> intToHexPad u.l2 7
-    <> intToHexPad u.l1 7
-    <> intToHexPad u.l0 7
+  foldl step "" (zip (reverse u.limbs) widths)
+  where
+    widths = [1, 7, 7, 7, 7, 7, 7, 7, 7, 7]
+    step acc (v, w) = acc <> intToHexPad v w
 
 -- ---------------------------------------------------------------------------
 -- Addition
@@ -128,37 +139,14 @@ uint256ToHex u =
 -- | Add two UInt256 values (mod 2^256, wrapping on overflow).
 uint256Add : UInt256 -> UInt256 -> UInt256
 uint256Add a b =
-  let s0 = a.l0 + b.l0;      r0 = s0 % limbBase; c0 = s0 / limbBase
-      s1 = a.l1 + b.l1 + c0; r1 = s1 % limbBase; c1 = s1 / limbBase
-      s2 = a.l2 + b.l2 + c1; r2 = s2 % limbBase; c2 = s2 / limbBase
-      s3 = a.l3 + b.l3 + c2; r3 = s3 % limbBase; c3 = s3 / limbBase
-      s4 = a.l4 + b.l4 + c3; r4 = s4 % limbBase; c4 = s4 / limbBase
-      s5 = a.l5 + b.l5 + c4; r5 = s5 % limbBase; c5 = s5 / limbBase
-      s6 = a.l6 + b.l6 + c5; r6 = s6 % limbBase; c6 = s6 / limbBase
-      s7 = a.l7 + b.l7 + c6; r7 = s7 % limbBase; c7 = s7 / limbBase
-      s8 = a.l8 + b.l8 + c7; r8 = s8 % limbBase; c8 = s8 / limbBase
-      s9 = a.l9 + b.l9 + c8; r9 = s9 % topLimbMod
-  in UInt256 with
-       l0 = r0; l1 = r1; l2 = r2; l3 = r3; l4 = r4
-       l5 = r5; l6 = r6; l7 = r7; l8 = r8; l9 = r9
+  let (ls, _) = addLimbs a.limbs b.limbs
+  in UInt256 with limbs = clampL9 ls
 
 -- | Add with overflow detection. Returns (result, didOverflow).
 uint256AddChecked : UInt256 -> UInt256 -> (UInt256, Bool)
 uint256AddChecked a b =
-  let s0 = a.l0 + b.l0;      r0 = s0 % limbBase; c0 = s0 / limbBase
-      s1 = a.l1 + b.l1 + c0; r1 = s1 % limbBase; c1 = s1 / limbBase
-      s2 = a.l2 + b.l2 + c1; r2 = s2 % limbBase; c2 = s2 / limbBase
-      s3 = a.l3 + b.l3 + c2; r3 = s3 % limbBase; c3 = s3 / limbBase
-      s4 = a.l4 + b.l4 + c3; r4 = s4 % limbBase; c4 = s4 / limbBase
-      s5 = a.l5 + b.l5 + c4; r5 = s5 % limbBase; c5 = s5 / limbBase
-      s6 = a.l6 + b.l6 + c5; r6 = s6 % limbBase; c6 = s6 / limbBase
-      s7 = a.l7 + b.l7 + c6; r7 = s7 % limbBase; c7 = s7 / limbBase
-      s8 = a.l8 + b.l8 + c7; r8 = s8 % limbBase; c8 = s8 / limbBase
-      s9 = a.l9 + b.l9 + c8; r9 = s9 % topLimbMod
-      result = UInt256 with
-        l0 = r0; l1 = r1; l2 = r2; l3 = r3; l4 = r4
-        l5 = r5; l6 = r6; l7 = r7; l8 = r8; l9 = r9
-  in (result, s9 >= topLimbMod)
+  let (ls, _) = addLimbs a.limbs b.limbs
+  in ((UInt256 with limbs = clampL9 ls), listGet ls 9 >= topLimbMod)
 
 -- ---------------------------------------------------------------------------
 -- Subtraction
@@ -167,75 +155,28 @@ uint256AddChecked a b =
 -- | Subtract two UInt256 values (mod 2^256, wrapping on underflow).
 uint256Sub : UInt256 -> UInt256 -> UInt256
 uint256Sub a b =
-  let d0 = a.l0 - b.l0
-      (r0, w0) = if d0 < 0 then (d0 + limbBase, 1) else (d0, 0)
-      d1 = a.l1 - b.l1 - w0
-      (r1, w1) = if d1 < 0 then (d1 + limbBase, 1) else (d1, 0)
-      d2 = a.l2 - b.l2 - w1
-      (r2, w2) = if d2 < 0 then (d2 + limbBase, 1) else (d2, 0)
-      d3 = a.l3 - b.l3 - w2
-      (r3, w3) = if d3 < 0 then (d3 + limbBase, 1) else (d3, 0)
-      d4 = a.l4 - b.l4 - w3
-      (r4, w4) = if d4 < 0 then (d4 + limbBase, 1) else (d4, 0)
-      d5 = a.l5 - b.l5 - w4
-      (r5, w5) = if d5 < 0 then (d5 + limbBase, 1) else (d5, 0)
-      d6 = a.l6 - b.l6 - w5
-      (r6, w6) = if d6 < 0 then (d6 + limbBase, 1) else (d6, 0)
-      d7 = a.l7 - b.l7 - w6
-      (r7, w7) = if d7 < 0 then (d7 + limbBase, 1) else (d7, 0)
-      d8 = a.l8 - b.l8 - w7
-      (r8, w8) = if d8 < 0 then (d8 + limbBase, 1) else (d8, 0)
-      d9 = a.l9 - b.l9 - w8
-      r9 = if d9 < 0 then d9 + topLimbMod else d9
-  in UInt256 with
-       l0 = r0; l1 = r1; l2 = r2; l3 = r3; l4 = r4
-       l5 = r5; l6 = r6; l7 = r7; l8 = r8; l9 = r9
+  let (ls, borrow) = subLimbs a.limbs b.limbs
+      rawL9 = listGet ls 9
+      fixedL9 = if borrow > 0 then rawL9 - limbBase + topLimbMod else rawL9
+  in UInt256 with limbs = take 9 ls <> [fixedL9]
 
 -- | Subtract with underflow detection. Returns (result, didUnderflow).
 uint256SubChecked : UInt256 -> UInt256 -> (UInt256, Bool)
 uint256SubChecked a b =
-  let d0 = a.l0 - b.l0
-      (r0, w0) = if d0 < 0 then (d0 + limbBase, 1) else (d0, 0)
-      d1 = a.l1 - b.l1 - w0
-      (r1, w1) = if d1 < 0 then (d1 + limbBase, 1) else (d1, 0)
-      d2 = a.l2 - b.l2 - w1
-      (r2, w2) = if d2 < 0 then (d2 + limbBase, 1) else (d2, 0)
-      d3 = a.l3 - b.l3 - w2
-      (r3, w3) = if d3 < 0 then (d3 + limbBase, 1) else (d3, 0)
-      d4 = a.l4 - b.l4 - w3
-      (r4, w4) = if d4 < 0 then (d4 + limbBase, 1) else (d4, 0)
-      d5 = a.l5 - b.l5 - w4
-      (r5, w5) = if d5 < 0 then (d5 + limbBase, 1) else (d5, 0)
-      d6 = a.l6 - b.l6 - w5
-      (r6, w6) = if d6 < 0 then (d6 + limbBase, 1) else (d6, 0)
-      d7 = a.l7 - b.l7 - w6
-      (r7, w7) = if d7 < 0 then (d7 + limbBase, 1) else (d7, 0)
-      d8 = a.l8 - b.l8 - w7
-      (r8, w8) = if d8 < 0 then (d8 + limbBase, 1) else (d8, 0)
-      d9 = a.l9 - b.l9 - w8
-      r9 = if d9 < 0 then d9 + topLimbMod else d9
-      result = UInt256 with
-        l0 = r0; l1 = r1; l2 = r2; l3 = r3; l4 = r4
-        l5 = r5; l6 = r6; l7 = r7; l8 = r8; l9 = r9
-  in (result, d9 < 0)
+  let (ls, borrow) = subLimbs a.limbs b.limbs
+      rawL9 = listGet ls 9
+      fixedL9 = if borrow > 0 then rawL9 - limbBase + topLimbMod else rawL9
+  in ((UInt256 with limbs = take 9 ls <> [fixedL9]), borrow > 0)
 
 -- ---------------------------------------------------------------------------
 -- Comparison
 -- ---------------------------------------------------------------------------
 
--- | Compare two UInt256 values. Checks from MSB (l9) to LSB (l0).
+-- | Compare two UInt256 values. Checks from MSB (limbs[9]) to LSB (limbs[0]).
 uint256Compare : UInt256 -> UInt256 -> Ordering
-uint256Compare a b
-  | a.l9 /= b.l9 = compare a.l9 b.l9
-  | a.l8 /= b.l8 = compare a.l8 b.l8
-  | a.l7 /= b.l7 = compare a.l7 b.l7
-  | a.l6 /= b.l6 = compare a.l6 b.l6
-  | a.l5 /= b.l5 = compare a.l5 b.l5
-  | a.l4 /= b.l4 = compare a.l4 b.l4
-  | a.l3 /= b.l3 = compare a.l3 b.l3
-  | a.l2 /= b.l2 = compare a.l2 b.l2
-  | a.l1 /= b.l1 = compare a.l1 b.l1
-  | otherwise     = compare a.l0 b.l0
+uint256Compare a b =
+  foldl step EQ (reverse (zip a.limbs b.limbs))
+  where step acc (ai, bi) = if acc /= EQ then acc else compare ai bi
 
 uint256Eq : UInt256 -> UInt256 -> Bool
 uint256Eq a b = uint256Compare a b == EQ
@@ -253,30 +194,7 @@ uint256Lte : UInt256 -> UInt256 -> Bool
 uint256Lte a b = uint256Compare a b /= GT
 
 uint256IsZero : UInt256 -> Bool
-uint256IsZero u =
-  u.l0 == 0 && u.l1 == 0 && u.l2 == 0 && u.l3 == 0 && u.l4 == 0
-  && u.l5 == 0 && u.l6 == 0 && u.l7 == 0 && u.l8 == 0 && u.l9 == 0
-
--- ---------------------------------------------------------------------------
--- Internal: list-based limb helpers (for multiplication)
--- ---------------------------------------------------------------------------
-
-toLimbs : UInt256 -> [Int]
-toLimbs u = [u.l0, u.l1, u.l2, u.l3, u.l4, u.l5, u.l6, u.l7, u.l8, u.l9]
-
-fromLimbs : [Int] -> UInt256
-fromLimbs ls = case ls of
-  [v0, v1, v2, v3, v4, v5, v6, v7, v8, v9] ->
-    UInt256 with
-      l0 = v0; l1 = v1; l2 = v2; l3 = v3; l4 = v4
-      l5 = v5; l6 = v6; l7 = v7; l8 = v8; l9 = v9
-  _ -> error "fromLimbs: expected exactly 10 elements"
-
-listGet : [Int] -> Int -> Int
-listGet xs i = xs !! i
-
-listSet : [Int] -> Int -> Int -> [Int]
-listSet xs i val = take i xs <> [val] <> drop (i + 1) xs
+uint256IsZero u = all (== 0) u.limbs
 
 -- ---------------------------------------------------------------------------
 -- Multiplication (schoolbook, O(n^2))
@@ -299,18 +217,15 @@ mulLimbs aLimbs bLimbs =
 -- | Multiply two UInt256 values (mod 2^256, truncate to lower 256 bits).
 uint256Mul : UInt256 -> UInt256 -> UInt256
 uint256Mul a b =
-  let product = mulLimbs (toLimbs a) (toLimbs b)
-      result = fromLimbs (take 10 product)
-  in result with { l9 = result.l9 % topLimbMod }
+  let product = mulLimbs a.limbs b.limbs
+  in UInt256 with limbs = clampL9 (take 10 product)
 
 -- | Multiply with overflow detection. Returns (result, didOverflow).
 uint256MulChecked : UInt256 -> UInt256 -> (UInt256, Bool)
 uint256MulChecked a b =
-  let product = mulLimbs (toLimbs a) (toLimbs b)
-      rawL9 = listGet product 9
-      overflow = rawL9 >= topLimbMod || any (/= 0) (drop 10 product)
-      result = fromLimbs (take 10 product)
-  in (result with { l9 = result.l9 % topLimbMod }, overflow)
+  let product = mulLimbs a.limbs b.limbs
+      overflow = listGet product 9 >= topLimbMod || any (/= 0) (drop 10 product)
+  in ((UInt256 with limbs = clampL9 (take 10 product)), overflow)
 
 -- ---------------------------------------------------------------------------
 -- Short division (uint256 / Int, divisor < 2^28)
@@ -321,42 +236,30 @@ uint256MulChecked a b =
 uint256DivInt : UInt256 -> Int -> (UInt256, Int)
 uint256DivInt u d
   | d <= 0 = error "uint256DivInt: divisor must be positive"
-  | d >= limbBase = error "uint256DivInt: divisor >= 2^28 — use full division for larger divisors"
+  | d >= limbBase = error "uint256DivInt: divisor >= 2^28 -- use full division for larger divisors"
   | otherwise =
-    let divStep rem limb =
+    let step (qs, rem) limb =
           let acc = rem * limbBase + limb
-          in (acc / d, acc % d)
-        (q9, rem9) = divStep 0 u.l9
-        (q8, rem8) = divStep rem9 u.l8
-        (q7, rem7) = divStep rem8 u.l7
-        (q6, rem6) = divStep rem7 u.l6
-        (q5, rem5) = divStep rem6 u.l5
-        (q4, rem4) = divStep rem5 u.l4
-        (q3, rem3) = divStep rem4 u.l3
-        (q2, rem2) = divStep rem3 u.l2
-        (q1, rem1) = divStep rem2 u.l1
-        (q0, rem0) = divStep rem1 u.l0
-    in ( UInt256 with
-           l0 = q0; l1 = q1; l2 = q2; l3 = q3; l4 = q4
-           l5 = q5; l6 = q6; l7 = q7; l8 = q8; l9 = q9
-       , rem0 )
+          in (qs <> [acc / d], acc % d)
+        (quotients, finalRem) = foldl step ([], 0) (reverse u.limbs)
+    in ((UInt256 with limbs = reverse quotients), finalRem)
 
 -- ---------------------------------------------------------------------------
--- Full division — not implemented (error stubs)
+-- Full division -- not implemented (error stubs)
 -- ---------------------------------------------------------------------------
 
 -- | Full uint256/uint256 division. NOT IMPLEMENTED.
 -- Use uint256DivInt for divisors that fit in a single limb (< 2^28).
 uint256Div : UInt256 -> UInt256 -> UInt256
-uint256Div _ _ = error "uint256Div: full uint256/uint256 division not implemented — use uint256DivInt for divisors < 2^28"
+uint256Div _ _ = error "uint256Div: full uint256/uint256 division not implemented -- use uint256DivInt for divisors < 2^28"
 
 -- | Full uint256/uint256 modulo. NOT IMPLEMENTED.
 uint256Mod : UInt256 -> UInt256 -> UInt256
-uint256Mod _ _ = error "uint256Mod: full uint256/uint256 modulo not implemented — use uint256DivInt for divisors < 2^28"
+uint256Mod _ _ = error "uint256Mod: full uint256/uint256 modulo not implemented -- use uint256DivInt for divisors < 2^28"
 
 -- | Full uint256/uint256 divmod. NOT IMPLEMENTED.
 uint256DivMod : UInt256 -> UInt256 -> (UInt256, UInt256)
-uint256DivMod _ _ = error "uint256DivMod: full uint256/uint256 divmod not implemented — use uint256DivInt for divisors < 2^28"
+uint256DivMod _ _ = error "uint256DivMod: full uint256/uint256 divmod not implemented -- use uint256DivInt for divisors < 2^28"
 
 -- ---------------------------------------------------------------------------
 -- BytesHex convenience wrappers
