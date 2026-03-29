@@ -100,68 +100,116 @@ Factory lookup: `getStaticAToken(underlying)` (NOT `getStataToken`).
 
 ## Sequence Diagram
 
+### Approve (one-time setup)
+
 ```
- User              Canton                MPC Service         Sepolia
-  |                  |                       |                  |
-  |  (user already has Erc20Holding(USDC) from prior deposit)  |
-  |                  |                       |                  |
-  |  RequestEvmApprove(USDC, stataToken)     |                  |
-  |----------------->|                       |                  |
-  |                  | PendingEvmTx(approve)  |                  |
-  |                  |---------------------->|                  |
-  |                  |                       | sign + submit    |
-  |                  |                       |----------------->|
-  |                  |                       | sigs             |
-  |                  |<----------------------|                  |
-  |  ClaimEvmApprove |                       |                  |
-  |----------------->| (verify, archive)     |                  |
-  |                  |                       |                  |
-  |  RequestAaveSupply(holdingCid)           |                  |
-  |----------------->|                       |                  |
-  |                  | archive Erc20Holding  |                  |
-  |                  |   (USDC)              |                  |
-  |                  | PendingEvmTx          |                  |
-  |                  |   (stataToken.deposit) |                  |
-  |                  |---------------------->|                  |
-  |                  |                       | sign + submit    |
-  |                  |                       |----------------->|
-  |                  |                       |   USDC → Aave    |
-  |                  |                       |   aUSDC → wrap   |
-  |                  |                       |   → stataUSDC    |
-  |                  |                       | sigs             |
-  |                  |<----------------------|                  |
-  |  ClaimAaveSupply |                       |                  |
-  |----------------->| verify outcome        |                  |
-  |                  | decode sharesOut      |                  |
-  |                  | create Erc20Holding   |                  |
-  |                  |   (stataUSDC, shares) |                  |
-  |  <-- Erc20Holding(stataUSDC)             |                  |
-  |                  |                       |                  |
-  :    ... time passes, yield accrues ...    :                  :
-  :    (stataUSDC balance unchanged,         :                  :
-  :     exchange rate grows)                 :                  :
-  |                  |                       |                  |
-  |  RequestAaveWithdraw(holdingCid)         |                  |
-  |----------------->|                       |                  |
-  |                  | archive Erc20Holding  |                  |
-  |                  |   (stataUSDC)         |                  |
-  |                  | PendingEvmTx          |                  |
-  |                  |   (stataToken.redeem)  |                  |
-  |                  |---------------------->|                  |
-  |                  |                       | sign + submit    |
-  |                  |                       |----------------->|
-  |                  |                       |   burn stataUSDC |
-  |                  |                       |   → aUSDC        |
-  |                  |                       |   → withdraw     |
-  |                  |                       |   → USDC (+ yield)|
-  |                  |                       | sigs             |
-  |                  |<----------------------|                  |
-  |  CompleteAaveWithdraw                    |                  |
-  |----------------->| verify outcome        |                  |
-  |                  | decode assetsOut      |                  |
-  |                  | create Erc20Holding   |                  |
-  |                  |   (USDC, amount+yield)|                  |
-  |  <-- Erc20Holding(USDC, with yield)      |                  |
+ User                           Canton (VaultOrchestrator)     MPC Service                    Sepolia
+ |                              |                              |                              |
+ | (user already has Erc20Holding(USDC) from prior deposit)    |                              |
+ |                              |                              |                              |
+ | 1. RequestEvmApprove         |                              |                              |
+ |    (USDC, stataToken, max)   |                              |                              |
+ |----------------------------->|                              |                              |
+ |                              | creates PendingEvmTx         |                              |
+ |                              |   approve(stataToken, max)   |                              |
+ |                              |----------------------------->|                              |
+ |                              |                              | derive child key (user path) |
+ |                              |                              | sign approve tx              |
+ |                              |                              |----------------------------->|
+ |                              |                              |       USDC.approve(stata,max)|
+ |                              |                              |<-----------------------------|
+ |                              | SignEvmTx                    |                              |
+ |                              |<----- EcdsaSignature --------|                              |
+ |                              |                              | re-simulate, extract output  |
+ |                              | ProvideEvmOutcomeSig         |                              |
+ |                              |<-- EvmTxOutcomeSignature ----|                              |
+ |                              |                              |                              |
+ | 2. ClaimEvmApprove           |                              |                              |
+ |----------------------------->|                              |                              |
+ |                              | verify MPC signature         |                              |
+ |                              | decode bool (approve=true)   |                              |
+ |                              | archive pending + sigs       |                              |
+ |                              |                              |                              |
+```
+
+### Supply (USDC → stataUSDC)
+
+```
+ User                           Canton (VaultOrchestrator)     MPC Service                    Sepolia
+ |                              |                              |                              |
+ | 3. RequestAaveSupply         |                              |                              |
+ |    (holdingCid, stataToken)  |                              |                              |
+ |----------------------------->|                              |                              |
+ |                              | fetch + archive              |                              |
+ |                              |   Erc20Holding(USDC)         |                              |
+ |                              | creates PendingEvmTx         |                              |
+ |                              |   deposit(amt,addr,0,true)   |                              |
+ |                              |----------------------------->|                              |
+ |                              |                              | derive child key (user path) |
+ |                              |                              | sign deposit tx              |
+ |                              |                              |----------------------------->|
+ |                              |                              |   stataToken.deposit(...)    |
+ |                              |                              |     USDC → Pool.supply()     |
+ |                              |                              |     aUSDC → wrap → stataUSDC |
+ |                              |                              |<-----------------------------|
+ |                              | SignEvmTx                    |                              |
+ |                              |<----- EcdsaSignature --------|                              |
+ |                              |                              | re-simulate, extract shares  |
+ |                              | ProvideEvmOutcomeSig         |                              |
+ |                              |<-- EvmTxOutcomeSignature ----|                              |
+ |                              |     (mpcOutput = sharesOut)  |                              |
+ |                              |                              |                              |
+ | 4. ClaimAaveSupply           |                              |                              |
+ |----------------------------->|                              |                              |
+ |                              | verify MPC signature         |                              |
+ |                              | decode uint256 sharesOut     |                              |
+ |                              | create Erc20Holding          |                              |
+ |                              |   (stataUSDC, sharesOut)     |                              |
+ |<---- Erc20Holding(stataUSDC) |                              |                              |
+ |                              |                              |                              |
+ :   ... time passes ...        :                              :                              :
+ :   stataUSDC balance unchanged:                              :                              :
+ :   exchange rate grows (yield):                              :                              :
+ |                              |                              |                              |
+```
+
+### Withdraw (stataUSDC → USDC + yield)
+
+```
+ User                           Canton (VaultOrchestrator)     MPC Service                    Sepolia
+ |                              |                              |                              |
+ | 5. RequestAaveWithdraw       |                              |                              |
+ |    (holdingCid)              |                              |                              |
+ |----------------------------->|                              |                              |
+ |                              | fetch + archive              |                              |
+ |                              |   Erc20Holding(stataUSDC)    |                              |
+ |                              | creates PendingEvmTx         |                              |
+ |                              |   redeem(shares,addr,addr,T) |                              |
+ |                              |----------------------------->|                              |
+ |                              |                              | derive child key (user path) |
+ |                              |                              | sign redeem tx               |
+ |                              |                              |----------------------------->|
+ |                              |                              |   stataToken.redeem(...)     |
+ |                              |                              |     burn stataUSDC → aUSDC   |
+ |                              |                              |     Pool.withdraw() → USDC   |
+ |                              |                              |     (includes accrued yield) |
+ |                              |                              |<-----------------------------|
+ |                              | SignEvmTx                    |                              |
+ |                              |<----- EcdsaSignature --------|                              |
+ |                              |                              | re-simulate, extract assets  |
+ |                              | ProvideEvmOutcomeSig         |                              |
+ |                              |<-- EvmTxOutcomeSignature ----|                              |
+ |                              |     (mpcOutput = assetsOut)  |                              |
+ |                              |                              |                              |
+ | 6. CompleteAaveWithdraw      |                              |                              |
+ |----------------------------->|                              |                              |
+ |                              | verify MPC signature         |                              |
+ |                              | decode uint256 assetsOut     |                              |
+ |                              | create Erc20Holding          |                              |
+ |                              |   (USDC, assetsOut)          |                              |
+ |                              |   assetsOut >= original amt  |                              |
+ |<---- Erc20Holding(USDC) ----|   (yield accrued!)           |                              |
+ |                              |                              |                              |
 ```
 
 ## EVM Functions
@@ -186,71 +234,68 @@ selector: 0x095ea7b3
 **Schema:** `outputDeserializationSchema = [{"name":"","type":"bool"}]`
 **Schema:** `respondSerializationSchema = [{"name":"","type":"bool"}]`
 
-### 2. StataToken `deposit` — standard ERC-4626 (USDC → stataUSDC)
+### 2. StaticATokenLM `deposit` — V1 (USDC → stataUSDC)
 
 ```
-function deposit(uint256 assets, address receiver) returns (uint256 shares)
-selector: 0x6e553f65
+function deposit(uint256 assets, address receiver, uint16 referralCode, bool depositToAave)
+    returns (uint256 shares)
 ```
 
-The StataTokenV2 `deposit` takes raw USDC directly and handles Aave
-internally:
+With `depositToAave = true`, the contract:
 
 1. Pulls USDC from caller via `transferFrom`
-2. Calls `Pool.supply(USDC, amount, address(this), 0)` internally
+2. Calls `Pool.supply(USDC, amount, address(this), referralCode)` internally
 3. Wraps the resulting aUSDC into stataUSDC shares
 4. Mints shares to `receiver`
 
 **EvmTransactionParams:**
 
-| Field               | Value                                          |
-| ------------------- | ---------------------------------------------- |
-| `to`                | stataToken address                             |
-| `functionSignature` | `"deposit(uint256,address)"`                   |
-| `args[0]`           | amount of USDC, left-padded to 32 bytes        |
-| `args[1]`           | receiver = user's derived address, left-padded |
-| `value`             | `00..00` (32 bytes zero)                       |
+| Field               | Value                                                             |
+| ------------------- | ----------------------------------------------------------------- |
+| `to`                | `8a88124522dbbf1e56352ba3de1d9f78c143751e` (stataUSDC on Sepolia) |
+| `functionSignature` | `"deposit(uint256,address,uint16,bool)"`                          |
+| `args[0]`           | amount of USDC, left-padded to 32 bytes                           |
+| `args[1]`           | receiver = user's derived address, left-padded                    |
+| `args[2]`           | `00..00` (referralCode = 0)                                       |
+| `args[3]`           | `00..01` (depositToAave = true)                                   |
+| `value`             | `00..00` (32 bytes zero)                                          |
 
 **Schema:** `outputDeserializationSchema = [{"name":"shares","type":"uint256"}]`
 **Schema:** `respondSerializationSchema = [{"name":"shares","type":"uint256"}]`
 
-**V1 fallback:** If Sepolia has the older `StaticATokenLM` (V1) instead of
-`StataTokenV2`, use `deposit(uint256,address,uint16,bool)` with
-`referralCode=0, depositToAave=true`. Detect via TS simulation at startup.
-If the standard `deposit(uint256,address)` reverts, fall back to V1 sig.
-
-### 3. StataToken `redeem` — standard ERC-4626 (stataUSDC → USDC + yield)
+### 3. StaticATokenLM `redeem` — V1 (stataUSDC → USDC + yield)
 
 ```
-function redeem(uint256 shares, address receiver, address owner) returns (uint256 assets)
-selector: 0xba087652
+function redeem(uint256 shares, address receiver, address owner, bool withdrawFromAave)
+    returns (uint256 assets)
 ```
 
-The StataTokenV2 `redeem` returns raw USDC directly — it calls
-`Pool.withdraw()` internally. No separate withdrawal step needed.
+With `withdrawFromAave = true`, the contract burns shares, calls
+`Pool.withdraw()` internally, and returns raw USDC. No separate step.
 
 **EvmTransactionParams:**
 
-| Field               | Value                                             |
-| ------------------- | ------------------------------------------------- |
-| `to`                | stataToken address                                |
-| `functionSignature` | `"redeem(uint256,address,address)"`               |
-| `args[0]`           | shares amount (= `Erc20Holding.amount`), 32 bytes |
-| `args[1]`           | receiver = user's derived address, left-padded    |
-| `args[2]`           | owner = user's derived address, left-padded       |
-| `value`             | `00..00` (32 bytes zero)                          |
+| Field               | Value                                                             |
+| ------------------- | ----------------------------------------------------------------- |
+| `to`                | `8a88124522dbbf1e56352ba3de1d9f78c143751e` (stataUSDC on Sepolia) |
+| `functionSignature` | `"redeem(uint256,address,address,bool)"`                          |
+| `args[0]`           | shares amount (= `Erc20Holding.amount`), 32 bytes                 |
+| `args[1]`           | receiver = user's derived address, left-padded                    |
+| `args[2]`           | owner = user's derived address, left-padded                       |
+| `args[3]`           | `00..01` (withdrawFromAave = true)                                |
+| `value`             | `00..00` (32 bytes zero)                                          |
 
 **Schema:** `outputDeserializationSchema = [{"name":"assets","type":"uint256"}]`
 **Schema:** `respondSerializationSchema = [{"name":"assets","type":"uint256"}]`
 
 ### Transaction Count Summary
 
-| Operation                             | EVM Transactions | Details                                      |
-| ------------------------------------- | ---------------- | -------------------------------------------- |
-| Approve (one-time)                    | 1                | `USDC.approve(stataToken, max)`              |
-| Supply                                | 1                | `stataToken.deposit(amount, receiver)`       |
-| Withdraw                              | 1                | `stataToken.redeem(shares, receiver, owner)` |
-| **Total for supply + withdraw cycle** | **3**            | (approve is one-time)                        |
+| Operation                             | EVM Transactions | Details                                       |
+| ------------------------------------- | ---------------- | --------------------------------------------- |
+| Approve (one-time)                    | 1                | `USDC.approve(stataToken, max)`               |
+| Supply                                | 1                | `stataToken.deposit(amount, addr, 0, true)`   |
+| Withdraw                              | 1                | `stataToken.redeem(shares, addr, addr, true)` |
+| **Total for supply + withdraw cycle** | **3**            | (approve is one-time)                         |
 
 ## Daml Contract Changes
 
@@ -350,7 +395,7 @@ nonconsuming choice RequestAaveSupply : ContractId PendingEvmTx
     assertMsg "owner mismatch" $ holding.owner == requester
     assertMsg "issuer mismatch" $ holding.issuer == issuer
     assertMsg "must be deposit" $
-      evmParams.functionSignature == "deposit(uint256,address)"
+      evmParams.functionSignature == "deposit(uint256,address,uint16,bool)"
     assertMsg "to must be stataToken" $ evmParams.to == stataToken
 
     -- validate amount matches holding
@@ -433,7 +478,7 @@ nonconsuming choice RequestAaveWithdraw : ContractId PendingEvmTx
 
     assertMsg "owner mismatch" $ holding.owner == requester
     assertMsg "must be redeem" $
-      evmParams.functionSignature == "redeem(uint256,address,address)"
+      evmParams.functionSignature == "redeem(uint256,address,address,bool)"
 
     -- validate shares amount matches holding
     let argsShares = evmParams.args !! 0
@@ -532,7 +577,7 @@ support rebasing tokens and yield would be permanently lost.
 **Test 1: Supply USDC to Aave via stataToken (300s):**
 
 1. Create `Erc20Holding(USDC)` via standard deposit flow
-2. Build `EvmTransactionParams` for `stataToken.deposit(amount, addr)`
+2. Build `EvmTransactionParams` for `stataToken.deposit(amount, addr, 0, true)`
 3. Exercise `RequestAaveSupply` with holding
 4. Wait for MPC to sign + submit deposit tx
 5. Exercise `ClaimAaveSupply`
@@ -556,5 +601,5 @@ support rebasing tokens and yield would be permanently lost.
 ```
 AAVE_POOL_ADDRESS=0x6Ae43d3271ff6888e7Fc43Fd7321a503ff738951
 AAVE_FAUCET_ADDRESS=0xC959483DBa39aa9E78757139af0e9a2EDEb3f42D
-STATA_TOKEN_ADDRESS=<derive from factory>
+STATA_USDC_ADDRESS=0x8A88124522dbBF1E56352ba3DE1d9F78C143751e
 ```
