@@ -5,7 +5,7 @@ import {
   type JsGetUpdatesResponse,
 } from "../infra/canton-client.js";
 import { createLedgerStream, type StreamHandle } from "../infra/ledger-stream.js";
-import { PendingEvmTx } from "@daml.js/canton-mpc-poc-0.0.1/lib/Erc20Vault/module";
+import { PendingEvmTx } from "@daml.js/daml-vault-0.0.1/lib/Erc20Vault/module";
 import {
   signAndEnqueue,
   checkPendingTx,

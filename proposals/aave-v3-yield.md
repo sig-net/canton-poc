@@ -2,85 +2,151 @@
 
 ## Overview
 
-Extend the vault to **supply ERC-20 holdings to Aave V3** on Sepolia, earning yield
-on deposited assets. The user's `Erc20Holding` is consumed, the vault calls
-`Pool.supply()`, and an `AavePosition` contract is created on Canton to track the
-deposit. Later, the user can withdraw (including accrued yield) back into an
-`Erc20Holding`.
+Extend the vault to **supply ERC-20 tokens to Aave V3** on Sepolia, earning
+yield on deposited assets. The user's `Erc20Holding` for the underlying token
+(e.g., USDC) is consumed, the vault supplies to Aave and wraps into
+**stataUSDC** (Aave's ERC-4626 static aToken), and a new `Erc20Holding` for
+the shares token is created on Canton. Later, the user can redeem shares
+back into underlying tokens (including accrued yield).
 
-**Why Aave V3:** best testnet coverage on Sepolia — fully deployed, faucet available,
-9 assets supported, 86k+ transactions on the Pool contract.
+**Why Aave V3:** best testnet coverage on Sepolia — fully deployed, faucet
+available, 9 assets supported. StataToken (ERC-4626 wrapper) is deployed on
+Sepolia, giving us shares-based yield tracking.
+
+## Design Decisions
+
+### Per-User Derived Addresses (not shared root)
+
+Each Canton user already has their own derived Ethereum address via the MPC
+path mechanism (`path = "{sender},{userPath}"`). Instead of pooling all
+tokens into a single vault root address, each user's derived address
+interacts with Aave independently:
+
+```
+Alice: path = "Alice,deposit-1" → 0xABC...  (unique ETH address)
+Bob:   path = "Bob,deposit-1"   → 0xDEF...  (unique ETH address)
+
+Alice's 0xABC → supply 100 USDC → Aave tracks balanceOf(0xABC) independently
+Bob's   0xDEF → supply 200 USDC → Aave tracks balanceOf(0xDEF) independently
+```
+
+**Why:** Aave tracks one balance per address. Sharing a single EOA would
+require pro-rata yield accounting on Canton. Per-user addresses give natural
+isolation — each user's yield is theirs, no shared balance math needed.
+
+### Shares Model (stataUSDC, not aUSDC)
+
+DeFi yield tokens use one of three fundamental models:
+
+| Model | Balance | Price | Canton-friendly? |
+|---|---|---|---|
+| **Rebasing** (aUSDC, stETH) | Changes over time | Stays ~pegged | No — `Erc20Holding.amount` goes stale |
+| **Shares / ERC-4626** (stataUSDC, wstETH, sDAI) | Fixed | Grows | Yes — amount is always correct |
+| **Claimable** (CRV gauges, COMP) | Fixed | Fixed | Needs separate claim choice |
+
+We use **stataUSDC** (Aave's ERC-4626 static aToken wrapper):
+- Balance stays constant — `Erc20Holding.amount` is always correct
+- Yield accrues in the exchange rate, not the balance
+- Standard ERC-20 — composable with Uniswap, Morpho, etc.
+- Uniswap V3/V4 explicitly does not support rebasing tokens (yield is lost)
+
+**No new templates needed.** `Erc20Holding` tracks both USDC and stataUSDC
+— they're both ERC-20 tokens.
+
+### StataToken (Static aToken) — ERC-4626 Wrapper
+
+The StataToken wraps Aave's rebasing aTokens into non-rebasing ERC-4626
+shares. BGD Labs deploys a `StataTokenFactory` per Aave V3 pool.
+
+Key properties:
+- `asset()` returns the underlying aToken (aUSDC)
+- Extended `deposit(uint256, address, uint16, bool)` accepts raw underlying
+  (USDC) when `depositToAave = true` — supplies to Aave + wraps in one call
+- `redeem(uint256, address, address)` burns shares, returns underlying
+- `convertToAssets(shares)` returns current value including yield
+- Holders remain eligible for Aave liquidity mining incentives
+- No protocol fee for wrapping/unwrapping
 
 ## Sepolia Addresses
 
-| Contract       | Address                                      |
-| -------------- | -------------------------------------------- |
-| Aave V3 Pool   | `0x6Ae43d3271ff6888e7Fc43Fd7321a503ff738951` |
-| USDC (test)    | `0x94a9D9AC8a22534E3FaCa9F4e7F2E2cf85d5E4C8` |
-| aUSDC (aToken) | `0x16dA4541aD1807f4443d92D26044C1147406EB80` |
-| DAI (test)     | `0xFF34B3d4Aee8ddCd6F9AFFFB6Fe49bD371b8a357` |
-| aDAI (aToken)  | `0x29598b72eb5CeBd806C5dCD549490FdA35B13cD8` |
-| WETH (test)    | `0xC558DBdd856501FCd9aaF1E62eae57A9F0629a3c` |
-| aWETH (aToken) | `0x5b071b590a59395fE4025A0Ccc1FcC931AAc1830` |
-| Aave Faucet    | `0xC959483DBa39aa9E78757139af0e9a2EDEb3f42D` |
+| Contract             | Address                                      |
+| -------------------- | -------------------------------------------- |
+| Aave V3 Pool         | `0x6Ae43d3271ff6888e7Fc43Fd7321a503ff738951` |
+| USDC (test)          | `0x94a9D9AC8a22534E3FaCa9F4e7F2E2cf85d5E4C8` |
+| aUSDC (aToken)       | `0x16dA4541aD1807f4443d92D26044C1147406EB80` |
+| StataTokenFactory    | `0xd210dFB43B694430B8d31762B5199e30c31266C8` |
+| stataUSDC            | TBD — derive from factory via `getStatAToken(aUSDC)` |
+| Aave Faucet          | `0xC959483DBa39aa9E78757139af0e9a2EDEb3f42D` |
 
 ## Sequence Diagram
 
 ```
  User              Canton                MPC Service         Sepolia
   |                  |                       |                  |
-  |  RequestEvmApprove(token, Pool, max)     |                  |
+  |  (user already has Erc20Holding(USDC) from prior deposit)  |
+  |                  |                       |                  |
+  |  RequestEvmApprove(USDC, stataToken)     |                  |
   |----------------->|                       |                  |
   |                  | PendingEvmTx(approve)  |                  |
   |                  |---------------------->|                  |
   |                  |                       | sign + submit    |
   |                  |                       |----------------->|
-  |                  |                       | EcdsaSignature   |
-  |                  |<----------------------|                  |
-  |                  |                       | outcome sig      |
+  |                  |                       | sigs             |
   |                  |<----------------------|                  |
   |  ClaimEvmApprove |                       |                  |
   |----------------->| (verify, archive)     |                  |
   |                  |                       |                  |
-  |  RequestAaveSupply(holdingCid, pool)     |                  |
+  |  RequestAaveSupply(holdingCid)           |                  |
   |----------------->|                       |                  |
   |                  | archive Erc20Holding  |                  |
-  |                  | PendingEvmTx(supply)   |                  |
+  |                  |   (USDC)              |                  |
+  |                  | PendingEvmTx          |                  |
+  |                  |   (stataToken.deposit) |                  |
   |                  |---------------------->|                  |
   |                  |                       | sign + submit    |
   |                  |                       |----------------->|
-  |                  |                       | EcdsaSignature   |
-  |                  |<----------------------|                  |
-  |                  |                       | outcome sig      |
+  |                  |                       |   USDC → Aave    |
+  |                  |                       |   aUSDC → wrap   |
+  |                  |                       |   → stataUSDC    |
+  |                  |                       | sigs             |
   |                  |<----------------------|                  |
   |  ClaimAaveSupply |                       |                  |
   |----------------->| verify outcome        |                  |
-  |                  | create AavePosition   |                  |
-  |  <-- AavePosition                       |                  |
+  |                  | decode sharesOut      |                  |
+  |                  | create Erc20Holding   |                  |
+  |                  |   (stataUSDC, shares) |                  |
+  |  <-- Erc20Holding(stataUSDC)             |                  |
   |                  |                       |                  |
-  :       ... time passes, yield accrues ... :                  :
+  :    ... time passes, yield accrues ...    :                  :
+  :    (stataUSDC balance unchanged,         :                  :
+  :     exchange rate grows)                 :                  :
   |                  |                       |                  |
-  |  RequestAaveWithdraw(positionCid)        |                  |
+  |  RequestAaveWithdraw(holdingCid)         |                  |
   |----------------->|                       |                  |
-  |                  | archive AavePosition  |                  |
-  |                  | PendingEvmTx(withdraw) |                  |
+  |                  | archive Erc20Holding  |                  |
+  |                  |   (stataUSDC)         |                  |
+  |                  | PendingEvmTx          |                  |
+  |                  |   (stataToken.redeem)  |                  |
   |                  |---------------------->|                  |
   |                  |                       | sign + submit    |
   |                  |                       |----------------->|
-  |                  |                       | EcdsaSignature   |
-  |                  |<----------------------|                  |
-  |                  |                       | outcome sig      |
+  |                  |                       |   burn stataUSDC |
+  |                  |                       |   → aUSDC        |
+  |                  |                       |   → withdraw     |
+  |                  |                       |   → USDC (+ yield)|
+  |                  |                       | sigs             |
   |                  |<----------------------|                  |
   |  CompleteAaveWithdraw                    |                  |
   |----------------->| verify outcome        |                  |
-  |                  | decode amountWithdrawn|                  |
+  |                  | decode assetsOut      |                  |
   |                  | create Erc20Holding   |                  |
-  |  <-- Erc20Holding (amount + yield)       |                  |
+  |                  |   (USDC, amount+yield)|                  |
+  |  <-- Erc20Holding(USDC, with yield)      |                  |
 ```
 
 ## EVM Functions
 
-### 1. ERC-20 `approve` (one-time setup per token)
+### 1. ERC-20 `approve` (one-time per token/spender)
 
 ```
 function approve(address spender, uint256 amount) returns (bool)
@@ -91,57 +157,72 @@ selector: 0x095ea7b3
 
 | Field               | Value                                                                            |
 | ------------------- | -------------------------------------------------------------------------------- |
-| `to`                | token address (e.g., USDC `94a9d9...c8`)                                         |
+| `to`                | USDC token address                                                               |
 | `functionSignature` | `"approve(address,uint256)"`                                                     |
-| `args[0]`           | Pool address, left-padded to 32 bytes                                            |
+| `args[0]`           | stataToken address, left-padded to 32 bytes                                      |
 | `args[1]`           | `ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff` (max uint256) |
 | `value`             | `00..00` (32 bytes zero)                                                         |
 
 **Schema:** `outputDeserializationSchema = [{"name":"","type":"bool"}]`
 **Schema:** `respondSerializationSchema = [{"name":"","type":"bool"}]`
 
-### 2. Aave `supply`
+### 2. StataToken `deposit` (USDC → stataUSDC in one call)
 
 ```
-function supply(address asset, uint256 amount, address onBehalfOf, uint16 referralCode)
-selector: 0x617ba037
+function deposit(uint256 assets, address receiver, uint16 referralCode, bool depositToAave)
+    returns (uint256 shares)
+selector: TBD — verify against deployed contract
 ```
+
+When `depositToAave = true`, the StataToken:
+1. Pulls USDC from caller via `transferFrom`
+2. Calls `Pool.supply(USDC, amount, address(this), referralCode)`
+3. Wraps the resulting aUSDC into stataUSDC shares
+4. Mints shares to `receiver`
 
 **EvmTransactionParams:**
 
-| Field               | Value                                               |
-| ------------------- | --------------------------------------------------- |
-| `to`                | Pool `6ae43d3271ff6888e7fc43fd7321a503ff738951`     |
-| `functionSignature` | `"supply(address,uint256,address,uint16)"`          |
-| `args[0]`           | asset address, left-padded to 32 bytes              |
-| `args[1]`           | amount, left-padded to 32 bytes                     |
-| `args[2]`           | vault address (onBehalfOf), left-padded to 32 bytes |
-| `args[3]`           | `00..00` (referralCode = 0)                         |
-| `value`             | `00..00` (32 bytes zero)                            |
+| Field               | Value                                                |
+| ------------------- | ---------------------------------------------------- |
+| `to`                | stataToken address                                   |
+| `functionSignature` | `"deposit(uint256,address,uint16,bool)"`             |
+| `args[0]`           | amount of USDC, left-padded to 32 bytes              |
+| `args[1]`           | receiver = user's derived address, left-padded       |
+| `args[2]`           | `00..00` (referralCode = 0)                          |
+| `args[3]`           | `00..01` (depositToAave = true)                      |
+| `value`             | `00..00` (32 bytes zero)                             |
 
-**Schema:** `outputDeserializationSchema = []` (supply returns void)
-**Schema:** `respondSerializationSchema = []`
+**Schema:** `outputDeserializationSchema = [{"name":"shares","type":"uint256"}]`
+**Schema:** `respondSerializationSchema = [{"name":"shares","type":"uint256"}]`
 
-### 3. Aave `withdraw`
+**Fallback:** If the extended `deposit` is not available on Sepolia, use the
+standard ERC-4626 path: `Pool.supply()` + `aUSDC.approve(stataToken)` +
+`stataToken.deposit(uint256,address)`. This is 4 EVM txs instead of 2.
+
+### 3. StataToken `redeem` (stataUSDC → USDC + yield)
 
 ```
-function withdraw(address asset, uint256 amount, address to) returns (uint256)
-selector: 0x69328dec
+function redeem(uint256 shares, address receiver, address owner)
+    returns (uint256 assets)
 ```
 
-**EvmTransactionParams:**
+Standard ERC-4626 redeem. If the StataToken supports `withdrawToAave = true`
+(withdrawing the raw underlying instead of aUSDC), use that. Otherwise,
+redeem returns aUSDC which must be followed by `Pool.withdraw()`.
 
-| Field               | Value                                              |
-| ------------------- | -------------------------------------------------- |
-| `to`                | Pool `6ae43d3271ff6888e7fc43fd7321a503ff738951`    |
-| `functionSignature` | `"withdraw(address,uint256,address)"`              |
-| `args[0]`           | asset address, left-padded to 32 bytes             |
-| `args[1]`           | `ff..ff` (max uint256 = withdraw all)              |
-| `args[2]`           | vault address (recipient), left-padded to 32 bytes |
-| `value`             | `00..00` (32 bytes zero)                           |
+**EvmTransactionParams (if direct underlying withdrawal supported):**
 
-**Schema:** `outputDeserializationSchema = [{"name":"amountWithdrawn","type":"uint256"}]`
-**Schema:** `respondSerializationSchema = [{"name":"amountWithdrawn","type":"uint256"}]`
+| Field               | Value                                                |
+| ------------------- | ---------------------------------------------------- |
+| `to`                | stataToken address                                   |
+| `functionSignature` | `"redeem(uint256,address,address)"`                  |
+| `args[0]`           | shares amount (= `Erc20Holding.amount`), 32 bytes    |
+| `args[1]`           | receiver = user's derived address, left-padded       |
+| `args[2]`           | owner = user's derived address, left-padded          |
+| `value`             | `00..00` (32 bytes zero)                             |
+
+**Schema:** `outputDeserializationSchema = [{"name":"assets","type":"uint256"}]`
+**Schema:** `respondSerializationSchema = [{"name":"assets","type":"uint256"}]`
 
 ## Daml Contract Changes
 
@@ -153,31 +234,18 @@ data TxSource
   | WithdrawalSource (ContractId Erc20Holding)
   | ApproveSource                                    -- NEW
   | AaveSupplySource (ContractId Erc20Holding)       -- NEW
-  | AaveWithdrawSource (ContractId AavePosition)     -- NEW
+  | AaveWithdrawSource (ContractId Erc20Holding)     -- NEW (stataUSDC holding)
 ```
 
-### New Template: AavePosition
-
-```daml
-template AavePosition
-  with
-    issuer  : Party
-    owner   : Party
-    mpc     : Party
-    asset   : BytesHex    -- underlying token address (e.g., USDC)
-    amount  : BytesHex    -- 32 bytes, amount originally supplied
-    pool    : BytesHex    -- Aave Pool address
-    vaultId : Text
-  where
-    signatory issuer
-    observer owner, mpc
-```
+No `AavePosition` template. Both USDC and stataUSDC are tracked as
+`Erc20Holding` with different `erc20Contract` addresses.
 
 ### New Choices on VaultOrchestrator
 
 #### RequestEvmApprove (nonconsuming, issuer-controlled)
 
-Generic ERC-20 approval — reusable for any protocol integration.
+Generic ERC-20 approval — reusable across Aave, Uniswap, and future
+protocol integrations.
 
 ```daml
 nonconsuming choice RequestEvmApprove : ContractId PendingEvmTx
@@ -220,18 +288,14 @@ nonconsuming choice ClaimEvmApprove : ()
   do
     pending <- fetch pendingCid
     outcome <- fetch outcomeCid
-    sig     <- fetch signatureCid
 
-    -- verify MPC signature on outcome
     assertMsg "requestId mismatch" $ pending.requestId == outcome.requestId
     let responseHash = computeResponseHash pending.requestId outcome.mpcOutput
     assertMsg "invalid MPC signature" $
       verifyEcdsaSignature mpcPublicKey responseHash outcome.signature
 
-    -- verify approve returned true
-    let output = outcome.mpcOutput
-    assertMsg "approve failed" $ not (hasErrorPrefix output)
-    let decoded = abiDecodeBool (stripErrorPrefix output) 0
+    assertMsg "approve failed" $ not (hasErrorPrefix outcome.mpcOutput)
+    let decoded = abiDecodeBool outcome.mpcOutput 0
     assertMsg "approve returned false" decoded
 
     archive pendingCid
@@ -241,44 +305,58 @@ nonconsuming choice ClaimEvmApprove : ()
 
 #### RequestAaveSupply (nonconsuming)
 
+Uses the user's deposit path (not "root") so each user has their own Aave
+position via their derived address.
+
 ```daml
 nonconsuming choice RequestAaveSupply : ContractId PendingEvmTx
   with
-    requester  : Party
-    holdingCid : ContractId Erc20Holding
-    pool       : BytesHex
-    evmParams  : EvmTransactionParams
+    requester     : Party
+    holdingCid    : ContractId Erc20Holding
+    stataToken    : BytesHex   -- stataUSDC contract address
+    evmParams     : EvmTransactionParams
   controller requester
   do
     holding <- fetch holdingCid
 
     assertMsg "owner mismatch" $ holding.owner == requester
     assertMsg "issuer mismatch" $ holding.issuer == issuer
-    assertMsg "must be supply" $
-      evmParams.functionSignature == "supply(address,uint256,address,uint16)"
-    assertMsg "to must be pool" $ evmParams.to == pool
+    assertMsg "must be deposit" $
+      evmParams.functionSignature == "deposit(uint256,address,uint16,bool)"
+    assertMsg "to must be stataToken" $ evmParams.to == stataToken
+
+    -- validate amount matches holding
+    let argsAmount = evmParams.args !! 0
+    assertMsg "amount must match holding" $
+      argsAmount == holding.amount
 
     archive holdingCid
 
-    let requestPath = "root"
+    -- use the user's deposit path (per-user derived address)
+    let requestPath = show requester <> "," <> "aave-supply"
         predecessorId = vaultId <> show issuer
         nonceCidText = show holdingCid
         requestId = computeRequestId
           (show requester) evmParams caip2Id keyVersion
-          requestPath algo (show pool) nonceCidText
+          requestPath algo (show stataToken) nonceCidText
 
     create PendingEvmTx with
       source = AaveSupplySource holdingCid
       path = requestPath
-      outputDeserializationSchema = "[]"
-      respondSerializationSchema = "[]"
+      outputDeserializationSchema =
+        "[{\"name\":\"shares\",\"type\":\"uint256\"}]"
+      respondSerializationSchema =
+        "[{\"name\":\"shares\",\"type\":\"uint256\"}]"
       ..
 ```
 
 #### ClaimAaveSupply (nonconsuming)
 
+Creates `Erc20Holding(stataUSDC, sharesAmount)` — balance stays correct
+forever since shares don't rebase.
+
 ```daml
-nonconsuming choice ClaimAaveSupply : ContractId AavePosition
+nonconsuming choice ClaimAaveSupply : ContractId Erc20Holding
   with
     requester    : Party
     pendingCid   : ContractId PendingEvmTx
@@ -289,59 +367,67 @@ nonconsuming choice ClaimAaveSupply : ContractId AavePosition
     pending <- fetch pendingCid
     outcome <- fetch outcomeCid
 
-    -- verify MPC signature
     assertMsg "requestId mismatch" $ pending.requestId == outcome.requestId
     let responseHash = computeResponseHash pending.requestId outcome.mpcOutput
     assertMsg "invalid MPC signature" $
       verifyEcdsaSignature mpcPublicKey responseHash outcome.signature
 
-    -- supply() returns void — just check no error prefix
     assertMsg "supply failed" $ not (hasErrorPrefix outcome.mpcOutput)
 
-    -- extract asset and amount from the original evmParams args
-    let asset  = pending.evmParams.args !! 0  -- args[0] = asset address
-        amount = pending.evmParams.args !! 1  -- args[1] = amount
+    -- decode shares minted (ERC-4626 deposit returns uint256 shares)
+    let sharesOut = abiSlot outcome.mpcOutput 0
+        stataToken = pending.evmParams.to
 
     archive pendingCid
     archive outcomeCid
     archive signatureCid
 
-    create AavePosition with
+    create Erc20Holding with
       owner = requester
-      pool = pending.evmParams.to
+      amount = sharesOut           -- shares, not underlying — never stale
+      erc20Contract = stataToken   -- stataUSDC address
       ..
 ```
 
 #### RequestAaveWithdraw (nonconsuming)
 
+Consumes `Erc20Holding(stataUSDC)`, redeems all shares.
+
 ```daml
 nonconsuming choice RequestAaveWithdraw : ContractId PendingEvmTx
   with
     requester   : Party
-    positionCid : ContractId AavePosition
+    holdingCid  : ContractId Erc20Holding
     evmParams   : EvmTransactionParams
   controller requester
   do
-    position <- fetch positionCid
+    holding <- fetch holdingCid
 
-    assertMsg "owner mismatch" $ position.owner == requester
-    assertMsg "must be withdraw" $
-      evmParams.functionSignature == "withdraw(address,uint256,address)"
-    assertMsg "to must be pool" $ evmParams.to == position.pool
+    assertMsg "owner mismatch" $ holding.owner == requester
+    assertMsg "must be redeem" $
+      evmParams.functionSignature == "redeem(uint256,address,address)"
 
-    archive positionCid
+    -- validate shares amount matches holding
+    let argsShares = evmParams.args !! 0
+    assertMsg "shares must match holding" $
+      argsShares == holding.amount
 
-    let requestPath = "root"
-        nonceCidText = show positionCid
+    archive holdingCid
+
+    let requestPath = show requester <> "," <> "aave-supply"
+        nonceCidText = show holdingCid
+        stataToken = evmParams.to
         requestId = computeRequestId
           (show requester) evmParams caip2Id keyVersion
-          requestPath algo (show position.pool) nonceCidText
+          requestPath algo (show stataToken) nonceCidText
 
     create PendingEvmTx with
-      source = AaveWithdrawSource positionCid
+      source = AaveWithdrawSource holdingCid
       path = requestPath
-      outputDeserializationSchema = "[{\"name\":\"amountWithdrawn\",\"type\":\"uint256\"}]"
-      respondSerializationSchema = "[{\"name\":\"amountWithdrawn\",\"type\":\"uint256\"}]"
+      outputDeserializationSchema =
+        "[{\"name\":\"assets\",\"type\":\"uint256\"}]"
+      respondSerializationSchema =
+        "[{\"name\":\"assets\",\"type\":\"uint256\"}]"
       ..
 ```
 
@@ -352,6 +438,7 @@ nonconsuming choice CompleteAaveWithdraw
     : Optional (ContractId Erc20Holding)
   with
     requester    : Party
+    underlying   : BytesHex   -- USDC contract address
     pendingCid   : ContractId PendingEvmTx
     outcomeCid   : ContractId EvmTxOutcomeSignature
     signatureCid : ContractId EcdsaSignature
@@ -360,7 +447,6 @@ nonconsuming choice CompleteAaveWithdraw
     pending <- fetch pendingCid
     outcome <- fetch outcomeCid
 
-    -- verify MPC signature
     assertMsg "requestId mismatch" $ pending.requestId == outcome.requestId
     let responseHash = computeResponseHash pending.requestId outcome.mpcOutput
     assertMsg "invalid MPC signature" $
@@ -370,31 +456,37 @@ nonconsuming choice CompleteAaveWithdraw
     archive outcomeCid
     archive signatureCid
 
-    if hasErrorPrefix outcome.mpcOutput then do
-      -- withdraw failed — recreate position as refund
-      -- (in practice, Aave withdraw rarely fails)
-      pure None
+    if hasErrorPrefix outcome.mpcOutput then
+      pure None  -- redeem failed, no refund (shares already burned on-chain)
     else do
-      -- decode actual amount withdrawn (includes yield)
-      let withdrawnAmount = abiSlot outcome.mpcOutput 0
-          asset = pending.evmParams.args !! 0
+      -- decode actual assets returned (underlying + yield)
+      let assetsOut = abiSlot outcome.mpcOutput 0
 
       holdingCid <- create Erc20Holding with
         owner = requester
-        amount = withdrawnAmount
-        erc20Contract = asset
+        amount = assetsOut          -- includes accrued yield
+        erc20Contract = underlying  -- back to USDC
         ..
       pure (Some holdingCid)
 ```
 
 ## MPC Service Changes
 
-**None.** The existing MPC service pipeline (`signAndEnqueue` → `checkPendingTx`) is
-fully generic — it processes any `PendingEvmTx` regardless of function signature.
+**None.** The existing MPC service pipeline is fully generic — it processes
+any `PendingEvmTx` regardless of function signature. The path-based key
+derivation already works for per-user addresses.
 
-The only consideration is void-returning functions (`supply`). The MPC service's
-`extractReturnData` (from the ABI migration) should handle empty return data by
-returning an empty hex string. Verify this works for `respondSerializationSchema = "[]"`.
+## Composability
+
+Because stataUSDC is a standard ERC-20 with constant balance, the user can:
+
+1. Deposit USDC → `Erc20Holding(USDC)`
+2. Supply to Aave → `Erc20Holding(stataUSDC)` (shares, balance never stale)
+3. **Swap stataUSDC on Uniswap** → `Erc20Holding(WETH)` (see uniswap-v3-swap.md)
+4. Redeem stataUSDC → `Erc20Holding(USDC + yield)`
+
+This would NOT work with raw aUSDC — Uniswap V3/V4 explicitly does not
+support rebasing tokens and yield would be permanently lost.
 
 ## E2E Test Plan
 
@@ -403,35 +495,38 @@ returning an empty hex string. Verify this works for `respondSerializationSchema
 **Setup (beforeAll, 60s):**
 
 1. `setupVault()` — allocate parties, upload DAR, create VaultOrchestrator
-2. Fund vault address with test USDC from Aave faucet (`0xC959...`):
-   - Call `faucet.mint(USDC, vaultAddress, 10_000e6)` on Sepolia
+2. Fund user's derived address with test USDC from Aave faucet
 3. Start MPC server
-4. Execute `RequestEvmApprove` for USDC → Aave Pool (max uint256)
+4. Execute `RequestEvmApprove` for USDC → stataToken (max uint256)
 5. Wait for MPC to sign + submit approve tx
 6. Exercise `ClaimEvmApprove`
 
-**Test 1: Supply USDC to Aave (300s):**
+**Test 1: Supply USDC to Aave via stataToken (300s):**
 
-1. Create `Erc20Holding` via standard deposit flow (or direct create for test)
-2. Exercise `RequestAaveSupply` with holding
-3. Wait for MPC to sign + submit supply tx
-4. Exercise `ClaimAaveSupply`
-5. Assert: `AavePosition` created with correct asset/amount/pool
-6. Verify on Sepolia: vault address has aUSDC balance > 0
+1. Create `Erc20Holding(USDC)` via standard deposit flow
+2. Build `EvmTransactionParams` for `stataToken.deposit(amount, addr, 0, true)`
+3. Exercise `RequestAaveSupply` with holding
+4. Wait for MPC to sign + submit deposit tx
+5. Exercise `ClaimAaveSupply`
+6. Assert: `Erc20Holding(stataUSDC)` created with shares > 0
+7. Assert: `erc20Contract` == stataToken address
+8. Verify on Sepolia: user's derived address has stataUSDC balance > 0
 
 **Test 2: Withdraw from Aave with yield (300s):**
 
-1. Wait a few blocks (yield accrues per block on testnet)
-2. Exercise `RequestAaveWithdraw` with position
-3. Wait for MPC to sign + submit withdraw tx
-4. Exercise `CompleteAaveWithdraw`
-5. Assert: new `Erc20Holding` created
-6. Assert: holding amount >= original supply amount (yield accrued)
-7. Verify on Sepolia: vault aUSDC balance == 0, USDC balance restored
+1. Wait a few blocks (yield accrues in exchange rate)
+2. Query `stataToken.convertToAssets(shares)` — should be > original USDC
+3. Exercise `RequestAaveWithdraw` with stataUSDC holding
+4. Wait for MPC to sign + submit redeem tx
+5. Exercise `CompleteAaveWithdraw`
+6. Assert: new `Erc20Holding(USDC)` created
+7. Assert: `amount >= original supply amount` (yield accrued)
+8. Verify on Sepolia: stataUSDC balance == 0, USDC balance restored + yield
 
 ### Env Variables (additions)
 
 ```
 AAVE_POOL_ADDRESS=0x6Ae43d3271ff6888e7Fc43Fd7321a503ff738951
 AAVE_FAUCET_ADDRESS=0xC959483DBa39aa9E78757139af0e9a2EDEb3f42D
+STATA_TOKEN_ADDRESS=<derive from factory>
 ```

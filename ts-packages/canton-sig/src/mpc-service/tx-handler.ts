@@ -25,7 +25,7 @@ import { chainIdHexToCaip2 } from "../mpc/address-derivation.js";
 import {
   VaultOrchestrator,
   type PendingEvmTx,
-} from "@daml.js/canton-mpc-poc-0.0.1/lib/Erc20Vault/module";
+} from "@daml.js/daml-vault-0.0.1/lib/Erc20Vault/module";
 
 const VAULT_ORCHESTRATOR = VaultOrchestrator.templateId;
 

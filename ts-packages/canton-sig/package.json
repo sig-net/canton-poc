@@ -20,7 +20,7 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsdown && cp ../../.daml/dist/canton-mpc-poc-0.0.1.dar dist/",
+    "build": "tsdown && cp ../../daml-packages/daml-vault/.daml/dist/daml-vault-0.0.1.dar dist/",
     "check:types": "tsc --noEmit",
     "prepack": "pnpm run build",
     "release": "pnpm run build && pnpm publish --access public",
@@ -39,7 +39,7 @@
     "ws": "^8.19.0"
   },
   "devDependencies": {
-    "@daml.js/canton-mpc-poc-0.0.1": "file:./generated/model/canton-mpc-poc-0.0.1",
+    "@daml.js/daml-vault-0.0.1": "file:./generated/model/daml-vault-0.0.1",
     "@types/node": "^25.3.0",
     "@types/ws": "^8.18.1",
     "viem": "^2.46.3",

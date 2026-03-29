@@ -362,7 +362,7 @@ import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const projectRoot = resolve(__dirname, "../../..");
+const projectRoot = resolve(__dirname, "../../../..");
 
 writeFileSync(resolve(projectRoot, "uint256-ts-fragment.txt"), tsFragment);
 writeFileSync(resolve(projectRoot, "uint256-daml-fragment.txt"), damlFragment);

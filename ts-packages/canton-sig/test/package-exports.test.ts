@@ -15,7 +15,7 @@ describe("package exports (ESM)", () => {
 
   it("exports DAR_PATH as a string", () => {
     expect(typeof DAR_PATH).toBe("string");
-    expect(DAR_PATH).toContain("canton-mpc-poc-0.0.1.dar");
+    expect(DAR_PATH).toContain("daml-vault-0.0.1.dar");
   });
 
   // @ts-expect-error — intentionally calling without args to verify it throws
