@@ -1,7 +1,7 @@
 module TestFixtures where
 
 import DA.Crypto.Text (BytesHex)
-import Types (EvmTransactionParams(..))
+import EvmTypes (EvmTransactionParams(..))
 
 -- ---------------------------------------------------------------------------
 -- Shared test keys and signatures

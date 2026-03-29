@@ -6,8 +6,8 @@ import DA.Crypto.Text
   , toHex
   )
 
-import Types (EvmTransactionParams(..))
-import Crypto (padLeft, assertBytes32, safeKeccak256, hashText, hashBytesList, eip712Hash)
+import EvmTypes (EvmTransactionParams(..))
+import Eip712 (padLeft, assertBytes32, safeKeccak256, hashText, hashBytesList, eip712Hash)
 
 -- ---------------------------------------------------------------------------
 -- EIP-712 type hashes

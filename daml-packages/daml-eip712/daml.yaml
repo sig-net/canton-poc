@@ -1,0 +1,12 @@
+sdk-version: 3.4.11
+name: daml-eip712
+version: 0.0.1
+source: daml
+dependencies:
+  - daml-prim
+  - daml-stdlib
+  - daml-script
+data-dependencies:
+  - ../daml-evm-types/.daml/dist/daml-evm-types-0.0.1.dar
+build-options:
+  - -Wno-crypto-text-is-alpha

@@ -4,7 +4,7 @@ import DA.Optional (fromSome)
 import DA.Crypto.Text (keccak256, secp256k1WithEcdsaOnly, packHexBytes, byteCount, toHex, fromHex)
 import Daml.Script
 
-import Crypto (chainIdToDecimalText)
+import Eip712 (chainIdToDecimalText)
 import TestFixtures (testPubKeyHex, testMessageHex, testSignatureHex)
 
 ------------------------------------------------------------------------

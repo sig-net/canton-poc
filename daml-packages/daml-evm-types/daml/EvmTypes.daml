@@ -1,4 +1,4 @@
-module Types where
+module EvmTypes where
 
 import DA.Crypto.Text (BytesHex)
 

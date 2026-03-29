@@ -1,4 +1,4 @@
-module Crypto where
+module Eip712 where
 
 import DA.Optional (fromSome)
 import qualified DA.Text

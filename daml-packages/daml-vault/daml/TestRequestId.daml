@@ -3,7 +3,7 @@ module TestRequestId where
 import DA.Crypto.Text (byteCount)
 import Daml.Script
 
-import Crypto (domainSeparator, hashText, hashBytesList)
+import Eip712 (domainSeparator, hashText, hashBytesList)
 import RequestId (evmParamsTypeHash, requestTypeHash, responseTypeHash, hashEvmParams, computeRequestId, computeResponseHash)
 import TestFixtures (sampleEvmParams)
 

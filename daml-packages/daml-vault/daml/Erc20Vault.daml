@@ -4,8 +4,8 @@ import DA.Action (when, void)
 import DA.List ((!!)  )
 import DA.Crypto.Text (BytesHex, PublicKeyHex, SignatureHex, secp256k1WithEcdsaOnly)
 
-import Types (EvmTransactionParams)
-import Crypto (chainIdToDecimalText)
+import EvmTypes (EvmTransactionParams)
+import Eip712 (chainIdToDecimalText)
 import RequestId (computeRequestId, computeResponseHash)
 import Abi (hasErrorPrefix, abiDecodeBool)
 

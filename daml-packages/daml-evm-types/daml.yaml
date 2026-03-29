@@ -1,5 +1,5 @@
 sdk-version: 3.4.11
-name: canton-mpc-poc
+name: daml-evm-types
 version: 0.0.1
 source: daml
 dependencies:
