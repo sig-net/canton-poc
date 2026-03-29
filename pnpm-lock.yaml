@@ -36,42 +36,32 @@ importers:
         specifier: ^8.56.1
         version: 8.57.2(eslint@10.1.0(jiti@2.6.1))(typescript@5.9.3)
 
-  packages/canton-sig:
-    dependencies:
-      '@daml/types':
-        specifier: ^3.4.11
-        version: 3.4.11
-      '@mojotech/json-type-validation':
-        specifier: ^3.1.0
-        version: 3.1.0
-      '@noble/curves':
-        specifier: ^2.0.1
-        version: 2.0.1
-      openapi-fetch:
-        specifier: ^0.17.0
-        version: 0.17.0
-      signet.js:
-        specifier: 0.4.0
-        version: 0.4.0(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@4.3.6)
-      ws:
-        specifier: ^8.19.0
-        version: 8.20.0(bufferutil@4.1.0)(utf-8-validate@6.0.6)
+  daml-packages/daml-abi:
     devDependencies:
-      '@daml.js/canton-mpc-poc-0.0.1':
-        specifier: file:./generated/model/canton-mpc-poc-0.0.1
-        version: file:packages/canton-sig/generated/model/canton-mpc-poc-0.0.1
-      '@types/node':
-        specifier: ^25.3.0
-        version: 25.5.0
-      '@types/ws':
-        specifier: ^8.18.1
-        version: 8.18.1
-      tsdown:
-        specifier: ^0.21.4
-        version: 0.21.4(oxc-resolver@11.19.1)(typescript@5.9.3)
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
+      viem:
+        specifier: ^2.46.3
+        version: 2.47.6(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@4.3.6)
+      vitest:
+        specifier: ^4.0.18
+        version: 4.1.1(@types/node@25.5.0)(vite@8.0.2(@types/node@25.5.0)(esbuild@0.27.4)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.3))
+
+  daml-packages/daml-eip712:
+    devDependencies:
+      canton-sig:
+        specifier: workspace:*
+        version: link:../../ts-packages/canton-sig
+      viem:
+        specifier: ^2.46.3
+        version: 2.47.6(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@4.3.6)
+      vitest:
+        specifier: ^4.0.18
+        version: 4.1.1(@types/node@25.5.0)(vite@8.0.2(@types/node@25.5.0)(esbuild@0.27.4)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.3))
+
+  daml-packages/daml-uint256:
+    devDependencies:
+      tsx:
+        specifier: ^4.21.0
+        version: 4.21.0
       viem:
         specifier: ^2.46.3
         version: 2.47.6(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@4.3.6)
@@ -86,7 +76,7 @@ importers:
         version: 2.0.1
       canton-sig:
         specifier: workspace:*
-        version: link:../packages/canton-sig
+        version: link:../ts-packages/canton-sig
       dotenv:
         specifier: ^17.3.1
         version: 17.3.1
@@ -109,6 +99,49 @@ importers:
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
+      vitest:
+        specifier: ^4.0.18
+        version: 4.1.1(@types/node@25.5.0)(vite@8.0.2(@types/node@25.5.0)(esbuild@0.27.4)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.3))
+
+  ts-packages/canton-sig:
+    dependencies:
+      '@daml/types':
+        specifier: ^3.4.11
+        version: 3.4.11
+      '@mojotech/json-type-validation':
+        specifier: ^3.1.0
+        version: 3.1.0
+      '@noble/curves':
+        specifier: ^2.0.1
+        version: 2.0.1
+      openapi-fetch:
+        specifier: ^0.17.0
+        version: 0.17.0
+      signet.js:
+        specifier: 0.4.0
+        version: 0.4.0(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@4.3.6)
+      ws:
+        specifier: ^8.19.0
+        version: 8.20.0(bufferutil@4.1.0)(utf-8-validate@6.0.6)
+    devDependencies:
+      '@daml.js/daml-vault-0.0.1':
+        specifier: file:./generated/model/daml-vault-0.0.1
+        version: file:ts-packages/canton-sig/generated/model/daml-vault-0.0.1
+      '@types/node':
+        specifier: ^25.3.0
+        version: 25.5.0
+      '@types/ws':
+        specifier: ^8.18.1
+        version: 8.18.1
+      tsdown:
+        specifier: ^0.21.4
+        version: 0.21.4(oxc-resolver@11.19.1)(typescript@5.9.3)
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      viem:
+        specifier: ^2.46.3
+        version: 2.47.6(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@4.3.6)
       vitest:
         specifier: ^4.0.18
         version: 4.1.1(@types/node@25.5.0)(vite@8.0.2(@types/node@25.5.0)(esbuild@0.27.4)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.3))
@@ -201,11 +234,14 @@ packages:
   '@cosmjs/utils@0.38.1':
     resolution: {integrity: sha512-ccQ5in6IvsQ+o/SstUdQH1jCJ2+MkJPZK7A/EYwMAFcjV8vzOgJ97LVy6AT24nwdi0/iVa2nbAG+fitUEsgLcA==}
 
-  '@daml.js/canton-mpc-poc-0.0.1@file:packages/canton-sig/generated/model/canton-mpc-poc-0.0.1':
-    resolution: {directory: packages/canton-sig/generated/model/canton-mpc-poc-0.0.1, type: directory}
+  '@daml.js/daml-evm-types-0.0.1@file:ts-packages/canton-sig/generated/model/daml-evm-types-0.0.1':
+    resolution: {directory: ts-packages/canton-sig/generated/model/daml-evm-types-0.0.1, type: directory}
 
-  '@daml.js/ghc-stdlib-DA-Internal-Template-1.0.0@file:packages/canton-sig/generated/model/ghc-stdlib-DA-Internal-Template-1.0.0':
-    resolution: {directory: packages/canton-sig/generated/model/ghc-stdlib-DA-Internal-Template-1.0.0, type: directory}
+  '@daml.js/daml-vault-0.0.1@file:ts-packages/canton-sig/generated/model/daml-vault-0.0.1':
+    resolution: {directory: ts-packages/canton-sig/generated/model/daml-vault-0.0.1, type: directory}
+
+  '@daml.js/ghc-stdlib-DA-Internal-Template-1.0.0@file:ts-packages/canton-sig/generated/model/ghc-stdlib-DA-Internal-Template-1.0.0':
+    resolution: {directory: ts-packages/canton-sig/generated/model/ghc-stdlib-DA-Internal-Template-1.0.0, type: directory}
 
   '@daml/types@3.4.11':
     resolution: {integrity: sha512-lGskPPTFVtJpLbHi1XoqG7/mnOU/zJcomQixoszEbtU7D63t7xDAW9yvtaQa7C1Uz70OOBhM1z72Se63GR3NXg==}
@@ -2300,12 +2336,17 @@ snapshots:
 
   '@cosmjs/utils@0.38.1': {}
 
-  '@daml.js/canton-mpc-poc-0.0.1@file:packages/canton-sig/generated/model/canton-mpc-poc-0.0.1':
+  '@daml.js/daml-evm-types-0.0.1@file:ts-packages/canton-sig/generated/model/daml-evm-types-0.0.1':
     dependencies:
-      '@daml.js/ghc-stdlib-DA-Internal-Template-1.0.0': file:packages/canton-sig/generated/model/ghc-stdlib-DA-Internal-Template-1.0.0
       '@mojotech/json-type-validation': 3.1.0
 
-  '@daml.js/ghc-stdlib-DA-Internal-Template-1.0.0@file:packages/canton-sig/generated/model/ghc-stdlib-DA-Internal-Template-1.0.0':
+  '@daml.js/daml-vault-0.0.1@file:ts-packages/canton-sig/generated/model/daml-vault-0.0.1':
+    dependencies:
+      '@daml.js/daml-evm-types-0.0.1': file:ts-packages/canton-sig/generated/model/daml-evm-types-0.0.1
+      '@daml.js/ghc-stdlib-DA-Internal-Template-1.0.0': file:ts-packages/canton-sig/generated/model/ghc-stdlib-DA-Internal-Template-1.0.0
+      '@mojotech/json-type-validation': 3.1.0
+
+  '@daml.js/ghc-stdlib-DA-Internal-Template-1.0.0@file:ts-packages/canton-sig/generated/model/ghc-stdlib-DA-Internal-Template-1.0.0':
     dependencies:
       '@mojotech/json-type-validation': 3.1.0
 

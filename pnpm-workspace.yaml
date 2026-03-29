@@ -1,3 +1,6 @@
 packages:
-  - packages/*
+  - ts-packages/*
+  - daml-packages/daml-abi
+  - daml-packages/daml-uint256
+  - daml-packages/daml-eip712
   - test

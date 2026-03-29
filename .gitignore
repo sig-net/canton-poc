@@ -1,5 +1,6 @@
 # Daml build artifacts
 .daml/
+daml-packages/*/.daml/
 
 # Logs
 log/
@@ -7,8 +8,8 @@ log/
 # TypeScript
 node_modules/
 test/dist/
-packages/canton-sig/dist/
-packages/canton-sig/generated/
+ts-packages/canton-sig/dist/
+ts-packages/canton-sig/generated/
 
 # Secrets
 **/.env

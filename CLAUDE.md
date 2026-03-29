@@ -35,3 +35,9 @@ cd test
 pnpm sepolia:preflight    # verify faucet balances
 pnpm test:e2e:sepolia
 ```
+
+## Project layout
+
+- `daml-packages/` -- Daml source packages (DAR built from `daml-packages/daml-vault/`)
+- `ts-packages/` -- TypeScript packages (`canton-sig` library)
+- `test/` -- Integration & e2e tests
