@@ -78,6 +78,9 @@ jobs:
         working-directory: ts-packages/canton-sig
         run: pnpm test
 
+      - name: Test Daml oracle suites
+        run: pnpm -r --filter='@canton/*' run test
+
       - name: Check
         run: pnpm check
 
