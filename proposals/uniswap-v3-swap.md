@@ -24,11 +24,11 @@ of maturity, liquidity, and documentation. Active pools for WETH/USDC and UNI/WE
 
 ### Fee Tiers
 
-| Fee    | Basis Points | Tick Spacing | Best For                |
-| ------ | ------------ | ------------ | ----------------------- |
-| `500`  | 0.05%        | 10           | Stable pairs            |
-| `3000` | 0.30%        | 60           | Standard (WETH/USDC)    |
-| `10000`| 1.00%        | 200          | Exotic/volatile         |
+| Fee     | Basis Points | Tick Spacing | Best For             |
+| ------- | ------------ | ------------ | -------------------- |
+| `500`   | 0.05%        | 10           | Stable pairs         |
+| `3000`  | 0.30%        | 60           | Standard (WETH/USDC) |
+| `10000` | 1.00%        | 200          | Exotic/volatile      |
 
 ## Sequence Diagram
 
@@ -97,18 +97,18 @@ struct ExactInputSingleParams {
 
 **EvmTransactionParams (example: swap 0.01 WETH → USDC, 0.3% fee):**
 
-| Field               | Value                                                                |
-| ------------------- | -------------------------------------------------------------------- |
-| `to`                | Router `3bfa4769fb09eefc5a80d6e87c3b9c650f7ae48e`                   |
+| Field               | Value                                                                          |
+| ------------------- | ------------------------------------------------------------------------------ |
+| `to`                | Router `3bfa4769fb09eefc5a80d6e87c3b9c650f7ae48e`                              |
 | `functionSignature` | `"exactInputSingle((address,address,uint24,address,uint256,uint256,uint160))"` |
-| `args[0]`           | tokenIn (WETH), left-padded 32 bytes                                 |
-| `args[1]`           | tokenOut (USDC), left-padded 32 bytes                                |
-| `args[2]`           | fee = `0bb8` (3000), left-padded 32 bytes                            |
-| `args[3]`           | recipient = vault address, left-padded 32 bytes                      |
-| `args[4]`           | amountIn, left-padded 32 bytes                                       |
-| `args[5]`           | amountOutMinimum = `00..00` (0 for PoC; set real value in prod)      |
-| `args[6]`           | sqrtPriceLimitX96 = `00..00` (0 = no limit)                         |
-| `value`             | `00..00` (32 bytes zero — not sending ETH)                           |
+| `args[0]`           | tokenIn (WETH), left-padded 32 bytes                                           |
+| `args[1]`           | tokenOut (USDC), left-padded 32 bytes                                          |
+| `args[2]`           | fee = `0bb8` (3000), left-padded 32 bytes                                      |
+| `args[3]`           | recipient = vault address, left-padded 32 bytes                                |
+| `args[4]`           | amountIn, left-padded 32 bytes                                                 |
+| `args[5]`           | amountOutMinimum = `00..00` (0 for PoC; set real value in prod)                |
+| `args[6]`           | sqrtPriceLimitX96 = `00..00` (0 = no limit)                                    |
+| `value`             | `00..00` (32 bytes zero — not sending ETH)                                     |
 
 **Schema:** `outputDeserializationSchema = [{"name":"amountOut","type":"uint256"}]`
 **Schema:** `respondSerializationSchema = [{"name":"amountOut","type":"uint256"}]`
@@ -257,6 +257,7 @@ would require splitting the holding first (future extension).
 ### Test: `uniswap-swap-e2e.test.ts`
 
 **Setup (beforeAll, 60s):**
+
 1. `setupVault()` — allocate parties, upload DAR, create VaultOrchestrator
 2. Fund vault address with WETH on Sepolia:
    - Send ETH to vault address
@@ -267,6 +268,7 @@ would require splitting the holding first (future extension).
 6. Exercise `ClaimEvmApprove`
 
 **Test 1: Swap WETH → USDC (300s):**
+
 1. Create `Erc20Holding` for WETH (via deposit flow or direct create)
 2. Build `EvmTransactionParams` for `exactInputSingle`:
    - tokenIn = WETH, tokenOut = USDC, fee = 3000
@@ -280,6 +282,7 @@ would require splitting the holding first (future extension).
 9. Verify on Sepolia: vault WETH balance decreased, USDC balance increased
 
 **Test 2: Swap failure — non-existent pool (300s):**
+
 1. Create `Erc20Holding` for WETH
 2. Attempt swap with invalid tokenOut (or zero-liquidity pool)
 3. MPC submits tx → Sepolia reverts

@@ -13,16 +13,16 @@ deposit. Later, the user can withdraw (including accrued yield) back into an
 
 ## Sepolia Addresses
 
-| Contract         | Address                                      |
-| ---------------- | -------------------------------------------- |
-| Aave V3 Pool     | `0x6Ae43d3271ff6888e7Fc43Fd7321a503ff738951` |
-| USDC (test)      | `0x94a9D9AC8a22534E3FaCa9F4e7F2E2cf85d5E4C8` |
-| aUSDC (aToken)   | `0x16dA4541aD1807f4443d92D26044C1147406EB80` |
-| DAI (test)       | `0xFF34B3d4Aee8ddCd6F9AFFFB6Fe49bD371b8a357` |
-| aDAI (aToken)    | `0x29598b72eb5CeBd806C5dCD549490FdA35B13cD8` |
-| WETH (test)      | `0xC558DBdd856501FCd9aaF1E62eae57A9F0629a3c` |
-| aWETH (aToken)   | `0x5b071b590a59395fE4025A0Ccc1FcC931AAc1830` |
-| Aave Faucet      | `0xC959483DBa39aa9E78757139af0e9a2EDEb3f42D` |
+| Contract       | Address                                      |
+| -------------- | -------------------------------------------- |
+| Aave V3 Pool   | `0x6Ae43d3271ff6888e7Fc43Fd7321a503ff738951` |
+| USDC (test)    | `0x94a9D9AC8a22534E3FaCa9F4e7F2E2cf85d5E4C8` |
+| aUSDC (aToken) | `0x16dA4541aD1807f4443d92D26044C1147406EB80` |
+| DAI (test)     | `0xFF34B3d4Aee8ddCd6F9AFFFB6Fe49bD371b8a357` |
+| aDAI (aToken)  | `0x29598b72eb5CeBd806C5dCD549490FdA35B13cD8` |
+| WETH (test)    | `0xC558DBdd856501FCd9aaF1E62eae57A9F0629a3c` |
+| aWETH (aToken) | `0x5b071b590a59395fE4025A0Ccc1FcC931AAc1830` |
+| Aave Faucet    | `0xC959483DBa39aa9E78757139af0e9a2EDEb3f42D` |
 
 ## Sequence Diagram
 
@@ -89,13 +89,13 @@ selector: 0x095ea7b3
 
 **EvmTransactionParams:**
 
-| Field               | Value                                               |
-| ------------------- | --------------------------------------------------- |
-| `to`                | token address (e.g., USDC `94a9d9...c8`)            |
-| `functionSignature` | `"approve(address,uint256)"`                        |
-| `args[0]`           | Pool address, left-padded to 32 bytes               |
+| Field               | Value                                                                            |
+| ------------------- | -------------------------------------------------------------------------------- |
+| `to`                | token address (e.g., USDC `94a9d9...c8`)                                         |
+| `functionSignature` | `"approve(address,uint256)"`                                                     |
+| `args[0]`           | Pool address, left-padded to 32 bytes                                            |
 | `args[1]`           | `ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff` (max uint256) |
-| `value`             | `00..00` (32 bytes zero)                            |
+| `value`             | `00..00` (32 bytes zero)                                                         |
 
 **Schema:** `outputDeserializationSchema = [{"name":"","type":"bool"}]`
 **Schema:** `respondSerializationSchema = [{"name":"","type":"bool"}]`
@@ -131,14 +131,14 @@ selector: 0x69328dec
 
 **EvmTransactionParams:**
 
-| Field               | Value                                               |
-| ------------------- | --------------------------------------------------- |
-| `to`                | Pool `6ae43d3271ff6888e7fc43fd7321a503ff738951`     |
-| `functionSignature` | `"withdraw(address,uint256,address)"`               |
-| `args[0]`           | asset address, left-padded to 32 bytes              |
-| `args[1]`           | `ff..ff` (max uint256 = withdraw all)               |
-| `args[2]`           | vault address (recipient), left-padded to 32 bytes  |
-| `value`             | `00..00` (32 bytes zero)                            |
+| Field               | Value                                              |
+| ------------------- | -------------------------------------------------- |
+| `to`                | Pool `6ae43d3271ff6888e7fc43fd7321a503ff738951`    |
+| `functionSignature` | `"withdraw(address,uint256,address)"`              |
+| `args[0]`           | asset address, left-padded to 32 bytes             |
+| `args[1]`           | `ff..ff` (max uint256 = withdraw all)              |
+| `args[2]`           | vault address (recipient), left-padded to 32 bytes |
+| `value`             | `00..00` (32 bytes zero)                           |
 
 **Schema:** `outputDeserializationSchema = [{"name":"amountWithdrawn","type":"uint256"}]`
 **Schema:** `respondSerializationSchema = [{"name":"amountWithdrawn","type":"uint256"}]`
@@ -401,6 +401,7 @@ returning an empty hex string. Verify this works for `respondSerializationSchema
 ### Test: `aave-supply-e2e.test.ts`
 
 **Setup (beforeAll, 60s):**
+
 1. `setupVault()` — allocate parties, upload DAR, create VaultOrchestrator
 2. Fund vault address with test USDC from Aave faucet (`0xC959...`):
    - Call `faucet.mint(USDC, vaultAddress, 10_000e6)` on Sepolia
@@ -410,6 +411,7 @@ returning an empty hex string. Verify this works for `respondSerializationSchema
 6. Exercise `ClaimEvmApprove`
 
 **Test 1: Supply USDC to Aave (300s):**
+
 1. Create `Erc20Holding` via standard deposit flow (or direct create for test)
 2. Exercise `RequestAaveSupply` with holding
 3. Wait for MPC to sign + submit supply tx
@@ -418,6 +420,7 @@ returning an empty hex string. Verify this works for `respondSerializationSchema
 6. Verify on Sepolia: vault address has aUSDC balance > 0
 
 **Test 2: Withdraw from Aave with yield (300s):**
+
 1. Wait a few blocks (yield accrues per block on testnet)
 2. Exercise `RequestAaveWithdraw` with position
 3. Wait for MPC to sign + submit withdraw tx

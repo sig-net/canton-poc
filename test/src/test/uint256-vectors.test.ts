@@ -145,8 +145,19 @@ const VECTORS = {
   pow127: toHex256(1n << 127n),
 
   // --- Audit v2: multiplication ---
-  mulAssocResult1: toHex256(((BigInt("0xdeadbeefcafebabe1234567890abcdef0011223344556677fedcba9876543210") * 0xffn) % (1n << 256n) * 0x10001n) % (1n << 256n)),
-  mulAssocResult2: toHex256(((BigInt("0xa5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5") * ((1n << 128n) + 1n)) % (1n << 256n) * 3n) % (1n << 256n)),
+  mulAssocResult1: toHex256(
+    (((BigInt("0xdeadbeefcafebabe1234567890abcdef0011223344556677fedcba9876543210") * 0xffn) %
+      (1n << 256n)) *
+      0x10001n) %
+      (1n << 256n),
+  ),
+  mulAssocResult2: toHex256(
+    (((BigInt("0xa5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5") *
+      ((1n << 128n) + 1n)) %
+      (1n << 256n)) *
+      3n) %
+      (1n << 256n),
+  ),
   squareDeadbeef: toHex256(0xdeadbeefn * 0xdeadbeefn),
   square2p192p1: toHex256(((1n << 192n) + 1n) ** 2n),
   square2p64m1: toHex256(((1n << 64n) - 1n) ** 2n),
@@ -169,12 +180,12 @@ const VECTORS = {
   divPow252By3Q: toHex256((1n << 252n) / 3n),
   divPow252By7Q: toHex256((1n << 252n) / 7n),
   divPow252ByLimbMaxQ: toHex256((1n << 252n) / ((1n << 28n) - 1n)),
-  div1e18By2Q: toHex256((10n ** 18n) / 2n),
-  div1e18By10Q: toHex256((10n ** 18n) / 10n),
+  div1e18By2Q: toHex256(10n ** 18n / 2n),
+  div1e18By10Q: toHex256(10n ** 18n / 10n),
   divMaxBy100Q: toHex256(((1n << 256n) - 1n) / 100n),
 
   // --- Audit v2: subtraction ---
-  maxMinusOneEth: toHex256(((1n << 256n) - 1n) - (10n ** 18n)),
+  maxMinusOneEth: toHex256((1n << 256n) - 1n - 10n ** 18n),
 
   // --- Audit v2: addChecked boundary ---
   addCheckedS15CarryA: "efffffff00000000000000000000000000000000000000000000000000000000",
@@ -183,7 +194,7 @@ const VECTORS = {
   addCheckedS16CarryB: "1000000100000000000000000000000000000000000000000000000000000000",
 
   // --- Audit v2: euler ---
-  eulerResult: toHex256(((10n ** 18n) + (1n << 128n)) ** 2n),
+  eulerResult: toHex256((10n ** 18n + (1n << 128n)) ** 2n),
 
   // --- Audit v2: compare fallthrough ---
   cmpUpperDominatesA: "100000000000000000000000000000000000000000000000000000000fffffff",
@@ -214,25 +225,53 @@ const VECTORS = {
   mulTwoTimesFive: toHex256(2n * 5n),
 
   // --- Audit v2: simultaneous carry ---
-  simultCarryInput: toHex256(4n * ((1n << 28n) ** 9n) + Array.from({length: 9}, (_, i) => (1n << 27n) * ((1n << 28n) ** BigInt(i))).reduce((a, b) => a + b, 0n)),
-  simultCarryResult: toHex256((4n * ((1n << 28n) ** 9n) + Array.from({length: 9}, (_, i) => (1n << 27n) * ((1n << 28n) ** BigInt(i))).reduce((a, b) => a + b, 0n)) * 2n),
-  simultCarryOvInput: toHex256(8n * ((1n << 28n) ** 9n) + Array.from({length: 9}, (_, i) => (1n << 27n) * ((1n << 28n) ** BigInt(i))).reduce((a, b) => a + b, 0n)),
-  simultCarryOvResult: toHex256((8n * ((1n << 28n) ** 9n) + Array.from({length: 9}, (_, i) => (1n << 27n) * ((1n << 28n) ** BigInt(i))).reduce((a, b) => a + b, 0n)) * 2n),
+  simultCarryInput: toHex256(
+    4n * (1n << 28n) ** 9n +
+      Array.from({ length: 9 }, (_, i) => (1n << 27n) * (1n << 28n) ** BigInt(i)).reduce(
+        (a, b) => a + b,
+        0n,
+      ),
+  ),
+  simultCarryResult: toHex256(
+    (4n * (1n << 28n) ** 9n +
+      Array.from({ length: 9 }, (_, i) => (1n << 27n) * (1n << 28n) ** BigInt(i)).reduce(
+        (a, b) => a + b,
+        0n,
+      )) *
+      2n,
+  ),
+  simultCarryOvInput: toHex256(
+    8n * (1n << 28n) ** 9n +
+      Array.from({ length: 9 }, (_, i) => (1n << 27n) * (1n << 28n) ** BigInt(i)).reduce(
+        (a, b) => a + b,
+        0n,
+      ),
+  ),
+  simultCarryOvResult: toHex256(
+    (8n * (1n << 28n) ** 9n +
+      Array.from({ length: 9 }, (_, i) => (1n << 27n) * (1n << 28n) ** BigInt(i)).reduce(
+        (a, b) => a + b,
+        0n,
+      )) *
+      2n,
+  ),
 
   // --- Audit v2: subChecked boundary ---
   subFullBorrowA: toHex256((1n << 252n) + 1n),
   subFullBorrowResult: toHex256((1n << 252n) + 1n - 2n),
-  subD9AbsorbedA: toHex256(2n * ((1n << 28n) ** 9n) + 1n),
-  subD9AbsorbedB: toHex256(1n * ((1n << 28n) ** 9n) + 2n),
-  subD9AbsorbedResult: toHex256((2n * ((1n << 28n) ** 9n) + 1n) - (1n * ((1n << 28n) ** 9n) + 2n)),
-  subD9UnderflowA: toHex256(1n * ((1n << 28n) ** 9n) + 1n),
-  subD9UnderflowB: toHex256(1n * ((1n << 28n) ** 9n) + 2n),
-  subOnlyL9A: toHex256(3n * ((1n << 28n) ** 9n) + 5n),
-  subOnlyL9B: toHex256(5n * ((1n << 28n) ** 9n) + 3n),
-  subOnlyL9Result2: toHex256(((3n * ((1n << 28n) ** 9n) + 5n) - (5n * ((1n << 28n) ** 9n) + 3n) + (1n << 256n)) % (1n << 256n)),
+  subD9AbsorbedA: toHex256(2n * (1n << 28n) ** 9n + 1n),
+  subD9AbsorbedB: toHex256(1n * (1n << 28n) ** 9n + 2n),
+  subD9AbsorbedResult: toHex256(2n * (1n << 28n) ** 9n + 1n - (1n * (1n << 28n) ** 9n + 2n)),
+  subD9UnderflowA: toHex256(1n * (1n << 28n) ** 9n + 1n),
+  subD9UnderflowB: toHex256(1n * (1n << 28n) ** 9n + 2n),
+  subOnlyL9A: toHex256(3n * (1n << 28n) ** 9n + 5n),
+  subOnlyL9B: toHex256(5n * (1n << 28n) ** 9n + 3n),
+  subOnlyL9Result2: toHex256(
+    (3n * (1n << 28n) ** 9n + 5n - (5n * (1n << 28n) ** 9n + 3n) + (1n << 256n)) % (1n << 256n),
+  ),
 
   // --- Audit v2: boundary l0 inline results ---
-  bndL0BmTwoPlusBmOne: toHex256(((1n << 28n) - 2n) + ((1n << 28n) - 1n)),
+  bndL0BmTwoPlusBmOne: toHex256((1n << 28n) - 2n + ((1n << 28n) - 1n)),
   bndL0BmOneSquared: toHex256(((1n << 28n) - 1n) ** 2n),
 
   // --- Audit v2: div quotients ---
@@ -1156,7 +1195,7 @@ describe("UInt256 arithmetic vectors (cross-language ground truth)", () => {
       const a = BigInt("0xdeadbeefcafebabe1234567890abcdef0011223344556677fedcba9876543210");
       const b = 0xffn;
       const c = 0x10001n;
-      const lhs = toHex256((a * b) % (1n << 256n) * c);
+      const lhs = toHex256(((a * b) % (1n << 256n)) * c);
       const rhs = toHex256(a * ((b * c) % (1n << 256n)));
       expect(lhs).toBe(rhs);
       expect(lhs).toBe(VECTORS.mulAssocResult1);
@@ -1166,7 +1205,7 @@ describe("UInt256 arithmetic vectors (cross-language ground truth)", () => {
       const a = BigInt("0xa5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5");
       const b = (1n << 128n) + 1n;
       const c = 3n;
-      const lhs = toHex256((a * b) % (1n << 256n) * c);
+      const lhs = toHex256(((a * b) % (1n << 256n)) * c);
       const rhs = toHex256(a * ((b * c) % (1n << 256n)));
       expect(lhs).toBe(rhs);
       expect(lhs).toBe(VECTORS.mulAssocResult2);
@@ -1354,13 +1393,18 @@ describe("UInt256 arithmetic vectors (cross-language ground truth)", () => {
       expect((1n << 252n) % d).toBe(1n);
     });
     it("1e18/2: r=0", () => {
-      expect(toHex256((10n ** 18n) / 2n)).toBe(VECTORS.div1e18By2Q);
+      expect(toHex256(10n ** 18n / 2n)).toBe(VECTORS.div1e18By2Q);
     });
     it("1e18/10: r=0", () => {
-      expect(toHex256((10n ** 18n) / 10n)).toBe(VECTORS.div1e18By10Q);
+      expect(toHex256(10n ** 18n / 10n)).toBe(VECTORS.div1e18By10Q);
     });
     it("powers of 2 sweep", () => {
-      for (const [k, rExpected] of [[2, 3], [3, 7], [5, 31], [8, 255]] as [number, number][]) {
+      for (const [k, rExpected] of [
+        [2, 3],
+        [3, 7],
+        [5, 31],
+        [8, 255],
+      ] as [number, number][]) {
         const d = 1n << BigInt(k);
         const q = UINT256_MAX / d;
         const r = UINT256_MAX % d;
@@ -1436,7 +1480,7 @@ describe("UInt256 arithmetic vectors (cross-language ground truth)", () => {
       expect(toHex256(0n - UINT256_MAX)).toBe(VECTORS.one);
     });
     it("max - oneEth", () => {
-      expect(toHex256(UINT256_MAX - (10n ** 18n))).toBe(VECTORS.maxMinusOneEth);
+      expect(toHex256(UINT256_MAX - 10n ** 18n)).toBe(VECTORS.maxMinusOneEth);
     });
     it("2^224 - 1 (borrow through l0..l7)", () => {
       expect(toHex256((1n << 224n) - 1n)).toBe(VECTORS.pow224MinusOne);
@@ -1566,7 +1610,7 @@ describe("UInt256 arithmetic vectors (cross-language ground truth)", () => {
   describe("Boundary l0 inline anchors", () => {
     it("(B-2)+(B-1) carry into l1", () => {
       const B = 1n << 28n;
-      expect(toHex256((B - 2n) + (B - 1n))).toBe(VECTORS.bndL0BmTwoPlusBmOne);
+      expect(toHex256(B - 2n + (B - 1n))).toBe(VECTORS.bndL0BmTwoPlusBmOne);
     });
     it("(B-1)^2", () => {
       const B = 1n << 28n;
@@ -1591,7 +1635,9 @@ describe("UInt256 arithmetic vectors (cross-language ground truth)", () => {
   describe("Squaring sweep", () => {
     // CPython test_long.py checks (2^k-1)^2 == 2^(2k) - 2^(k+1) + 1 for k=1..399
     // We check at every limb boundary (28n multiples) plus key positions
-    const kValues = [1, 4, 14, 27, 28, 32, 56, 64, 84, 96, 112, 127, 128, 140, 168, 192, 196, 224, 252, 255];
+    const kValues = [
+      1, 4, 14, 27, 28, 32, 56, 64, 84, 96, 112, 127, 128, 140, 168, 192, 196, 224, 252, 255,
+    ];
     for (const k of kValues) {
       it(`(2^${k}-1)^2 identity`, () => {
         const val = (1n << BigInt(k)) - 1n;
@@ -1610,7 +1656,14 @@ describe("UInt256 arithmetic vectors (cross-language ground truth)", () => {
   // -------------------------------------------------------------------------
   describe("Karatsuba identity sweep", () => {
     // (2^a-1)*(2^b-1) = 2^(a+b) - 2^a - 2^b + 1
-    const pairs: [number, number][] = [[64, 64], [64, 192], [128, 128], [192, 64], [252, 4], [140, 112]];
+    const pairs: [number, number][] = [
+      [64, 64],
+      [64, 192],
+      [128, 128],
+      [192, 64],
+      [252, 4],
+      [140, 112],
+    ];
     for (const [a, b] of pairs) {
       it(`(2^${a}-1)*(2^${b}-1)`, () => {
         const va = (1n << BigInt(a)) - 1n;
