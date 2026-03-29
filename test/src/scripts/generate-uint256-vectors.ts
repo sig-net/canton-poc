@@ -252,7 +252,7 @@ describe("Near-boundary sweep (l0/l4/l9 limb positions)", () => {
 
 function buildDamlFragment(fuzz: FuzzVector[], boundary: BoundaryVector[]): string {
   const lines: string[] = [];
-  const subset = fuzz.slice(0, 10);
+  const subset = fuzz;
 
   lines.push(`
 -- ---------------------------------------------------------------------------
@@ -285,7 +285,7 @@ function buildDamlFragment(fuzz: FuzzVector[], boundary: BoundaryVector[]): stri
 
   // Fuzz test function
   lines.push(`-- ---------------------------------------------------------------------------`);
-  lines.push(`-- 48. Frozen fuzz vectors (10 of 50)`);
+  lines.push(`-- 48. Frozen fuzz vectors (50 random pairs)`);
   lines.push(`-- ---------------------------------------------------------------------------`);
   lines.push(``);
   lines.push(`testFrozenFuzz : Script ()`);
