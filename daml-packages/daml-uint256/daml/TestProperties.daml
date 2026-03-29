@@ -1,0 +1,241 @@
+-- | Property-based tests for UInt256 using DA.Random.Minstd as PRNG.
+-- Tests algebraic properties that must hold for ANY input, no oracle needed.
+module TestProperties where
+
+import Daml.Script
+import DA.Foldable (forA_)
+import DA.Random (Minstd, minstd_init, minstd_rand)
+import UInt256
+
+-- ---------------------------------------------------------------------------
+-- PRNG helpers: build random UInt256 values from Minstd state
+-- ---------------------------------------------------------------------------
+
+-- | Generate a random UInt256 from the PRNG state.
+-- Each of the 9 lower limbs gets a value in [0, 2^28-2],
+-- the top limb (4 bits) gets a value in [0, 14].
+-- Slight range reduction vs full limb range is fine for property testing.
+randUint256 : Minstd -> (Minstd, UInt256)
+randUint256 s0 =
+  let limbMax = 268435455  -- 2^28 - 1
+      topMax = 15          -- l9 max (4 bits)
+      (s1, v0) = minstd_rand limbMax s0
+      (s2, v1) = minstd_rand limbMax s1
+      (s3, v2) = minstd_rand limbMax s2
+      (s4, v3) = minstd_rand limbMax s3
+      (s5, v4) = minstd_rand limbMax s4
+      (s6, v5) = minstd_rand limbMax s5
+      (s7, v6) = minstd_rand limbMax s6
+      (s8, v7) = minstd_rand limbMax s7
+      (s9, v8) = minstd_rand limbMax s8
+      (s10, v9) = minstd_rand topMax s9
+  in (s10, UInt256 with limbs = [v0, v1, v2, v3, v4, v5, v6, v7, v8, v9])
+
+-- | Generate N random pairs.
+randPairs : Int -> Minstd -> [(UInt256, UInt256)]
+randPairs 0 _ = []
+randPairs n s =
+  let (s1, a) = randUint256 s
+      (s2, b) = randUint256 s1
+  in (a, b) :: randPairs (n - 1) s2
+
+-- | Generate N random triples.
+randTriples : Int -> Minstd -> [(UInt256, UInt256, UInt256)]
+randTriples 0 _ = []
+randTriples n s =
+  let (s1, a) = randUint256 s
+      (s2, b) = randUint256 s1
+      (s3, c) = randUint256 s2
+  in (a, b, c) :: randTriples (n - 1) s3
+
+-- | Convert a small non-negative Int to UInt256.
+uint256FromSmallInt : Int -> UInt256
+uint256FromSmallInt n = UInt256 with limbs = [n, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+-- ---------------------------------------------------------------------------
+-- Seeds and test data (deterministic)
+-- ---------------------------------------------------------------------------
+
+seed : Minstd
+seed = minstd_init 12345
+
+pairs100 : [(UInt256, UInt256)]
+pairs100 = randPairs 100 seed
+
+triples50 : [(UInt256, UInt256, UInt256)]
+triples50 = randTriples 50 (minstd_init 67890)
+
+-- ---------------------------------------------------------------------------
+-- Addition properties
+-- ---------------------------------------------------------------------------
+
+-- | a + b == b + a
+testPropAddCommutative : Script ()
+testPropAddCommutative = forA_ pairs100 $ \(a, b) ->
+  assertMsg "prop: add commutative" (uint256Add a b == uint256Add b a)
+
+-- | (a + b) + c == a + (b + c)
+testPropAddAssociative : Script ()
+testPropAddAssociative = forA_ triples50 $ \(a, b, c) ->
+  assertMsg "prop: add associative"
+    (uint256Add (uint256Add a b) c == uint256Add a (uint256Add b c))
+
+-- | a + 0 == a
+testPropAddIdentity : Script ()
+testPropAddIdentity = forA_ pairs100 $ \(a, _) ->
+  assertMsg "prop: add identity" (uint256Add a uint256Zero == a)
+
+-- ---------------------------------------------------------------------------
+-- Subtraction properties
+-- ---------------------------------------------------------------------------
+
+-- | a - 0 == a
+testPropSubIdentity : Script ()
+testPropSubIdentity = forA_ pairs100 $ \(a, _) ->
+  assertMsg "prop: sub identity" (uint256Sub a uint256Zero == a)
+
+-- | a - a == 0
+testPropSelfSub : Script ()
+testPropSelfSub = forA_ pairs100 $ \(a, _) ->
+  assertMsg "prop: self sub" (uint256Sub a a == uint256Zero)
+
+-- | a + (0 - a) == 0  (additive inverse under mod 2^256)
+testPropAdditiveInverse : Script ()
+testPropAdditiveInverse = forA_ pairs100 $ \(a, _) ->
+  assertMsg "prop: additive inverse"
+    (uint256Add a (uint256Sub uint256Zero a) == uint256Zero)
+
+-- | (a + b) - b == a
+testPropAddSubInverse : Script ()
+testPropAddSubInverse = forA_ pairs100 $ \(a, b) ->
+  assertMsg "prop: add-sub inverse"
+    (uint256Sub (uint256Add a b) b == a)
+
+-- | (a - b) + b == a
+testPropSubAddInverse : Script ()
+testPropSubAddInverse = forA_ pairs100 $ \(a, b) ->
+  assertMsg "prop: sub-add inverse"
+    (uint256Add (uint256Sub a b) b == a)
+
+-- | (a - b) + (b - a) == 0
+testPropAntiSymmetry : Script ()
+testPropAntiSymmetry = forA_ pairs100 $ \(a, b) ->
+  assertMsg "prop: anti-symmetry"
+    (uint256Add (uint256Sub a b) (uint256Sub b a) == uint256Zero)
+
+-- ---------------------------------------------------------------------------
+-- Multiplication properties
+-- ---------------------------------------------------------------------------
+
+-- | a * b == b * a
+testPropMulCommutative : Script ()
+testPropMulCommutative = forA_ pairs100 $ \(a, b) ->
+  assertMsg "prop: mul commutative" (uint256Mul a b == uint256Mul b a)
+
+-- | (a * b) * c == a * (b * c)
+testPropMulAssociative : Script ()
+testPropMulAssociative = forA_ triples50 $ \(a, b, c) ->
+  assertMsg "prop: mul associative"
+    (uint256Mul (uint256Mul a b) c == uint256Mul a (uint256Mul b c))
+
+-- | a * 1 == a
+testPropMulIdentity : Script ()
+testPropMulIdentity = forA_ pairs100 $ \(a, _) ->
+  assertMsg "prop: mul identity" (uint256Mul a uint256One == a)
+
+-- | a * 0 == 0
+testPropMulZero : Script ()
+testPropMulZero = forA_ pairs100 $ \(a, _) ->
+  assertMsg "prop: mul zero" (uint256Mul a uint256Zero == uint256Zero)
+
+-- | a * 2 == a + a
+testPropDoubleEqualsAddSelf : Script ()
+testPropDoubleEqualsAddSelf = forA_ pairs100 $ \(a, _) ->
+  let two = UInt256 with limbs = [2, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+  in assertMsg "prop: a*2 == a+a"
+    (uint256Mul a two == uint256Add a a)
+
+-- ---------------------------------------------------------------------------
+-- Distributivity
+-- ---------------------------------------------------------------------------
+
+-- | a * (b + c) == a*b + a*c
+testPropDistributive : Script ()
+testPropDistributive = forA_ triples50 $ \(a, b, c) ->
+  assertMsg "prop: distributive"
+    (uint256Mul a (uint256Add b c) == uint256Add (uint256Mul a b) (uint256Mul a c))
+
+-- | (b + c) * a == b*a + c*a
+testPropLeftDistributive : Script ()
+testPropLeftDistributive = forA_ triples50 $ \(a, b, c) ->
+  assertMsg "prop: left distributive"
+    (uint256Mul (uint256Add b c) a == uint256Add (uint256Mul b a) (uint256Mul c a))
+
+-- ---------------------------------------------------------------------------
+-- Comparison properties
+-- ---------------------------------------------------------------------------
+
+-- | compare a a == EQ
+testPropCompareReflexive : Script ()
+testPropCompareReflexive = forA_ pairs100 $ \(a, _) ->
+  assertMsg "prop: compare reflexive" (uint256Compare a a == EQ)
+
+-- | if a < b then b > a (and vice versa)
+testPropCompareAntiSym : Script ()
+testPropCompareAntiSym = forA_ pairs100 $ \(a, b) ->
+  assertMsg "prop: compare anti-symmetric"
+    (case uint256Compare a b of
+       LT -> uint256Compare b a == GT
+       GT -> uint256Compare b a == LT
+       EQ -> uint256Compare b a == EQ)
+
+-- ---------------------------------------------------------------------------
+-- Hex round-trip
+-- ---------------------------------------------------------------------------
+
+-- | fromHex(toHex(a)) == a
+testPropHexRoundTrip : Script ()
+testPropHexRoundTrip = forA_ pairs100 $ \(a, _) ->
+  assertMsg "prop: hex round-trip" (uint256FromHex (uint256ToHex a) == a)
+
+-- ---------------------------------------------------------------------------
+-- Division invariant
+-- ---------------------------------------------------------------------------
+
+-- | Generate N random (UInt256, small-divisor) pairs for division testing.
+randDivPairs : Int -> Minstd -> [(UInt256, Int)]
+randDivPairs 0 _ = []
+randDivPairs n s =
+  let (s1, a) = randUint256 s
+      (s2, d) = minstd_rand 268435454 s1  -- d in [0, 2^28-2]
+  in (a, d + 1) :: randDivPairs (n - 1) s2  -- d+1 ensures d >= 1
+
+divPairs100 : [(UInt256, Int)]
+divPairs100 = randDivPairs 100 (minstd_init 99999)
+
+-- | q*d + r == a  (for random small divisors in [1, 2^28-1])
+testPropDivInvariant : Script ()
+testPropDivInvariant =
+  forA_ divPairs100 $ \(a, d) -> do
+    let (q, r) = uint256DivInt a d
+        reconstructed = uint256Add (uint256Mul q (uint256FromSmallInt d)) (uint256FromSmallInt r)
+    assertMsg "prop: div invariant q*d+r==a" (reconstructed == a)
+
+-- ---------------------------------------------------------------------------
+-- Checked arithmetic consistency
+-- ---------------------------------------------------------------------------
+
+-- | If addChecked reports overflow, result < a
+testPropOverflowConsistency : Script ()
+testPropOverflowConsistency = forA_ pairs100 $ \(a, b) ->
+  let (result, overflow) = uint256AddChecked a b
+  in if overflow
+     then assertMsg "prop: overflow means result < a" (uint256Lt result a)
+     else pure ()
+
+-- | Checked variants produce the same value as unchecked
+testPropCheckedConsistency : Script ()
+testPropCheckedConsistency = forA_ pairs100 $ \(a, b) -> do
+  assertMsg "prop: addChecked==add" (fst (uint256AddChecked a b) == uint256Add a b)
+  assertMsg "prop: subChecked==sub" (fst (uint256SubChecked a b) == uint256Sub a b)
+  assertMsg "prop: mulChecked==mul" (fst (uint256MulChecked a b) == uint256Mul a b)

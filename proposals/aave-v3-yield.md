@@ -603,3 +603,372 @@ AAVE_POOL_ADDRESS=0x6Ae43d3271ff6888e7Fc43Fd7321a503ff738951
 AAVE_FAUCET_ADDRESS=0xC959483DBa39aa9E78757139af0e9a2EDEb3f42D
 STATA_USDC_ADDRESS=0x8A88124522dbBF1E56352ba3DE1d9F78C143751e
 ```
+
+## Open Concern: Untracked ERC-20 Approvals
+
+### The Problem
+
+The current `RequestEvmApprove` / `ClaimEvmApprove` flow signs and submits
+an `approve()` transaction but **does not create any Canton contract to
+record that the approval exists**. After `ClaimEvmApprove` archives the
+pending tx and signatures, Canton has no record that the user's derived
+address has granted spending permission to a DeFi protocol.
+
+### The Core Attack: Phantom Holdings
+
+ERC-20 `approve(spender, amount)` grants the `spender` the ability to call
+`transferFrom(owner, recipient, amount)` **at any time, without the owner's
+involvement**. The spender does not need the owner's private key or MPC
+signature — they call `transferFrom` from their own account.
+
+**Attack scenario (no spender allowlist):**
+
+```
+1. User has Erc20Holding(USDC, 100) on Canton
+   → user's derived address 0xABC holds 100 USDC on Sepolia
+
+2. User exercises RequestEvmApprove(USDC, spender=0xMyPersonalEOA, max)
+   → MPC signs approve tx
+   → 0xABC has approved 0xMyPersonalEOA to spend unlimited USDC
+
+3. User calls USDC.transferFrom(0xABC, 0xMyPersonalEOA, 100) from their
+   personal EOA on Sepolia — this is a normal Ethereum tx, no MPC needed
+   → tokens leave 0xABC
+
+4. Canton still shows Erc20Holding(USDC, 100) — PHANTOM BALANCE
+   The holding is backed by nothing. Canton has no idea the tokens are gone.
+```
+
+The critical insight: **the `transferFrom` call bypasses Canton entirely**.
+It's executed by the spender (not the owner), so it doesn't need the MPC
+key. Canton never sees it.
+
+**Even with protocol-only spenders (stataToken, SwapRouter02):** the risk
+is lower because these contracts only call `transferFrom` inside their own
+functions (deposit, swap), and they pull from `msg.sender` — meaning
+someone would need the MPC key to be `msg.sender`. But the fundamental
+concern remains: any approved spender can move tokens off-chain without
+Canton knowing.
+
+### Additional Risks
+
+- **No auditability.** The issuer cannot answer "which DeFi protocols can
+  currently spend User X's USDC?" — a compliance and risk management
+  failure for institutional custody.
+- **No policy enforcement.** Without tracking, Canton cannot validate that
+  an approval was granted before allowing a supply/swap operation.
+- **Protocol compromise.** If the stataToken proxy is upgraded to a
+  malicious implementation (governance attack, admin key theft), the
+  attacker could drain all approved balances via `transferFrom`. This has
+  happened in production — Paraswap Augustus V6 (March 2024) saw users
+  drained via outstanding approvals months after their last interaction.
+
+### Mitigating Factors in This Architecture
+
+- **Per-user derived addresses.** A compromised approval on Alice's address
+  cannot affect Bob's tokens.
+- **Protocol contracts pull from `msg.sender`.** stataToken's `deposit()`
+  calls `transferFrom(msg.sender, ...)` — a third party calling
+  `deposit()` from their own account pulls from _their_ balance, not the
+  derived address. Exploiting the approval requires being `msg.sender` from
+  the derived address, which requires the MPC key.
+- **The approve race condition is a non-issue.** The spender is a protocol
+  contract, not an adversarial EOA.
+
+### Three Options for Making Canton Aware
+
+#### Option 1: Track Approvals as Canton Contracts (recommended)
+
+Add an `Erc20Approval` template that records active approvals on the ledger.
+
+```daml
+template Erc20Approval
+  with
+    issuer       : Party
+    owner        : Party
+    tokenAddress : BytesHex
+    spender      : BytesHex
+    amount       : BytesHex
+  where
+    signatory issuer
+    observer owner
+```
+
+`ClaimEvmApprove` creates this contract after a successful approve tx.
+Revocations (approve with amount=0) archive it. `RequestAaveSupply` and
+`RequestUniswapSwap` can fetch the approval to verify it exists before
+signing (defense in depth).
+
+The `RequestEvmApprove` choice should also enforce a **spender allowlist**
+— only issuer-whitelisted contract addresses (stataToken, SwapRouter02)
+can be approved. This prevents users from approving arbitrary addresses.
+
+| Pros                                                         | Cons                                                                                                           |
+| ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
+| Full audit trail on Canton                                   | Drift: on-chain allowance decreases as protocols call `transferFrom`, Canton doesn't track remaining allowance |
+| Spender allowlist in Daml                                    | Adding `Erc20Approval` + new `TxSource` variant is an incompatible DAR upgrade                                 |
+| Policy enforcement before MPC signing                        |                                                                                                                |
+| Matches institutional custody patterns (Fireblocks, Fordefi) |                                                                                                                |
+
+**Drift is manageable:** Canton only needs to know _that_ an approval was
+granted, not the exact remaining allowance. If the on-chain allowance is
+insufficient, the DeFi call reverts and the MPC outcome reports failure.
+
+#### Option 2: Query On-Chain Allowance at Request Time
+
+TypeScript queries `allowance(owner, spender)` before exercising a Canton
+choice and passes the value as a parameter. The Daml choice asserts the
+allowance is sufficient.
+
+| Pros                                       | Cons                                                                                                                                                   |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| No new Daml templates                      | **Fundamentally broken**: the value is user-supplied — Canton cannot verify it. A malicious user can pass `0xFFFF...` regardless of the real allowance |
+| Reflects actual on-chain state (if honest) | TOCTOU race: allowance can change between query and execution                                                                                          |
+|                                            | No audit trail                                                                                                                                         |
+|                                            | The check is redundant — if allowance is insufficient, the on-chain call reverts anyway                                                                |
+
+**Not recommended.** Provides no security that on-chain execution doesn't
+already provide.
+
+#### Option 3: Eliminate Standalone Approvals via EIP-2612 `permit()`
+
+Use `permit(owner, spender, value, deadline, v, r, s)` to combine the
+approval signature with the DeFi action in a single transaction. No
+lingering approval sits on-chain.
+
+| Pros                                           | Cons                                                                          |
+| ---------------------------------------------- | ----------------------------------------------------------------------------- |
+| No lingering approvals — single-use permission | Requires extending MPC service for EIP-712 signing (non-trivial)              |
+| Strongest security guarantee                   | Not all tokens support EIP-2612 (USDT does not)                               |
+| One fewer EVM transaction                      | V1 `StaticATokenLM` on Sepolia may not support permit-based deposit           |
+|                                                | Still needs Canton tracking for auditability — ends up adding Option 1 anyway |
+
+**Good future optimization** for supported tokens, but not the primary
+mechanism for the PoC.
+
+### Recommendation
+
+**Option 1** for the PoC. The MPC architecture already neutralizes direct
+exploit paths, so the main value of tracking is **auditability and policy
+enforcement** — both hard requirements for institutional custody. Option 3
+can be layered on later as an optimization for EIP-2612 tokens.
+
+Concrete additions needed:
+
+- `Erc20Approval` template
+- Spender allowlist (hardcoded known protocol addresses, or issuer-managed
+  `AllowedSpender` contracts)
+- `ClaimEvmApprove` creates/replaces `Erc20Approval`
+- `RequestAaveSupply` / `RequestUniswapSwap` fetch approval as pre-check
+- Consider **exact-amount approvals** instead of max uint256 for production
+  (limits blast radius if a protocol is compromised)
+
+### Cleaning Dirty Holdings (Revoking Approvals)
+
+When a user has an active `Erc20Approval` for a token, their `Erc20Holding`
+for that token is "dirty" — a third-party spender could drain the backing
+tokens via `transferFrom`, making the Canton holding a phantom balance.
+
+**Two cleaning approaches:**
+
+| Approach                                            | How                                             | Gas Cost              | Complexity                                             |
+| --------------------------------------------------- | ----------------------------------------------- | --------------------- | ------------------------------------------------------ |
+| **Revoke approval** (`approve(spender, 0)`)         | One cheap storage write                         | ~46k gas              | Low — reuse existing `RequestEvmApprove` with amount=0 |
+| **Transfer to new address** (fresh derivation path) | Transfer all tokens + fund new address with ETH | ~65k + ETH funding tx | High — path proliferation, multi-token fragmentation   |
+
+**Recommendation: Revoke, not transfer.** Revoke is cheaper, simpler, and
+solves the actual problem (the approval). Transfer-to-new-address creates
+derivation path proliferation and fragments holdings across addresses.
+Reserve address rotation for key compromise scenarios only.
+
+**Canton enforcement pattern:**
+
+1. `RequestEvmWithdrawal` should require that no active `Erc20Approval`
+   contracts exist for the holding's token + owner. The caller passes
+   `activeApprovals : [ContractId Erc20Approval]` and Canton asserts it's
+   empty. If the user wants to withdraw, they must revoke all approvals
+   first.
+2. DeFi operations (`RequestAaveSupply`, `RequestUniswapSwap`) are allowed
+   WITH active approvals — the approval is required for the operation.
+3. After completing a DeFi position (e.g., Aave withdraw), the user should
+   revoke the stataToken approval to return the holding to "clean" state.
+
+### Beyond Approvals: Other Bypass Vectors
+
+A full audit of all ways tokens can leave an EOA without the MPC signing
+a transaction reveals that `approve + transferFrom` is the primary risk,
+but not the only one.
+
+#### Vectors That Can Bypass MPC
+
+| #   | Vector                 | Mechanism                                                                                     | Risk     | Mitigation                                                                           | Learn More                                                                                                                                                                                                                                                         |
+| --- | ---------------------- | --------------------------------------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | **ERC-20 approve**     | Approved spender calls `transferFrom` without owner's key                                     | High     | Spender allowlist + `Erc20Approval` tracking                                         | [ERC-20 Approve Pattern](https://speedrunethereum.com/guides/erc20-approve-pattern), [Unlimited Approvals Considered Harmful](https://kalis.me/unlimited-erc20-allowances/)                                                                                        |
+| 2   | **EIP-2612 permit**    | Off-chain EIP-712 signature creates approval — anyone can submit the `permit()` call on-chain | High     | MPC must only sign RLP-encoded txs, never arbitrary EIP-712 messages                 | [EIP-2612 Spec](https://eips.ethereum.org/EIPS/eip-2612), [Approval Vulnerabilities (SCSFG)](https://scsfg.io/hackers/approvals/)                                                                                                                                  |
+| 3   | **Permit2 (Uniswap)**  | Standing `AllowanceTransfer` lets approved spenders drain without further signatures          | High     | Never approve tokens to Permit2; use `SignatureTransfer` path with per-tx signatures | [Permit2 Overview (Uniswap)](https://docs.uniswap.org/contracts/permit2/overview), [ChainSecurity Audit](https://www.chainsecurity.com/security-audit/uniswap-permit2), [What is Permit2 (Revoke.cash)](https://revoke.cash/learn/approvals/what-is-permit2)       |
+| 4   | **Token admin (USDT)** | `destroyBlackFunds(addr)` burns tokens at any blacklisted address                             | Critical | Token whitelist; accept as trust assumption                                          | [USDT Blacklisting Analysis (BlockSec)](https://blocksec.com/blog/1-26-billion-frozen-usdt-blacklisting-on-ethereum-and-tron-in-2025), [USDT Code Breakdown](https://medium.com/coinmonks/decoding-the-tether-usdt-an-in-depth-look-at-the-usdt-code-0f50c994bf81) |
+| 5   | **Token admin (USDC)** | `blacklist(addr)` freezes address — tokens exist but immovable                                | High     | Same — trust assumption for centralized stablecoins                                  | [Circle USDC Source](https://github.com/circlefin/stablecoin-evm), [Tornado Cash Blacklist](https://cryptoslate.com/circle-blacklists-all-tornado-cash-eth-addresses-effectively-freezing-usdc/)                                                                   |
+| 6   | **Proxy upgrade**      | Proxy admin deploys new implementation with arbitrary drain functions                         | Medium   | Monitor `Upgraded` events; prefer non-upgradeable tokens (DAI, WETH)                 | [OpenZeppelin Proxy Patterns](https://docs.openzeppelin.com/upgrades-plugins/proxies), [Proxy Security Best Practices (CertiK)](https://www.certik.com/resources/blog/FnfYrOCsy3MG9s9gixfbJ-upgradeable-proxy-contract-security-best-practices)                    |
+| 7   | **ERC-777 operators**  | Default operators can move tokens for ALL holders without authorization                       | Low      | Reject ERC-777 tokens via token whitelist                                            | [EIP-777 Spec](https://eips.ethereum.org/EIPS/eip-777), [ERC-777 Reentrancy Issues](https://blog.openzeppelin.com/exploiting-uniswap-from-reentrancy-to-actual-profit)                                                                                             |
+| 8   | **MPC key compromise** | Attacker signs arbitrary txs from derived address — Canton never sees them                    | Critical | MPC key security + nonce monitoring + on-chain reconciliation                        | [Trail of Bits: Breaking Aave Upgradeability](https://blog.trailofbits.com/2020/12/16/breaking-aave-upgradeability/) (analogous: key compromise in crypto systems)                                                                                                 |
+
+#### Vectors That CANNOT Bypass MPC (EOA is safe)
+
+| #   | Vector                                       | Why It's Safe                                                                                  | Learn More                                                                                     |
+| --- | -------------------------------------------- | ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| 9   | Flashloan callbacks                          | EOA has no code — callbacks are no-ops                                                         | [Aave Flashloan Docs](https://aave.com/docs/aave-v3/smart-contracts/flash-loans)               |
+| 10  | Delegatecall                                 | Only contracts can execute delegatecall, not EOAs                                              | [Solidity Delegatecall](https://solidity-by-example.org/delegatecall/)                         |
+| 11  | SELFDESTRUCT/CREATE2                         | Cannot deploy code at an EOA address; ERC-20 balances stored in token contract, not holder     | [EIP-684](https://eips.ethereum.org/EIPS/eip-684)                                              |
+| 12  | Reentrancy                                   | EOA has no re-entrant functions                                                                | [Reentrancy Attacks (SWC)](https://swcregistry.io/docs/SWC-107/)                               |
+| 13  | Storage manipulation                         | Cannot modify another contract's storage from outside                                          | [EVM Storage Layout](https://docs.soliditylang.org/en/latest/internals/layout_in_storage.html) |
+| 14  | Non-standard functions (`increaseAllowance`) | Canton uses function signature allowlist, not blocklist — anything != `transfer` is rejected   | [Weird ERC20 Tokens (d-xo)](https://github.com/d-xo/weird-erc20)                               |
+| 15  | Inbound token drift                          | Tokens can arrive without MPC (not an outflow risk) — causes Canton balance < on-chain balance | [ERC-20 Spec](https://eips.ethereum.org/EIPS/eip-20)                                           |
+
+#### Token Admin Powers (Reference)
+
+| Token         | Freeze             | Burn/Destroy                                          | Move | Upgradeable      | Source                                                                                                            |
+| ------------- | ------------------ | ----------------------------------------------------- | ---- | ---------------- | ----------------------------------------------------------------------------------------------------------------- |
+| **USDC**      | Yes (blacklist)    | No (but upgrade could add)                            | No   | Yes (proxy)      | [circlefin/stablecoin-evm](https://github.com/circlefin/stablecoin-evm)                                           |
+| **USDT**      | Yes (addBlackList) | **Yes** (destroyBlackFunds — $698M destroyed in 2025) | No   | No               | [BlockSec analysis](https://blocksec.com/blog/1-26-billion-frozen-usdt-blacklisting-on-ethereum-and-tron-in-2025) |
+| **DAI**       | No                 | No                                                    | No   | No               | [MakerDAO DAI docs](https://docs.makerdao.com/smart-contract-modules/dai-module/dai-detailed-documentation)       |
+| **WETH**      | No                 | No                                                    | No   | No (immutable)   | [WETH9 on Etherscan](https://etherscan.io/address/0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2)                     |
+| **aUSDC**     | No                 | No                                                    | No   | Yes (governance) | [Aave AToken.sol](https://github.com/aave/aave-v3-core/blob/master/contracts/protocol/tokenization/AToken.sol)    |
+| **stataUSDC** | No                 | No                                                    | No   | Yes (governance) | [BGD stataToken v3](https://governance.aave.com/t/bgd-statatoken-v3/11894)                                        |
+
+#### Further Reading
+
+- [Quantifying the Risk of Unlimited ERC-20 Approval (arXiv)](https://arxiv.org/pdf/2207.01790) — academic study of approval risks
+- [Trail of Bits: Token Integration Checklist](https://secure-contracts.com/development-guidelines/token_integration.html) — security checklist for non-standard tokens
+- [Convenience vs Security: Unlimited Approval (BlockSec)](https://blocksec.com/blog/tradeoff-between-convenience-and-security-unlimited-approval-in-erc-20)
+- [Resolving the Multiple Withdrawal Attack on ERC20 (arXiv)](https://arxiv.org/pdf/1907.00903) — the approve race condition paper
+- [Fireblocks DeFi Security Suite](https://www.fireblocks.com/platforms/defi) — how institutional custody handles DeFi approvals
+- [ParaSwap Augustus V6 Post-Mortem](https://veloradex.medium.com/post-mortem-augustus-v6-vulnerability-of-march-20th-2024-5df663a4bf01) — real-world approval exploit ($1.1M drained)
+- [PEPE Holder Permit2 Phishing ($1.39M)](https://decrypt.co/286076/pepe-uniswap-permit2-phishing-attack) — Permit2 signature phishing
+- [Weird ERC20 Tokens Catalog (d-xo)](https://github.com/d-xo/weird-erc20) — non-standard token behaviors
+
+### Solution: Two-Address Custody Model
+
+The approval problem is solved by separating **DeFi execution** (untrusted,
+may have approvals) from **Canton trading** (vault-backed, guaranteed).
+This mirrors the CEX model and matches how every major bridge handles
+custody.
+
+#### Two Address Types
+
+| Address                   | Name                 | Path              | Who controls            | Approvals?            | Canton trusts it?                       |
+| ------------------------- | -------------------- | ----------------- | ----------------------- | --------------------- | --------------------------------------- |
+| **User DeFi Address**     | Per-user derived EOA | `"{user},{path}"` | MPC (on user's behalf)  | Yes — needed for DeFi | **No** — balance may not match Canton   |
+| **Vault Custody Address** | Shared root address  | `"root"`          | MPC (issuer-controlled) | **Never**             | **Yes** — sole source of `Erc20Holding` |
+
+The vault address **never calls `approve()`**. It only executes `transfer()`
+to move tokens in/out. This is the same pattern every bridge uses
+(LayerZero, Wormhole, Chainlink CCIP, Axelar) — the custody contract never
+grants allowances, making `transferFrom`-based drainage impossible.
+
+#### Custody Sweep: User DeFi Address → Vault
+
+When tokens arrive at the user's DeFi address (from Aave, Uniswap, etc.),
+they are **not yet tradeable on Canton**. The user must sweep them to the
+vault — exactly like the existing deposit flow:
+
+```
+ User DeFi Address              Vault                          Canton
+ (0xABC, untrusted)             (0xROOT, no approvals)         (Daml ledger)
+ |                              |                              |
+ | stataUSDC sits here          |                              |
+ | (may have approvals,         |                              |
+ |  Canton can't guarantee it)  |                              |
+ |                              |                              |
+ | 1. RequestCustodySweep       |                              |
+ |    transfer(vault, amount)   |                              |
+ |----------------------------->|                              |
+ |                              | tokens arrive                |
+ |                              |                              |
+ |                              | 2. MPC confirms tx succeeded |
+ |                              |----------------------------->|
+ |                              |                              | verify on-chain
+ |                              |                              | create Erc20Holding
+ |                              |                              |   (stataUSDC, amount)
+ |                              |                              |
+ |                              |                              | NOW tradeable on Canton
+```
+
+#### Full DeFi + Trading Lifecycle
+
+```
+Phase 1: DeFi (at User DeFi Address — untrusted)
+  1. User withdraws USDC from vault → USDC at user's DeFi address
+  2. User approves stataToken from DeFi address
+  3. User supplies USDC to Aave → stataUSDC at DeFi address
+     (stataUSDC is at an address with approvals — NOT safe for Canton)
+
+Phase 2: Custody Sweep (DeFi Address → Vault)
+  4. User sweeps stataUSDC to vault address (transfer, no approve needed)
+  5. Canton verifies tx succeeded, creates Erc20Holding(stataUSDC)
+     (NOW the balance is vault-backed — no approvals, guaranteed)
+
+Phase 3: Canton Trading (vault-backed, safe)
+  6. User can swap Erc20Holding(stataUSDC) with other users on Canton
+  7. P2P trades are pure Daml ledger updates — no EVM transactions
+  8. Holdings are guaranteed backed because the vault never approves anyone
+
+Phase 4: Exit
+  9. User redeems Erc20Holding → vault transfers stataUSDC to user's DeFi address
+  10. User redeems stataUSDC from Aave → USDC at DeFi address
+  11. User withdraws USDC to external wallet
+```
+
+#### Why This Works
+
+- **Vault never approves** → `transferFrom`-based drainage is impossible
+- **Erc20Holding is only created after verified sweep** → no phantom balances
+- **Canton trading is off-chain** → P2P swaps are just Daml contract updates
+- **DeFi happens at user's address** → approvals are isolated per-user
+- **Existing deposit/withdrawal flow already does this** — the custody
+  sweep is the same `transfer` + `ClaimEvmDeposit` pattern
+
+#### New Choice: `RequestCustodySweep`
+
+Transfers any ERC-20 from the user's DeFi address to the vault. Identical
+to `RequestEvmDeposit` but for arbitrary tokens (not just the original
+deposit token).
+
+```daml
+nonconsuming choice RequestCustodySweep : ContractId PendingEvmTx
+  with
+    requester    : Party
+    tokenAddress : BytesHex    -- any ERC-20 (stataUSDC, WETH, etc.)
+    amount       : BytesHex
+    evmParams    : EvmTransactionParams
+  controller requester
+  do
+    assertMsg "must be transfer" $
+      evmParams.functionSignature == "transfer(address,uint256)"
+    -- validate recipient is the vault address
+    let recipient = evmParams.args !! 0
+    assertMsg "must transfer to vault" $
+      recipient == vaultAddress
+    ...
+```
+
+After MPC confirms the transfer succeeded, `ClaimCustodySweep` creates
+the `Erc20Holding` — same verification pattern as `ClaimEvmDeposit`.
+
+#### Naming Summary
+
+| Term                      | What it means                                                     |
+| ------------------------- | ----------------------------------------------------------------- |
+| **User DeFi Address**     | Per-user derived EOA for DeFi interactions. Untrusted by Canton.  |
+| **Vault Custody Address** | Shared root address. No approvals ever. Source of `Erc20Holding`. |
+| **Custody Sweep**         | Transfer from DeFi address → vault. Creates vault-backed holding. |
+| **Erc20Holding**          | Vault-backed balance. Tradeable on Canton. Guaranteed backed.     |
+| **Custody Redeem**        | Transfer from vault → DeFi address. Consumes holding.             |
+
+#### Production Hardening (Optional)
+
+For defense-in-depth, the vault address can be a **Safe (Gnosis Safe)**
+instead of an EOA. The Safe's Guard would reject any `approve()` call at
+the EVM level — even if Canton or MPC is compromised, the on-chain contract
+blocks unauthorized approvals. This is what Fireblocks and Fordefi do
+under the hood. For the PoC, the EOA vault with Canton-only enforcement
+is sufficient.
