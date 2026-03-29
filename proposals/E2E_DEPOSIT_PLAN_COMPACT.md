@@ -25,11 +25,13 @@ signing service, giving cryptographic proof of every step.
    and submits it to Sepolia via `eth_sendRawTransaction` — this executes the
    ERC20 `transfer` on-chain, sweeping tokens from the **deposit address** to the
    **vault address**
-9. MPC Service polls Sepolia for the receipt and verifies `receipt.status === 1`
+9. MPC Service re-simulates the call at `blockNumber - 1` to extract ABI-encoded
+   return data
 10. MPC Service exercises `ProvideEvmOutcomeSig` on Canton, creating an
-    `EvmTxOutcomeSignature`
+    `EvmTxOutcomeSignature` carrying the ABI-encoded `mpcOutput`
 11. User observes the outcome signature and exercises `ClaimEvmDeposit` on Canton
-12. Canton archives all evidence contracts and creates an `Erc20Holding`
+12. Canton decodes the `mpcOutput` via `abiDecodeBool`, verifies the MPC signature,
+    archives all evidence contracts, and creates an `Erc20Holding`
 
 The result: an `Erc20Holding` contract on Canton representing the user's
 wrapped ERC-20 balance.
@@ -56,7 +58,8 @@ wrapped ERC-20 balance.
  |                              |                              |                              |
  | 4. RequestEvmDeposit         |                              |                              |
  |    (evmParams, path,         |                              |                              |
- |     authCidText, authCid)    |                              |                              |
+ |     authCidText, authCid,    |                              |                              |
+ |     schemas)                 |                              |                              |
  |----------------------------->|                              |                              |
  |                              | validates auth card,         |                              |
  |                              | burns one use                |                              |
@@ -64,7 +67,7 @@ wrapped ERC-20 balance.
  |                              | 5. creates PendingEvmTx      |                              |
  |                              |    (source=DepositSource,    |                              |
  |                              |     path, evmParams,         |                              |
- |                              |     requester,               |                              |
+ |                              |     requester, schemas,      |                              |
  |                              |     nonceCidText)            |                              |
  |                              |                              |                              |
  |                              |    observes PendingEvmTx     |                              |
@@ -94,18 +97,27 @@ wrapped ERC-20 balance.
  |                              |                              |                              |
  |                              |                              |--- getTransactionReceipt --->|
  |                              |                              |<-----------------------------|
- |                              |                              |    verify receipt.status     |
+ |                              |                              |                              |
+ |                              |                              |    re-simulate call          |
+ |                              |                              |    at blockNumber - 1        |
+ |                              |                              |                              |
+ |                              |                              |--- client.call (simulate) -->|
+ |                              |                              |<----- ABI-encoded result ----|
  |                              |                              |                              |
  |                              |                              | 10. ProvideEvmOutcomeSig     |
  |                              |<--- EvmTxOutcomeSignature ---|                              |
- |                              |    (signature, mpcOutput)    |                              |
+ |                              |    (signature, mpcOutput=    |                              |
+ |                              |     ABI-encoded return data) |                              |
  |                              |                              |                              |
  | 11. observes EvmTxOutcomeSig |                              |                              |
  |<-----------------------------|                              |                              |
  |    ClaimEvmDeposit           |                              |                              |
  |-- pending, outcome, ecdsa -->|                              |                              |
  |                              |                              |                              |
- |                              | 12. archive PendingEvmTx     |                              |
+ |                              | 12. hasErrorPrefix? reject   |                              |
+ |                              |     abiDecodeBool == true?   |                              |
+ |                              |     verify MPC signature     |                              |
+ |                              |     archive PendingEvmTx     |                              |
  |                              |     archive EvmTxOutcomeSig  |                              |
  |                              |     archive EcdsaSignature   |                              |
  |                              |                              |                              |
@@ -167,7 +179,7 @@ data EvmTransactionParams = EvmTransactionParams
   deriving (Eq, Show)
 ```
 
-The MPC reconstruct calldata deterministically from
+The MPC reconstructs calldata deterministically from
 `functionSignature` + `args`.
 
 ### `DepositAuthProposal` (Erc20Vault.daml)
@@ -208,7 +220,7 @@ template DepositAuthorization
     observer mpc, owner
 ```
 
-### `TxSource` (Types.daml)
+### `TxSource` (Erc20Vault.daml)
 
 Variant that doubles as **type discriminator** and **provenance CID** for
 `PendingEvmTx`. Tells finalization choices which flow the transaction belongs
@@ -242,6 +254,8 @@ template PendingEvmTx
     keyVersion   : Int          -- e.g., 1
     algo         : Text         -- e.g., "ECDSA"
     dest         : Text         -- e.g., "ethereum"
+    outputDeserializationSchema : Text  -- JSON ABI type array for decoding EVM return data
+    respondSerializationSchema : Text   -- JSON ABI type array for re-encoding the response
   where
     signatory issuer
     observer mpc, requester
@@ -301,7 +315,7 @@ template EvmTxOutcomeSignature
     requester : Party
     requestId : BytesHex
     signature : SignatureHex   -- secp256k1 over EIP-712 response hash of (requestId, mpcOutput)
-    mpcOutput : BytesHex       -- "01" = success
+    mpcOutput : BytesHex       -- ABI-encoded return data, or "deadbeef" + error payload
   where
     signatory issuer
     observer requester
@@ -364,6 +378,8 @@ nonconsuming choice RequestEvmDeposit : ContractId PendingEvmTx
     algo           : Text
     dest           : Text
     authCid        : ContractId DepositAuthorization
+    outputDeserializationSchema : Text
+    respondSerializationSchema : Text
   controller requester
   do
     auth <- fetch authCid
@@ -390,7 +406,7 @@ nonconsuming choice RequestEvmDeposit : ContractId PendingEvmTx
     create PendingEvmTx with
       issuer; requester; mpc; requestId; path = fullPath; evmParams
       vaultId; nonceCidText = authCidText; source = DepositSource authCid
-      keyVersion; algo; dest
+      keyVersion; algo; dest; outputDeserializationSchema; respondSerializationSchema
 ```
 
 **`SignEvmTx`** — MPC posts its EVM transaction signature.
@@ -425,8 +441,9 @@ nonconsuming choice ProvideEvmOutcomeSig : ContractId EvmTxOutcomeSignature
 ```
 
 **`ClaimEvmDeposit`** — user triggers claim after observing the outcome
-signature. Asserts `DepositSource` and archives all evidence contracts
-(`PendingEvmTx`, `EvmTxOutcomeSignature`, `EcdsaSignature`).
+signature. Asserts `DepositSource`, decodes ABI return data, verifies MPC
+signature, and archives all evidence contracts (`PendingEvmTx`,
+`EvmTxOutcomeSignature`, `EcdsaSignature`).
 
 ```daml
 nonconsuming choice ClaimEvmDeposit : ContractId Erc20Holding
@@ -449,7 +466,6 @@ nonconsuming choice ClaimEvmDeposit : ContractId Erc20Holding
       (pending.issuer == issuer)
     assertMsg "Outcome issuer mismatch"
       (outcome.issuer == issuer)
-
     assertMsg "Requester mismatch"
       (pending.requester == requester)
 
@@ -457,7 +473,9 @@ nonconsuming choice ClaimEvmDeposit : ContractId Erc20Holding
       (pending.requestId == outcome.requestId)
 
     assertMsg "MPC reported ETH transaction failure"
-      (outcome.mpcOutput == "01")
+      (not (hasErrorPrefix outcome.mpcOutput))
+    let success = abiDecodeBool outcome.mpcOutput 0
+    assertMsg "ERC20 transfer returned false" success
 
     let responseHash = computeResponseHash pending.requestId outcome.mpcOutput
     assertMsg "Invalid MPC signature on deposit response"
@@ -476,7 +494,7 @@ nonconsuming choice ClaimEvmDeposit : ContractId Erc20Holding
       amount
 ```
 
-### Crypto Functions (Crypto.daml)
+### Crypto Functions (Crypto.daml, RequestId.daml)
 
 All hashing uses EIP-712 typed data (domain `"CantonMpc"`, version `"1"`).
 
@@ -485,15 +503,15 @@ hashEvmParams : EvmTransactionParams -> BytesHex
 hashEvmParams p =
   keccak256 $
        evmParamsTypeHash
-    <> padHex p.to 32
+    <> padLeft p.to 32
     <> hashText p.functionSignature
     <> hashBytesList p.args
-    <> padHex p.value          32
-    <> padHex p.nonce          32
-    <> padHex p.gasLimit       32
-    <> padHex p.maxFeePerGas   32
-    <> padHex p.maxPriorityFee 32
-    <> padHex p.chainId        32
+    <> padLeft p.value          32
+    <> padLeft p.nonce          32
+    <> padLeft p.gasLimit       32
+    <> padLeft p.maxFeePerGas   32
+    <> padLeft p.maxPriorityFee 32
+    <> padLeft p.chainId        32
 
 computeRequestId : Text -> EvmTransactionParams -> Text -> Int -> Text -> Text -> Text -> Text -> BytesHex
 computeRequestId sender evmParams caip2Id keyVersion path algo dest authCidText =
@@ -502,7 +520,7 @@ computeRequestId sender evmParams caip2Id keyVersion path algo dest authCidText 
     <> hashText sender
     <> hashEvmParams evmParams
     <> hashText caip2Id
-    <> padHex (toHex keyVersion) 32
+    <> padLeft (toHex keyVersion) 32
     <> hashText path
     <> hashText algo
     <> hashText dest
@@ -510,31 +528,52 @@ computeRequestId sender evmParams caip2Id keyVersion path algo dest authCidText 
 
 computeResponseHash : BytesHex -> BytesHex -> BytesHex
 computeResponseHash requestId output =
-  eip712Hash $ keccak256 (responseTypeHash <> padHex requestId 32 <> safeKeccak256 output)
+  eip712Hash $ keccak256 (responseTypeHash <> assertBytes32 requestId <> safeKeccak256 output)
 ```
 
-## Open Questions
+`computeResponseHash` hashes `mpcOutput` generically via `safeKeccak256` —
+it works for any length.
 
-1. **Signatory / observer roles per choice — can the user act independently?**
-   Can the user request and claim on their own (i.e., `controller requester`
-   without `issuer` as co-controller)?
+## ABI-Encoded mpcOutput
 
-2. **VaultOrchestrator signatory model — single party or multi-party?**
-   Should `VaultOrchestrator` remain a single-signatory template (`signatory issuer`)
-   or become multi-party (e.g., `signatory issuer, mpc`)? A multi-party signatory
-   would require both parties to agree on creation and any consuming choices,
-   adding stronger trust guarantees but increasing coordination overhead.
+The MPC service sends ABI-encoded EVM return data as `mpcOutput`,
+allowing Daml to interpret actual return values using `Abi.daml`.
 
-3. **ERC20 `transfer` only, or other EVM call types?**
-   The current design restricts `RequestEvmDeposit` to `transfer(address,uint256)`
-   and treats `mpcOutput` as a simple status byte (`"01"` = success). Supporting
-   other function signatures (e.g., `swap`, `mint`, arbitrary contract calls)
-   would require Daml to interpret structured return values — which means either
-   an ABI decoder in Daml or EIP-712-style hashing of the decoded output fields
-   (see `computeRequestId` for the existing pattern). Is ERC20 transfer
-   sufficient for the foreseeable scope, and if not, when are other call types
-   expected?
+### Wire Format
 
-4. **Expected throughput per second on foreign chains?**
-   What is the target transaction throughput per second on external chains
-   (e.g., Sepolia / Ethereum mainnet)?
+```
+Success:  <ABI-encoded return data>          e.g. "0000...0001" (bool true, 64 hex chars)
+Failure:  "deadbeef" <> <ABI-encoded error>  e.g. "deadbeef0000...0001" (72 hex chars)
+```
+
+### How the MPC Service Produces mpcOutput
+
+1. **TX succeeded** (`receipt.status === "success"`): Re-simulate the call
+   via `client.call()` at `blockNumber - 1` to extract the raw ABI-encoded
+   return value. For ERC20 `transfer`, this is `bool(true)` =
+   `0000...0001` (64 hex chars).
+2. **TX reverted / replaced / timed out**: Prefix with `0xDEADBEEF` +
+   ABI-encoded `bool(true)` as error payload. The bytes after `deadbeef`
+   are reserved for richer error types in the future.
+
+### How Canton Interprets mpcOutput
+
+**`ClaimEvmDeposit`** (deposit claim — rejects on any failure):
+
+```daml
+assertMsg "MPC reported ETH transaction failure"
+  (not (hasErrorPrefix outcome.mpcOutput))
+let success = abiDecodeBool outcome.mpcOutput 0
+assertMsg "ERC20 transfer returned false" success
+```
+
+### Schemas on PendingEvmTx
+
+`PendingEvmTx` carries two schema fields that tell the MPC service how to
+decode and re-encode return data:
+
+- `outputDeserializationSchema` — how to decode EVM return data
+- `respondSerializationSchema` — how to encode the response for Canton
+
+For ERC20 `transfer(address,uint256) returns (bool)`, both are
+`[{"name":"","type":"bool"}]`.
