@@ -25,7 +25,9 @@ describeIf("sepolia e2e deposit lifecycle", () => {
   it("completes full deposit flow through Sepolia", async () => {
     const result = await executeDepositFlow(env!, setup);
 
-    expect(result.mpcOutput).toBe("01");
+    expect(result.mpcOutput).toBe(
+      "0000000000000000000000000000000000000000000000000000000000000001",
+    );
     expect(result.holdingArgs.owner).toBe(setup.requester);
     expect(result.holdingArgs.issuer).toBe(setup.issuer);
     expect(result.holdingArgs.amount).toBe(result.amountPadded);

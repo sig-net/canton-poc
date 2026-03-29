@@ -25,7 +25,7 @@ export interface CantonEvmParams {
 }
 
 /** Reconstruct calldata from functionSignature + args */
-function buildCalldata(functionSignature: string, args: Hex[]): Hex {
+export function buildCalldata(functionSignature: string, args: Hex[]): Hex {
   const selector = toFunctionSelector(`function ${functionSignature}`);
   // args are already ABI-encoded (32 bytes each), just concatenate
   const encodedArgs =

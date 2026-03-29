@@ -1,7 +1,19 @@
-import { keccak256, createPublicClient, http, hexToNumber, type Hex } from "viem";
+import {
+  keccak256,
+  createPublicClient,
+  http,
+  hexToNumber,
+  encodeAbiParameters,
+  type Hex,
+} from "viem";
 import { privateKeyToAddress } from "viem/accounts";
 import { sepolia } from "viem/chains";
-import { serializeUnsignedTx, reconstructSignedTx } from "../evm/tx-builder.js";
+import {
+  serializeUnsignedTx,
+  reconstructSignedTx,
+  buildCalldata,
+  type CantonEvmParams,
+} from "../evm/tx-builder.js";
 import { deriveChildPrivateKey, signEvmTxHash, signMpcResponse } from "./signer.js";
 import {
   CantonClient,
@@ -16,10 +28,6 @@ import {
 } from "@daml.js/canton-mpc-poc-0.0.1/lib/Erc20Vault/module";
 
 const VAULT_ORCHESTRATOR = VaultOrchestrator.templateId;
-
-const ERC20_TRANSFER_TOPIC = keccak256(
-  new TextEncoder().encode("Transfer(address,address,uint256)"),
-);
 
 // ---------------------------------------------------------------------------
 // Types
@@ -41,6 +49,7 @@ export interface PendingTx {
   fromAddress: Hex;
   nonce: number;
   checkCount: number;
+  evmParams: CantonEvmParams;
 }
 
 type CheckResult = "pending" | "done" | "failed";
@@ -181,7 +190,35 @@ export async function signAndEnqueue(
     fromAddress,
     nonce: txNonce,
     checkCount: 0,
+    evmParams,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Return data helpers
+// ---------------------------------------------------------------------------
+
+async function extractReturnData(
+  rpcUrl: string,
+  tx: PendingTx,
+  receipt: { blockNumber: bigint },
+): Promise<string> {
+  const client = createPublicClient({ chain: sepolia, transport: http(rpcUrl) });
+  const calldata = buildCalldata(
+    tx.evmParams.functionSignature,
+    tx.evmParams.args.map((a): Hex => `0x${a}`),
+  );
+  const result = await client.call({
+    to: `0x${tx.evmParams.to}`,
+    data: calldata,
+    account: tx.fromAddress,
+    blockNumber: receipt.blockNumber - 1n,
+  });
+  return result.data!.slice(2);
+}
+
+function encodeErrorOutput(): string {
+  return "deadbeef" + encodeAbiParameters([{ type: "bool" }], [true]).slice(2);
 }
 
 // ---------------------------------------------------------------------------
@@ -199,18 +236,11 @@ export async function checkPendingTx(
   try {
     const receipt = await client.getTransactionReceipt({ hash: tx.signedTxHash });
 
-    const hasTransferEvent = receipt.logs.some(
-      (log) => log.topics[0]?.toLowerCase() === ERC20_TRANSFER_TOPIC.toLowerCase(),
-    );
-
-    if (receipt.status === "success" && hasTransferEvent) {
-      mpcOutput = "01";
+    if (receipt.status === "success") {
+      mpcOutput = await extractReturnData(config.rpcUrl, tx, receipt);
     } else {
-      mpcOutput = "00";
-      console.warn(
-        `[MPC] Tx reverted or missing transfer: status=${receipt.status}, ` +
-          `hasTransferEvent=${hasTransferEvent}, requestId=${tx.requestId}`,
-      );
+      mpcOutput = encodeErrorOutput();
+      console.warn(`[MPC] Tx reverted: status=${receipt.status}, requestId=${tx.requestId}`);
     }
     console.log(`[MPC] Receipt found for requestId=${tx.requestId}, status=${receipt.status}`);
   } catch {
@@ -227,7 +257,7 @@ export async function checkPendingTx(
           console.warn(
             `[MPC] Nonce consumed but no receipt — tx replaced. requestId=${tx.requestId}`,
           );
-          mpcOutput = "00";
+          mpcOutput = encodeErrorOutput();
         }
       }
     } catch {

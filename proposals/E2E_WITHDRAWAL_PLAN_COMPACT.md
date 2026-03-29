@@ -20,12 +20,14 @@ proof of every step.
    and submits it to Sepolia via `eth_sendRawTransaction` — this executes the
    ERC20 `transfer` on-chain, sending tokens from the **vault address** to the
    **recipient address**
-7. MPC Service polls Sepolia for the receipt and verifies `receipt.status === 1`
+7. MPC Service re-simulates the call at `blockNumber - 1` to extract ABI-encoded
+   return data
 8. MPC Service exercises `ProvideEvmOutcomeSig` on Canton, creating an
-   `EvmTxOutcomeSignature`
+   `EvmTxOutcomeSignature` carrying the ABI-encoded `mpcOutput`
 9. User observes the outcome signature and exercises `CompleteEvmWithdrawal`
-   on Canton; Canton archives all evidence contracts — on success the
-   withdrawal is final, on failure a refund `Erc20Holding` is created
+   on Canton; Canton decodes the `mpcOutput`, verifies the MPC signature, and
+   archives all evidence contracts — on success the withdrawal is final, on
+   failure a refund `Erc20Holding` is created
 
 The result: tokens move from the **vault address** on Sepolia to the user's
 specified **recipient address**, and all Canton evidence is archived. On
@@ -39,7 +41,7 @@ failure, the user's `Erc20Holding` is restored.
  | 1. RequestEvmWithdrawal      |                              |                              |
  |    (balanceCid, evmParams,   |                              |                              |
  |     recipientAddress,        |                              |                              |
- |     balanceCidText)          |                              |                              |
+ |     balanceCidText, schemas) |                              |                              |
  |----------------------------->|                              |                              |
  |                              | validates Erc20Holding       |                              |
  |                              | archives it (optimistic      |                              |
@@ -48,7 +50,7 @@ failure, the user's `Erc20Holding` is restored.
  |                              | 2. creates PendingEvmTx      |                              |
  |                              |    (source=WithdrawalSource, |                              |
  |                              |     path="root", evmParams,  |                              |
- |                              |     requester,               |                              |
+ |                              |     requester, schemas,      |                              |
  |                              |     nonceCidText)            |                              |
  |                              |                              |                              |
  |                              |    observes PendingEvmTx     |                              |
@@ -78,25 +80,36 @@ failure, the user's `Erc20Holding` is restored.
  |                              |                              |                              |
  |                              |                              |--- getTransactionReceipt --->|
  |                              |                              |<-----------------------------|
- |                              |                              |    verify receipt.status     |
+ |                              |                              |                              |
+ |                              |                              |    re-simulate call          |
+ |                              |                              |    at blockNumber - 1        |
+ |                              |                              |                              |
+ |                              |                              |--- client.call (simulate) -->|
+ |                              |                              |<----- ABI-encoded result ----|
  |                              |                              |                              |
  |                              |                              | 7. ProvideEvmOutcomeSig      |
  |                              |<--- EvmTxOutcomeSignature ---|                              |
- |                              |    (signature, mpcOutput)    |                              |
+ |                              |    (signature, mpcOutput=    |                              |
+ |                              |     ABI-encoded return data) |                              |
  |                              |                              |                              |
  | 8. observes EvmTxOutcomeSig  |                              |                              |
  |<-----------------------------|                              |                              |
  |    CompleteEvmWithdrawal     |                              |                              |
  |-- pending, outcome, ecdsa -->|                              |                              |
  |                              |                              |                              |
- |                              | 9. archive PendingEvmTx      |                              |
+ |                              | 9. verify MPC signature      |                              |
+ |                              |     archive PendingEvmTx     |                              |
  |                              |     archive EvmTxOutcomeSig  |                              |
  |                              |     archive EcdsaSignature   |                              |
  |                              |                              |                              |
- |                              |     if success:              |                              |
+ |                              |     hasErrorPrefix?          |                              |
+ |                              |       → refund               |                              |
+ |                              |     abiDecodeBool == false?  |                              |
+ |                              |       → refund               |                              |
+ |                              |     otherwise:               |                              |
  |                              |       withdrawal complete    |                              |
- |                              |     if failure:              |                              |
- |<-- refund Erc20Holding ------|       creates refund holding |                              |
+ |                              |                              |                              |
+ |<-- refund Erc20Holding ------|  (only on failure)           |                              |
  |                              |                              |                              |
 ```
 
@@ -104,7 +117,7 @@ failure, the user's `Erc20Holding` is restored.
 
 ### `VaultOrchestrator` (Erc20Vault.daml)
 
-The existing singleton orchestrator gains two new withdrawal choices.
+The existing singleton orchestrator hosts both deposit and withdrawal choices.
 `SignEvmTx` and `ProvideEvmOutcomeSig` are reused as-is — they create generic
 evidence contracts linked by `requestId`, agnostic to deposit vs withdrawal.
 
@@ -120,13 +133,13 @@ template VaultOrchestrator
     signatory issuer
     observer mpc
 
-    -- Deposit choices (existing, see E2E_DEPOSIT_PLAN_COMPACT.md)
+    -- Deposit choices (see E2E_DEPOSIT_PLAN_COMPACT.md)
     nonconsuming choice RequestDepositAuth    : ContractId DepositAuthProposal
     nonconsuming choice ApproveDepositAuth    : ContractId DepositAuthorization
     nonconsuming choice RequestEvmDeposit     : ContractId PendingEvmTx
     nonconsuming choice ClaimEvmDeposit       : ContractId Erc20Holding
 
-    -- Withdrawal choices (new)
+    -- Withdrawal choices
     nonconsuming choice RequestEvmWithdrawal  : ContractId PendingEvmTx
     nonconsuming choice CompleteEvmWithdrawal : Optional (ContractId Erc20Holding)
 
@@ -172,6 +185,8 @@ nonconsuming choice RequestEvmWithdrawal : ContractId PendingEvmTx
     algo             : Text
     dest             : Text
     balanceCid       : ContractId Erc20Holding
+    outputDeserializationSchema : Text
+    respondSerializationSchema : Text
   controller requester
   do
     holding <- fetch balanceCid
@@ -201,7 +216,7 @@ nonconsuming choice RequestEvmWithdrawal : ContractId PendingEvmTx
     create PendingEvmTx with
       issuer; requester; mpc; requestId; path = fullPath; evmParams
       vaultId; nonceCidText = balanceCidText; source = WithdrawalSource balanceCid
-      keyVersion; algo; dest
+      keyVersion; algo; dest; outputDeserializationSchema; respondSerializationSchema
 ```
 
 `PendingEvmTx` carries two nonce references — same dual-reference
@@ -223,10 +238,10 @@ deposit uses `sender + "," + userPath` for per-user deposit addresses.
 (unchanged, see `E2E_DEPOSIT_PLAN_COMPACT.md`).
 
 **`CompleteEvmWithdrawal`** — user triggers completion after observing the
-outcome signature. Asserts `WithdrawalSource` and archives all evidence
-contracts. On success (`mpcOutput == "01"`), the withdrawal is final — tokens
-are on Sepolia. On failure, a refund `Erc20Holding` is created to restore the
-user's balance.
+outcome signature. Asserts `WithdrawalSource`, verifies MPC signature, and
+archives all evidence contracts. Uses `hasErrorPrefix` and `abiDecodeBool`
+to determine success or failure — on success, the withdrawal is final; on
+failure, a refund `Erc20Holding` is created to restore the user's balance.
 
 Unlike `ClaimEvmDeposit` (which rejects on failure), `CompleteEvmWithdrawal`
 must handle both outcomes because the holding was already archived in
@@ -268,7 +283,10 @@ nonconsuming choice CompleteEvmWithdrawal : Optional (ContractId Erc20Holding)
     archive outcomeCid
     archive ecdsaCid
 
-    if outcome.mpcOutput == "01"
+    let shouldRefund =
+          if hasErrorPrefix outcome.mpcOutput then True
+          else not (abiDecodeBool outcome.mpcOutput 0)
+    if not shouldRefund
       then return None  -- success: tokens sent on Sepolia, withdrawal complete
       else do
         let amount = (pending.evmParams).args !! 1
@@ -280,11 +298,12 @@ nonconsuming choice CompleteEvmWithdrawal : Optional (ContractId Erc20Holding)
         return (Some refundCid)
 ```
 
-### Crypto Functions (Crypto.daml)
+### Crypto Functions (Crypto.daml, RequestId.daml)
 
 No new functions. `computeRequestId` and `computeResponseHash` are reused
 as-is — the nonce slot (`authCidText` for deposit) receives `balanceCidText`
-for withdrawal.
+for withdrawal. `computeResponseHash` hashes `mpcOutput` generically via
+`safeKeccak256` — works unchanged for any length.
 
 ## Upgradability
 

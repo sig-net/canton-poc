@@ -231,6 +231,8 @@ describe("ledger visibility + permission model", () => {
         algo: ALGO,
         dest: DEST,
         authCid,
+        outputDeserializationSchema: '[{"name":"","type":"bool"}]',
+        respondSerializationSchema: '[{"name":"","type":"bool"}]',
       },
       undefined,
       [orchDisclosure],
@@ -278,13 +280,18 @@ describe("ledger visibility + permission model", () => {
         VAULT_ORCHESTRATOR,
         orchCid,
         "ProvideEvmOutcomeSig",
-        { requester, requestId, signature: "00", mpcOutput: "01" },
+        {
+          requester,
+          requestId,
+          signature: "00",
+          mpcOutput: "0000000000000000000000000000000000000000000000000000000000000001",
+        },
         undefined,
         [orchDisclosure],
       ),
     ).rejects.toThrow();
 
-    const mpcOutput = "01";
+    const mpcOutput = "0000000000000000000000000000000000000000000000000000000000000001";
     const mpcSignature = signMpcResponse(MPC_ROOT_PRIVATE_KEY, requestId, mpcOutput);
     const outcomeResult = await canton.exerciseChoice(
       ISSUER_USER,

@@ -37,11 +37,28 @@ Canton should adopt this pattern because:
 | ----------------------- | ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `mpcOutput` content     | `"01"` or `"00"`                                                  | ABI-encoded return data (e.g. `0000...0001` for `bool true`)                                                                                                                 |
 | Error signal            | `mpcOutput == "00"`                                               | 4-byte `deadbeef` prefix                                                                                                                                                     |
-| Deposit claim check     | `outcome.mpcOutput == "01"`                                       | `abiDecodeBool mpcOutput 0 == True`                                                                                                                                          |
+| Deposit claim check     | `outcome.mpcOutput == "01"`                                       | `not (hasErrorPrefix mpcOutput) && abiDecodeBool mpcOutput 0`                                                                                                                |
 | Withdrawal refund check | `outcome.mpcOutput /= "01"`                                       | `hasErrorPrefix mpcOutput \|\| not (abiDecodeBool mpcOutput 0)`                                                                                                              |
-| Return data extraction  | Not done — checks receipt status only                             | Re-simulate call at `blockNumber - 1`, ABI decode result                                                                                                                     |
+| Return data extraction  | Not done — checks receipt status + Transfer event                 | Re-simulate call at `blockNumber - 1`, ABI decode result                                                                                                                     |
 | Schema system           | None                                                              | `PendingEvmTx` carries two schemas: `outputDeserializationSchema` + `respondSerializationSchema` (JSON `[{name,type}]` arrays, same format as Solana's `sign_bidirectional`) |
 | Response hash input     | `keccak256(responseTypeHash \|\| requestId \|\| keccak256("01"))` | `keccak256(responseTypeHash \|\| requestId \|\| keccak256(abiEncodedOutput))`                                                                                                |
+
+## Three Failure Modes
+
+The design handles three distinct failure scenarios:
+
+1. **TX-level failure** (reverted, nonce replaced, timed out) — MPC sends
+   `deadbeef` prefix + ABI-encoded `{ error: true }`. The Daml contract
+   sees the prefix and refunds immediately without decoding the rest.
+
+2. **Successful TX, `transfer()` returned `false`** — some non-standard
+   ERC20 tokens signal failure via return value instead of reverting. The
+   MPC faithfully sends the ABI-encoded `bool(false)` without any prefix
+   (the TX genuinely succeeded). The Daml contract decodes the bool and
+   refunds because `abiDecodeBool == False`.
+
+3. **Successful TX, `transfer()` returned `true`** — normal success path.
+   MPC sends ABI-encoded `bool(true)`, Daml decodes and accepts.
 
 ## Design
 
@@ -55,7 +72,9 @@ Failure: "deadbeef" <> <ABI-encoded error>  e.g. "deadbeef0000...0001" ({ error:
 ```
 
 The Daml contract checks `DA.Text.take 8 mpcOutput == "deadbeef"` before
-attempting to decode the return value.
+attempting to decode the return value. The bytes after the prefix encode
+the error reason (currently `{ error: true }` stub, reserved for richer
+error types in the future).
 
 ### Schema on PendingEvmTx
 
@@ -96,7 +115,7 @@ posted back as `mpcOutput`.
 
 **Serialization format selection**: The fakenet determines the response
 encoding format from the CAIP-2 chain ID of the response destination
-(Solana → Borsh format 0, EVM → ABI format 1). Canton's MPC service
+(Solana -> Borsh format 0, EVM -> ABI format 1). Canton's MPC service
 always uses ABI (format 1) since the Daml ledger decodes ABI via
 `Abi.daml`.
 
@@ -105,6 +124,16 @@ always uses ABI (format 1) since the Daml ledger decodes ABI via
 #### 1. Daml — `Erc20Vault.daml`
 
 **`PendingEvmTx`** — add `outputDeserializationSchema : Text` and `respondSerializationSchema : Text`
+
+**New helpers** (in `Abi.daml`):
+
+```haskell
+hasErrorPrefix : BytesHex -> Bool
+hasErrorPrefix hex = DA.Text.length hex >= 8 && DA.Text.take 8 hex == "deadbeef"
+
+stripErrorPrefix : BytesHex -> BytesHex
+stripErrorPrefix hex = DA.Text.drop 8 hex
+```
 
 **`ClaimEvmDeposit`** — replace:
 
@@ -145,116 +174,33 @@ if not shouldRefund
   else do ...refund...
 ```
 
-**`RequestEvmDeposit` / `RequestEvmWithdrawal`** — pass both schemas as
-`[{"name":"","type":"bool"}]` when creating `PendingEvmTx`.
-
-**New helper** (in `Abi.daml` or `Erc20Vault.daml`):
+**`RequestEvmDeposit` / `RequestEvmWithdrawal`** — add schema parameters
+to both choices and pass them through to `PendingEvmTx`:
 
 ```haskell
-hasErrorPrefix : BytesHex -> Bool
-hasErrorPrefix hex = DA.Text.length hex >= 8 && DA.Text.take 8 hex == "deadbeef"
-
-stripErrorPrefix : BytesHex -> BytesHex
-stripErrorPrefix hex = DA.Text.drop 8 hex
+nonconsuming choice RequestEvmDeposit : ContractId PendingEvmTx
+  with
+    ...
+    outputDeserializationSchema : Text   -- NEW
+    respondSerializationSchema : Text    -- NEW
+  controller requester
+  do
+    ...
+    create PendingEvmTx with
+      ...; outputDeserializationSchema; respondSerializationSchema
 ```
+
+Same for `RequestEvmWithdrawal`. Callers pass
+`[{"name":"","type":"bool"}]` for both schemas in the ERC20 case.
 
 #### 2. Daml — `RequestId.daml`
 
-**No changes to response hash computation.** The `computeResponseHash`
-function already hashes `keccak256(mpcOutput)` generically — it doesn't
-care whether `mpcOutput` is `"01"` or a full ABI blob. The EIP-712
-envelope remains the same:
-
-```haskell
-computeResponseHash requestId output =
-  eip712Hash $ keccak256 (responseTypeHash <> assertBytes32 requestId <> safeKeccak256 output)
-```
-
-This works unchanged because the MPC service signs whatever `mpcOutput`
-bytes it sends, and the Daml contract verifies the signature against the
-same bytes.
+**No changes.** `computeResponseHash` already hashes `mpcOutput` generically
+via `safeKeccak256 output` — works for any length.
 
 #### 3. TypeScript — `tx-handler.ts` (MPC Service)
 
-**`checkPendingTx`** — replace the boolean receipt check with return data
-extraction:
-
-```typescript
-// current
-if (receipt.status === "success" && hasTransferEvent) {
-  mpcOutput = "01";
-} else {
-  mpcOutput = "00";
-}
-```
-
-becomes:
-
-```typescript
-// proposed
-if (receipt.status === "success") {
-  const returnData = await extractReturnData(client, tx, receipt);
-  mpcOutput = returnData; // ABI-encoded, e.g. "0000...0001"
-} else {
-  mpcOutput = "deadbeef" + AbiCoder.defaultAbiCoder().encode(["bool"], [true]).slice(2); // error prefix + { error: true }
-}
-```
-
-**New function `extractReturnData`** — re-simulate the call:
-
-```typescript
-async function extractReturnData(
-  client: PublicClient,
-  tx: PendingTx,
-  receipt: TransactionReceipt,
-): Promise<string> {
-  // Re-simulate the call at the block before inclusion
-  const result = await client.call({
-    to: tx.evmParams.to,
-    data: tx.calldata,
-    account: tx.fromAddress,
-    blockNumber: receipt.blockNumber - 1n,
-  });
-  // Return raw ABI-encoded output without 0x prefix
-  return result.data!.slice(2);
-}
-```
-
-This is the same technique fakenet uses in `EthereumMonitor.extractTransactionOutput`.
-
-**Nonce-consumed-but-no-receipt** (tx replaced) — also use error prefix:
-
-```typescript
-mpcOutput = "deadbeef" + AbiCoder.defaultAbiCoder().encode(["bool"], [true]).slice(2);
-```
-
-#### 4. TypeScript — `signer.ts`
-
-**`signMpcResponse`** — no changes needed. It already signs
-`computeResponseHash(requestId, mpcOutput)` where `mpcOutput` is an
-arbitrary hex string. The function is agnostic to the content.
-
-#### 5. TypeScript — `crypto.ts`
-
-**`computeResponseHash`** — no changes needed. Same reasoning as Daml's
-`computeResponseHash`: it hashes `mpcOutput` as opaque bytes.
-
-#### 6. TypeScript — Tests
-
-**`sepolia-e2e.test.ts`** — update assertions:
-
-- Verify `mpcOutput` is 64 hex chars (one ABI-encoded `bool` slot) instead of `"01"`
-- Verify `abiDecode(['bool'], '0x' + mpcOutput)[0] === true`
-
-**New unit test** — `abi-return-data.test.ts`:
-
-- Test `extractReturnData` with mocked `client.call` responses
-- Test error prefix generation and parsing
-- Test round-trip: TypeScript ABI-encodes → Daml `abiDecodeBool` decodes
-
-### PendingTx Type Update
-
-Add fields to track the original calldata (needed for re-simulation):
+**`PendingTx`** — add `evmParams`:
 
 ```typescript
 export interface PendingTx {
@@ -268,22 +214,154 @@ export interface PendingTx {
 }
 ```
 
-The `evmParams` are already available in `signAndEnqueue` from the
-`PendingEvmTx` contract — just pass them through.
+`evmParams` are already available in `signAndEnqueue` from the contract
+payload — just pass them through to the return value.
+
+**`checkPendingTx`** — replace the boolean receipt check with return data
+extraction:
+
+```typescript
+// current
+const hasTransferEvent = receipt.logs.some(
+  (log) => log.topics[0]?.toLowerCase() === ERC20_TRANSFER_TOPIC.toLowerCase(),
+);
+if (receipt.status === "success" && hasTransferEvent) {
+  mpcOutput = "01";
+} else {
+  mpcOutput = "00";
+}
+```
+
+becomes:
+
+```typescript
+// proposed
+if (receipt.status === "success") {
+  mpcOutput = await extractReturnData(config.rpcUrl, tx);
+} else {
+  mpcOutput = "deadbeef" + encodeAbiParameters([{ type: "bool" }], [true]).slice(2);
+}
+```
+
+Note: uses viem's `encodeAbiParameters` (not ethers `AbiCoder`).
+
+The Transfer event check is removed — return data decoding supersedes it.
+The Daml contract checks the actual `bool` return value, which catches
+both reverted transfers and `transfer() returns false` tokens.
+
+**Known limitation**: tokens that return no value from `transfer()` (e.g.
+USDT-style) would produce empty return data, causing `abiDecodeBool` to
+fail. Not a concern for the PoC's test token but would need a
+`bytes.length == 0 → assume success` fallback for production.
+
+**Nonce-consumed-but-no-receipt** (tx replaced) — also use error prefix:
+
+```typescript
+mpcOutput = "deadbeef" + encodeAbiParameters([{ type: "bool" }], [true]).slice(2);
+```
+
+**New function `extractReturnData`**:
+
+```typescript
+async function extractReturnData(rpcUrl: string, tx: PendingTx): Promise<string> {
+  const client = createPublicClient({ chain: sepolia, transport: http(rpcUrl) });
+  const receipt = await client.getTransactionReceipt({ hash: tx.signedTxHash });
+  const calldata = buildCalldata(tx.evmParams.functionSignature, tx.evmParams.args);
+  const result = await client.call({
+    to: `0x${tx.evmParams.to}`,
+    data: calldata,
+    account: tx.fromAddress,
+    blockNumber: receipt.blockNumber - 1n,
+  });
+  return result.data!.slice(2); // strip 0x prefix — Canton uses bare hex
+}
+```
+
+`buildCalldata` (currently a local helper in `tx-builder.ts`) needs to be
+exported.
+
+#### 4. TypeScript — `signer.ts` / `crypto.ts`
+
+**No changes.** Both `signMpcResponse` and `computeResponseHash` already
+handle arbitrary-length hex strings for `mpcOutput`.
+
+#### 5. TypeScript — Tests
+
+**`e2e-setup.ts`** — `RequestEvmDeposit` call (line 225) needs schema args:
+
+```typescript
+{
+  ...existing args,
+  outputDeserializationSchema: '[{"name":"","type":"bool"}]',
+  respondSerializationSchema: '[{"name":"","type":"bool"}]',
+}
+```
+
+Same for `RequestEvmWithdrawal` in `sepolia-withdrawal-e2e.test.ts`.
+
+**`sepolia-e2e.test.ts`** — change assertion from `mpcOutput === "01"` to:
+
+```typescript
+expect(result.mpcOutput).toBe("0000000000000000000000000000000000000000000000000000000000000001");
+```
+
+**`visibility-permissions.test.ts`** — `RequestEvmDeposit` call (line 224)
+needs schema args added.
+
+**New unit test** — `abi-return-data.test.ts`:
+
+- Test `extractReturnData` with mocked `client.call` responses
+- Test error prefix generation and parsing
+- Test round-trip: viem ABI-encodes `bool(true)` -> same hex that Daml
+  `abiDecodeBool` decodes (already covered by existing cross-language
+  vectors in `abi.test.ts` + `TestAbi.daml`)
+
+#### 6. Daml — `TestFixtures.daml`
+
+**Regenerate DER signatures.** The existing fixtures are signed over
+`computeResponseHash(requestId, "01")` and `computeResponseHash(requestId, "00")`.
+After migration, three signatures are needed:
+
+| Fixture                        | Signed over                                             | Purpose                            |
+| ------------------------------ | ------------------------------------------------------- | ---------------------------------- |
+| `claimTestSignature`           | `computeResponseHash(requestId, "0000...0001")`         | Deposit claim (bool true)          |
+| `refundTestSignature`          | `computeResponseHash(requestId, "deadbeef0000...0001")` | Withdrawal error (deadbeef prefix) |
+| `boolFalseTestSignature` (NEW) | `computeResponseHash(requestId, "0000...0000")`         | Transfer returned false            |
+
+Generate these from the existing TS test private key using `signMpcResponse`.
+
+#### 7. Daml — `TestVault.daml`
+
+Every `ProvideEvmOutcomeSig` and `createCmd PendingEvmTx` needs updating:
+
+- `mpcOutput = "01"` -> `mpcOutput = "0000...0001"` (64 hex chars)
+- `mpcOutput = "00"` -> `mpcOutput = "deadbeef0000...0001"` (error prefix)
+  or `mpcOutput = "0000...0000"` (bool false, for the new test case)
+- Every `createCmd PendingEvmTx with ...` needs schema fields added
+  (8 call sites)
+- Matching DER signatures must use the regenerated fixtures
+
+Add new test `testClaimRejectsBoolFalse` using the new
+`boolFalseTestSignature` fixture — verifies that `abiDecodeBool == False`
+is rejected on the claim path.
 
 ## Migration Path
 
-This is a **breaking change** to the `mpcOutput` format. Since Canton
-requires a sandbox restart for template field additions (`outputSchema`
-on `PendingEvmTx`), the migration is straightforward:
+This is a **breaking change** to the `mpcOutput` format and `PendingEvmTx`
+template (new fields). Since Canton requires a sandbox restart for template
+field additions, the migration is straightforward:
 
-1. Add `outputDeserializationSchema` and `respondSerializationSchema` to `PendingEvmTx`, `hasErrorPrefix` to `Abi.daml`
-2. Update `ClaimEvmDeposit` and `CompleteEvmWithdrawal` to use ABI decoding
-3. Update `RequestEvmDeposit` and `RequestEvmWithdrawal` to pass both schemas
-4. Update MPC service `checkPendingTx` to extract return data
-5. Update MPC service `signAndEnqueue` to carry `evmParams` on `PendingTx`
-6. Restart sandbox, redeploy DAR
-7. Update e2e tests
+1. Add `hasErrorPrefix`, `stripErrorPrefix` to `Abi.daml` with tests
+2. Add `outputDeserializationSchema` and `respondSerializationSchema` to `PendingEvmTx`
+3. Add schema parameters to `RequestEvmDeposit` and `RequestEvmWithdrawal` choices
+4. Update `ClaimEvmDeposit` and `CompleteEvmWithdrawal` to use ABI decoding
+5. Export `buildCalldata` from `tx-builder.ts`
+6. Update MPC service `checkPendingTx` to extract return data via re-simulation
+7. Update MPC service `signAndEnqueue` to carry `evmParams` on `PendingTx`
+8. Regenerate DER test fixtures for new mpcOutput values
+9. Update all Daml tests (`TestVault.daml`): schema fields, mpcOutput values, signatures
+10. Update all TS tests: schema args in choice calls, mpcOutput assertions
+11. Restart sandbox, redeploy DAR
 
 All changes ship together — no incremental rollout needed since this is
 a PoC with sandbox restarts.
@@ -301,6 +379,8 @@ Once `mpcOutput` carries real ABI data, these become straightforward:
   decode dynamic arrays using the existing `Abi.daml` array decoders
 - **Arbitrary contract calls** — any Solidity function return type
   can be described in the `[{name,type}]` schema and decoded on-ledger
+- **No-return-value tokens** (USDT-style) — MPC service treats empty
+  return data as success (schema: `[]` empty array), Daml skips decode
 
 The schema fields on `PendingEvmTx` mean the Daml templates never need
 to change — only the choice logic that interprets the decoded values.

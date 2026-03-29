@@ -33,6 +33,7 @@ export { deriveDepositAddress, chainIdHexToCaip2, KEY_VERSION } from "./mpc/addr
 
 // EVM transaction building
 export {
+  buildCalldata,
   buildTxRequest,
   serializeUnsignedTx,
   reconstructSignedTx,

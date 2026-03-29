@@ -194,3 +194,16 @@ abiDecodeTupleDynMember hex tupleBaseOffset memberSlotIndex =
 --   innerOff = abiDecodeFixedArrayDynElem hex baseOffset j
 --   innerLen = abiDecodeArrayLen hex innerOff
 --   elem     = abiDecodeArrayElem hex innerOff k  (if T is static)
+
+-- ---------------------------------------------------------------------------
+-- Error prefix (0xDEADBEEF convention from fakenet-signer)
+-- ---------------------------------------------------------------------------
+
+-- | Check if a hex-encoded response starts with the 4-byte error magic prefix.
+-- Used to distinguish tx-level failures from successful return data.
+hasErrorPrefix : BytesHex -> Bool
+hasErrorPrefix hex = DA.Text.length hex >= 8 && DA.Text.take 8 hex == "deadbeef"
+
+-- | Strip the 4-byte error prefix, leaving the ABI-encoded error payload.
+stripErrorPrefix : BytesHex -> BytesHex
+stripErrorPrefix hex = DA.Text.drop 8 hex

@@ -20,16 +20,36 @@ testSignatureHex = "304602210093dffbc917a44aa1dd115ad85c5ddcfcda753490664a04802a
 claimTestPubKey : Text
 claimTestPubKey = "3056301006072a8648ce3d020106052b8104000a03420004bb50e2d89a4ed70663d080659fe0ad4b9bc3e06c17a227433966cb59ceee020decddbf6e00192011648d13b1c00af770c0c1bb609d4d3a5c98a43772e0e18ef4"
 
--- DER signature over computeResponseHash(claimTestRequestId, "01")
+-- DER signature over computeResponseHash(claimTestRequestId, boolTrueMpcOutput)
 claimTestSignature : Text
-claimTestSignature = "3045022100bdf1263e14358fa90f636b570e067988cd98e70666b58b57ad2b37242500e9fe022050699bef9115090a147a479ab5baa28b7600e8079cfb93d627d90d0d542b1b05"
+claimTestSignature = "3044022064423d719ec8cb650853cf3d5a638b6528626c4b626491d87244859b83611267022014a7292eca0c860f11b7f47f4f36368a1694138169b79ff0b980d24e412ec8e7"
 
 claimTestRequestId : Text
 claimTestRequestId = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
--- DER signature over computeResponseHash(claimTestRequestId, "00") — refund case
+-- DER signature over computeResponseHash(claimTestRequestId, errorPrefixMpcOutput) — refund case
 refundTestSignature : Text
-refundTestSignature = "30440220546eccb3146e40f8ba11b8df383bcf2e3367378c403d2375531b9a4702c30ae60220718bec44f9ef88d4ca28ed189a50ddf7de12afb66ee85bda37f50f54aa68d96d"
+refundTestSignature = "304402206abf772269c28730214bb99477f7aa384ecf24e590bd647d6dab95314b8b120d02203cafe98ab81583a580c9468421b91d123df22549f3396f788ca551e613e0c58b"
+
+-- DER signature over computeResponseHash(claimTestRequestId, boolFalseMpcOutput) — transfer returned false
+boolFalseTestSignature : Text
+boolFalseTestSignature = "30440220262bb64019ff50e7df7185e1f3b005ca33869d2d4441d9d105b443d385bc259c02201759e93390e3288087978a4d35723b8c2deaaf100c8acab5330641b7fb064c18"
+
+-- ---------------------------------------------------------------------------
+-- ABI-encoded mpcOutput constants
+-- ---------------------------------------------------------------------------
+
+boolTrueMpcOutput : BytesHex
+boolTrueMpcOutput = "0000000000000000000000000000000000000000000000000000000000000001"
+
+boolFalseMpcOutput : BytesHex
+boolFalseMpcOutput = "0000000000000000000000000000000000000000000000000000000000000000"
+
+errorPrefixMpcOutput : BytesHex
+errorPrefixMpcOutput = "deadbeef0000000000000000000000000000000000000000000000000000000000000001"
+
+erc20BoolSchema : Text
+erc20BoolSchema = "[{\"name\":\"\",\"type\":\"bool\"}]"
 
 -- ---------------------------------------------------------------------------
 -- Shared EVM params

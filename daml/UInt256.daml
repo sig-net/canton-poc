@@ -1,0 +1,275 @@
+-- | Limb-based unsigned 256-bit integer arithmetic.
+-- Representation: 10 limbs in base 2^28, little-endian (limbs[0] = LSB).
+-- Matches GMP/Python/Go bignum approach, adapted for Daml's 64-bit Int.
+--
+-- Supported: add, sub, mul, compare, short division (divisor < 2^28).
+-- Not implemented: full uint256/uint256 division (Knuth Algorithm D).
+module UInt256 where
+
+import qualified DA.Text
+import DA.List ((!!) )
+import DA.Crypto.Text (BytesHex)
+import HexCompare (hexPadUint256)
+
+-- ---------------------------------------------------------------------------
+-- Constants
+-- ---------------------------------------------------------------------------
+
+limbBase : Int
+limbBase = 268435456 -- 2^28
+
+topLimbMod : Int
+topLimbMod = 16 -- 2^4  (limbs[9] is only 4 bits: 256 - 9*28 = 4)
+
+-- ---------------------------------------------------------------------------
+-- Data type
+-- ---------------------------------------------------------------------------
+
+data UInt256 = UInt256 with
+    limbs : [Int]  -- 10 limbs in base 2^28, little-endian
+  deriving (Eq, Show)
+
+uint256Zero : UInt256
+uint256Zero = UInt256 with limbs = replicate 10 0
+
+uint256One : UInt256
+uint256One = UInt256 with limbs = [1, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+uint256Max : UInt256
+uint256Max = UInt256 with limbs = replicate 9 268435455 <> [15]
+
+-- ---------------------------------------------------------------------------
+-- Internal: hex conversion helpers
+-- ---------------------------------------------------------------------------
+
+-- | ASCII code point -> digit value (0-15).
+hexCpToDigit : Int -> Int
+hexCpToDigit cp
+  | cp >= 48 && cp <= 57  = cp - 48   -- '0'..'9'
+  | cp >= 97 && cp <= 102 = cp - 87   -- 'a'..'f'
+  | cp >= 65 && cp <= 70  = cp - 55   -- 'A'..'F'
+  | otherwise = error ("UInt256: invalid hex char code point " <> show cp)
+
+-- | Digit value (0-15) -> single hex char.
+digitToHex : Int -> Text
+digitToHex n
+  | n < 10    = DA.Text.fromCodePoints [n + 48]  -- '0' + n
+  | otherwise = DA.Text.fromCodePoints [n + 87]  -- 'a' + (n - 10)
+
+-- | Parse a hex string (1-7 chars) to Int.
+hexChunkToInt : Text -> Int
+hexChunkToInt txt = foldl step 0 (DA.Text.toCodePoints txt)
+  where step acc cp = acc * 16 + hexCpToDigit cp
+
+-- | Convert non-negative Int to hex string (no padding).
+intToHexRaw : Int -> Text
+intToHexRaw n
+  | n < 16    = digitToHex n
+  | otherwise = intToHexRaw (n / 16) <> digitToHex (n % 16)
+
+-- | Convert non-negative Int to hex string of exactly `width` chars.
+intToHexPad : Int -> Int -> Text
+intToHexPad val width =
+  let raw = intToHexRaw val
+      padLen = width - DA.Text.length raw
+  in if padLen > 0
+     then DA.Text.implode (replicate padLen "0") <> raw
+     else raw
+
+-- ---------------------------------------------------------------------------
+-- Internal: list-based limb helpers
+-- ---------------------------------------------------------------------------
+
+listGet : [Int] -> Int -> Int
+listGet xs i = xs !! i
+
+listSet : [Int] -> Int -> Int -> [Int]
+listSet xs i val = take i xs <> [val] <> drop (i + 1) xs
+
+-- | Add limb lists with carry propagation. All limbs use limbBase;
+-- callers must clamp limbs[9] with topLimbMod.
+addLimbs : [Int] -> [Int] -> ([Int], Int)
+addLimbs aLimbs bLimbs =
+  foldl step ([], 0) (zip aLimbs bLimbs)
+  where
+    step (result, carry) (ai, bi) =
+      let s = ai + bi + carry
+      in (result <> [s % limbBase], s / limbBase)
+
+-- | Subtract limb lists with borrow propagation. All limbs use limbBase;
+-- callers must fix limbs[9] using topLimbMod.
+subLimbs : [Int] -> [Int] -> ([Int], Int)
+subLimbs aLimbs bLimbs =
+  foldl step ([], 0) (zip aLimbs bLimbs)
+  where
+    step (result, borrow) (ai, bi) =
+      let d = ai - bi - borrow
+      in if d < 0 then (result <> [d + limbBase], 1)
+                  else (result <> [d], 0)
+
+-- | Clamp limbs[9] to topLimbMod range after add/mul.
+clampL9 : [Int] -> [Int]
+clampL9 ls = take 9 ls <> [listGet ls 9 % topLimbMod]
+
+-- ---------------------------------------------------------------------------
+-- Hex <-> UInt256 conversion
+-- ---------------------------------------------------------------------------
+
+-- | Parse a BytesHex string (up to 64 hex chars) into a UInt256.
+-- Handles short inputs, odd-length, and mixed case.
+uint256FromHex : BytesHex -> UInt256
+uint256FromHex hex =
+  let padded = hexPadUint256 (DA.Text.asciiToLower hex)  -- normalize to 64 lowercase chars
+      padded70 = "000000" <> padded
+      chunk i = DA.Text.take 7 (DA.Text.drop (63 - i * 7) padded70)
+  in UInt256 with limbs = map (\i -> hexChunkToInt (chunk i)) [0..9]
+
+-- | Convert a UInt256 to a 64-char lowercase hex string.
+uint256ToHex : UInt256 -> BytesHex
+uint256ToHex u =
+  foldl step "" (zip (reverse u.limbs) widths)
+  where
+    widths = [1, 7, 7, 7, 7, 7, 7, 7, 7, 7]
+    step acc (v, w) = acc <> intToHexPad v w
+
+-- ---------------------------------------------------------------------------
+-- Addition
+-- ---------------------------------------------------------------------------
+
+-- | Add two UInt256 values (mod 2^256, wrapping on overflow).
+uint256Add : UInt256 -> UInt256 -> UInt256
+uint256Add a b =
+  let (ls, _) = addLimbs a.limbs b.limbs
+  in UInt256 with limbs = clampL9 ls
+
+-- | Add with overflow detection. Returns (result, didOverflow).
+uint256AddChecked : UInt256 -> UInt256 -> (UInt256, Bool)
+uint256AddChecked a b =
+  let (ls, _) = addLimbs a.limbs b.limbs
+  in ((UInt256 with limbs = clampL9 ls), listGet ls 9 >= topLimbMod)
+
+-- ---------------------------------------------------------------------------
+-- Subtraction
+-- ---------------------------------------------------------------------------
+
+-- | Subtract two UInt256 values (mod 2^256, wrapping on underflow).
+uint256Sub : UInt256 -> UInt256 -> UInt256
+uint256Sub a b =
+  let (ls, borrow) = subLimbs a.limbs b.limbs
+      rawL9 = listGet ls 9
+      fixedL9 = if borrow > 0 then rawL9 - limbBase + topLimbMod else rawL9
+  in UInt256 with limbs = take 9 ls <> [fixedL9]
+
+-- | Subtract with underflow detection. Returns (result, didUnderflow).
+uint256SubChecked : UInt256 -> UInt256 -> (UInt256, Bool)
+uint256SubChecked a b =
+  let (ls, borrow) = subLimbs a.limbs b.limbs
+      rawL9 = listGet ls 9
+      fixedL9 = if borrow > 0 then rawL9 - limbBase + topLimbMod else rawL9
+  in ((UInt256 with limbs = take 9 ls <> [fixedL9]), borrow > 0)
+
+-- ---------------------------------------------------------------------------
+-- Comparison
+-- ---------------------------------------------------------------------------
+
+-- | Compare two UInt256 values. Checks from MSB (limbs[9]) to LSB (limbs[0]).
+uint256Compare : UInt256 -> UInt256 -> Ordering
+uint256Compare a b =
+  foldl step EQ (reverse (zip a.limbs b.limbs))
+  where step acc (ai, bi) = if acc /= EQ then acc else compare ai bi
+
+uint256Eq : UInt256 -> UInt256 -> Bool
+uint256Eq a b = uint256Compare a b == EQ
+
+uint256Gt : UInt256 -> UInt256 -> Bool
+uint256Gt a b = uint256Compare a b == GT
+
+uint256Gte : UInt256 -> UInt256 -> Bool
+uint256Gte a b = uint256Compare a b /= LT
+
+uint256Lt : UInt256 -> UInt256 -> Bool
+uint256Lt a b = uint256Compare a b == LT
+
+uint256Lte : UInt256 -> UInt256 -> Bool
+uint256Lte a b = uint256Compare a b /= GT
+
+uint256IsZero : UInt256 -> Bool
+uint256IsZero u = all (== 0) u.limbs
+
+-- ---------------------------------------------------------------------------
+-- Multiplication (schoolbook, O(n^2))
+-- ---------------------------------------------------------------------------
+
+-- | Schoolbook multiplication on limb lists. Returns 20-element result.
+-- Max accumulator: (2^28-1)^2 + (2^28-1) + 2^28 = 2^56 - 1. Fits in Int64.
+mulLimbs : [Int] -> [Int] -> [Int]
+mulLimbs aLimbs bLimbs =
+  foldl outerStep (replicate 20 0) (zip [0..9] aLimbs)
+  where
+    outerStep result (i, ai) =
+      let (result', carry) = foldl (innerStep ai i) (result, 0) (zip [0..9] bLimbs)
+      in listSet result' (i + 10) carry
+    innerStep ai i (result, carry) (j, bj) =
+      let k = i + j
+          acc = listGet result k + ai * bj + carry
+      in (listSet result k (acc % limbBase), acc / limbBase)
+
+-- | Multiply two UInt256 values (mod 2^256, truncate to lower 256 bits).
+uint256Mul : UInt256 -> UInt256 -> UInt256
+uint256Mul a b =
+  let product = mulLimbs a.limbs b.limbs
+  in UInt256 with limbs = clampL9 (take 10 product)
+
+-- | Multiply with overflow detection. Returns (result, didOverflow).
+uint256MulChecked : UInt256 -> UInt256 -> (UInt256, Bool)
+uint256MulChecked a b =
+  let product = mulLimbs a.limbs b.limbs
+      overflow = listGet product 9 >= topLimbMod || any (/= 0) (drop 10 product)
+  in ((UInt256 with limbs = clampL9 (take 10 product)), overflow)
+
+-- ---------------------------------------------------------------------------
+-- Short division (uint256 / Int, divisor < 2^28)
+-- ---------------------------------------------------------------------------
+
+-- | Divide a UInt256 by a positive Int less than 2^28.
+-- Returns (quotient, remainder).
+uint256DivInt : UInt256 -> Int -> (UInt256, Int)
+uint256DivInt u d
+  | d <= 0 = error "uint256DivInt: divisor must be positive"
+  | d >= limbBase = error "uint256DivInt: divisor >= 2^28 -- use full division for larger divisors"
+  | otherwise =
+    let step (qs, rem) limb =
+          let acc = rem * limbBase + limb
+          in (qs <> [acc / d], acc % d)
+        (quotients, finalRem) = foldl step ([], 0) (reverse u.limbs)
+    in ((UInt256 with limbs = reverse quotients), finalRem)
+
+-- ---------------------------------------------------------------------------
+-- Full division -- not implemented (error stubs)
+-- ---------------------------------------------------------------------------
+
+-- | Full uint256/uint256 division. NOT IMPLEMENTED.
+-- Use uint256DivInt for divisors that fit in a single limb (< 2^28).
+uint256Div : UInt256 -> UInt256 -> UInt256
+uint256Div _ _ = error "uint256Div: full uint256/uint256 division not implemented -- use uint256DivInt for divisors < 2^28"
+
+-- | Full uint256/uint256 modulo. NOT IMPLEMENTED.
+uint256Mod : UInt256 -> UInt256 -> UInt256
+uint256Mod _ _ = error "uint256Mod: full uint256/uint256 modulo not implemented -- use uint256DivInt for divisors < 2^28"
+
+-- | Full uint256/uint256 divmod. NOT IMPLEMENTED.
+uint256DivMod : UInt256 -> UInt256 -> (UInt256, UInt256)
+uint256DivMod _ _ = error "uint256DivMod: full uint256/uint256 divmod not implemented -- use uint256DivInt for divisors < 2^28"
+
+-- ---------------------------------------------------------------------------
+-- BytesHex convenience wrappers
+-- ---------------------------------------------------------------------------
+
+hexAddUint256 : BytesHex -> BytesHex -> BytesHex
+hexAddUint256 a b = uint256ToHex (uint256Add (uint256FromHex a) (uint256FromHex b))
+
+hexSubUint256 : BytesHex -> BytesHex -> BytesHex
+hexSubUint256 a b = uint256ToHex (uint256Sub (uint256FromHex a) (uint256FromHex b))
+
+hexMulUint256 : BytesHex -> BytesHex -> BytesHex
+hexMulUint256 a b = uint256ToHex (uint256Mul (uint256FromHex a) (uint256FromHex b))
