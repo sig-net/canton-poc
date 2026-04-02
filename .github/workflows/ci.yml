@@ -44,7 +44,10 @@ jobs:
       - name: Build DAR, run Daml tests & generate codegen
         run: |
           dpm build --all
-          dpm test --all
+          for pkg in daml-abi daml-uint256 daml-evm-types daml-eip712 daml-vault; do
+            echo "Testing daml-packages/$pkg..."
+            (cd daml-packages/$pkg && dpm test)
+          done
           dpm codegen-js daml-packages/daml-vault/.daml/dist/daml-vault-0.0.1.dar -o ts-packages/canton-sig/generated/model -s daml.js
 
       - run: pnpm install --frozen-lockfile
