@@ -6466,7 +6466,7 @@ describe("UInt256 arithmetic vectors (cross-language ground truth)", () => {
         const val2 = 2n * B ** BigInt(i);
         expect(val1 < val2).toBe(true);
         expect(val2 > val1).toBe(true);
-        expect(toHex256(val1)).toBe(toHex256(1n * B ** BigInt(i)));
+        expect(val1 !== val2).toBe(true);
       });
     }
   });
@@ -6598,7 +6598,8 @@ describe("UInt256 arithmetic vectors (cross-language ground truth)", () => {
         expect(toHex256((1n << BigInt(bits)) - 1n + 1n)).toBe(toHex256(1n << BigInt(bits)));
       });
       it(`borrow: 2^${bits} - 1 = 2^${bits}-1`, () => {
-        expect(toHex256((1n << BigInt(bits)) - 1n)).toBe(toHex256((1n << BigInt(bits)) - 1n));
+        const val = (1n << BigInt(bits)) - 1n;
+        expect(BigInt("0x" + toHex256(val))).toBe(val);
       });
     }
   });
@@ -6976,7 +6977,7 @@ describe("UInt256 arithmetic vectors (cross-language ground truth)", () => {
       const price = 3500n * 10n ** 18n;
       const value = balance * price;
       expect(value <= UINT256_MAX).toBe(true);
-      expect(toHex256(value)).toBe(toHex256(balance * price));
+      expect(BigInt("0x" + toHex256(value))).toBe(value);
     });
   });
 });

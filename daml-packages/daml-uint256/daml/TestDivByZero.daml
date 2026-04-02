@@ -1,0 +1,35 @@
+module TestDivByZero where
+
+import Daml.Script
+import UInt256
+
+-- Helper template to test pure error paths via submitMustFail.
+-- Daml's `error` aborts the transaction, so we wrap each call
+-- in a choice and use `submitMustFail` to verify the abort.
+template DivHelper
+  with
+    p : Party
+  where
+    signatory p
+    choice DivByZero : (UInt256, Int)
+      controller p
+      do pure (uint256DivInt uint256One 0)
+    choice DivByLimbBase : (UInt256, Int)
+      controller p
+      do pure (uint256DivInt uint256One 268435456)
+    choice DivByNegative : (UInt256, Int)
+      controller p
+      do pure (uint256DivInt uint256One (-1))
+
+testDivByZeroErrors : Script ()
+testDivByZeroErrors = do
+  alice <- allocateParty "Alice"
+  -- Division by zero must fail
+  cid1 <- submit alice do createCmd DivHelper with p = alice
+  submitMustFail alice do exerciseCmd cid1 DivByZero
+  -- Division by limbBase (2^28) must fail
+  cid2 <- submit alice do createCmd DivHelper with p = alice
+  submitMustFail alice do exerciseCmd cid2 DivByLimbBase
+  -- Division by negative must fail
+  cid3 <- submit alice do createCmd DivHelper with p = alice
+  submitMustFail alice do exerciseCmd cid3 DivByNegative
