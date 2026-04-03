@@ -87,10 +87,10 @@ The implementation design and test suite are inspired by established uint256 / b
 
 The test suite uses a two-file oracle pattern:
 
-- **`test/uint256-vectors.test.ts`** (592 tests) — TypeScript `BigInt` computes expected values for every operation (add, sub, mul, div, compare, checked variants). Includes 50 frozen fuzz vectors from a deterministic keccak256 PRNG, squaring sweeps, Karatsuba identity checks, and Euler expansion.
-- **`TestUInt256.daml`** (73 test functions) — Daml asserts identical hex results against the TS oracle. Every hardcoded hex constant in Daml has a 1:1 counterpart in the TS file.
+- **`test/uint256-vectors.test.ts`** (2,392 tests) — TypeScript `BigInt` computes expected values for every operation (add, sub, mul, div, compare, checked variants). Includes 500 frozen fuzz vectors from a deterministic keccak256 PRNG, squaring sweeps, Karatsuba identity checks, and Euler expansion.
+- **`TestUInt256.daml`** (72 test functions) + **`TestFuzz.daml`** (4 fuzz suites, 500 vectors each) + **`TestProperties.daml`** (22 property-based tests) + **`TestDivByZero.daml`** (1 error-path test) — Daml asserts identical hex results against the TS oracle.
 
-Both files must stay in sync — any change to test vectors must be reflected in both.
+TS and Daml test vectors must stay in sync — any change must be reflected in both.
 
 ## Build & Test
 

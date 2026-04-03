@@ -23,7 +23,7 @@ EIP-712 typed structured data hashing for Daml. Implements the domain separator 
 ## Dependencies
 
 - `daml-prim`, `daml-stdlib`, `daml-script`
-- `daml-evm-types` (via `data-dependencies`) -- provides `EvmTransactionParams`
+- `daml-evm-types` (via `data-dependencies`) -- used by `TestCrypto.daml` test fixtures
 
 ## Usage
 

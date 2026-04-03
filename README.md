@@ -73,8 +73,12 @@ These don't need the sandbox:
 
 ```bash
 dpm build --all
-dpm test --all
+for pkg in daml-abi daml-uint256 daml-evm-types daml-eip712 daml-vault; do
+  (cd daml-packages/$pkg && dpm test)
+done
 ```
+
+> `dpm test` does not support `--all` — each package must be tested individually.
 
 ## Sepolia E2E Tests
 

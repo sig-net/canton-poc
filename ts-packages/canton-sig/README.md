@@ -134,7 +134,7 @@ new CantonClient(baseUrl?: string) // defaults to http://localhost:7575
 
 ### `DAR_PATH`
 
-Absolute path to the bundled `canton-sig-poc-0.0.1.dar`. Pass to `canton.uploadDar()`.
+Absolute path to the bundled `daml-vault-0.0.1.dar`. Pass to `canton.uploadDar()`.
 
 ### Utilities
 
@@ -150,6 +150,7 @@ Absolute path to the bundled `canton-sig-poc-0.0.1.dar`. Pass to `canton.uploadD
 | `signMpcResponse(rootPrivateKey, requestId, mpcOutput)`                                   | Sign an MPC response hash (compact 64-byte signature)       |
 | `reconstructSignedTx(evmParams, signature)`                                               | Reconstruct a signed EVM transaction                        |
 | `submitRawTransaction(rpcUrl, raw)`                                                       | Submit a raw transaction to an EVM RPC                      |
+| `buildCalldata(functionSignature, args)`                                                   | Build EVM calldata from function signature and hex args     |
 | `buildTxRequest(evmParams)`                                                               | Build a viem transaction request from Canton EVM params     |
 | `serializeUnsignedTx(evmParams)`                                                          | Serialize an unsigned EVM transaction                       |
 | `findCreated(events, templateFragment)`                                                   | Find a created event by template name                       |
