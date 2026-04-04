@@ -1,0 +1,50 @@
+{
+  "name": "canton-sig",
+  "version": "0.0.1",
+  "description": "MPC-based ERC-20 custody service for Canton",
+  "type": "module",
+  "main": "dist/index.cjs",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.mts",
+  "exports": {
+    ".": {
+      "types": {
+        "import": "./dist/index.d.mts",
+        "require": "./dist/index.d.cts"
+      },
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsdown && cp ../../daml-packages/daml-vault/.daml/dist/daml-vault-0.0.1.dar dist/",
+    "check:types": "tsc --noEmit",
+    "prepack": "pnpm run build",
+    "release": "pnpm run build && pnpm publish --access public",
+    "release:beta": "pnpm run build && pnpm publish --access public --tag beta",
+    "test": "vitest run"
+  },
+  "peerDependencies": {
+    "viem": "^2.0.0"
+  },
+  "dependencies": {
+    "@daml/types": "^3.4.11",
+    "@mojotech/json-type-validation": "^3.1.0",
+    "@noble/curves": "^2.0.1",
+    "openapi-fetch": "^0.17.0",
+    "signet.js": "0.4.0",
+    "ws": "^8.19.0"
+  },
+  "devDependencies": {
+    "@daml.js/daml-vault-0.0.1": "file:./generated/model/daml-vault-0.0.1",
+    "@types/node": "^25.3.0",
+    "@types/ws": "^8.18.1",
+    "viem": "^2.46.3",
+    "tsdown": "^0.21.4",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
+  }
+}

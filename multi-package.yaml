@@ -1,6 +1,6 @@
 packages:
-  - ts-packages/*
   - daml-packages/daml-abi
   - daml-packages/daml-uint256
+  - daml-packages/daml-evm-types
   - daml-packages/daml-eip712
-  - test
+  - daml-packages/daml-vault
