@@ -839,7 +839,7 @@ of deposits, withdrawals, or ERC20 concepts.
 
 1. Watch `PendingEvmTx` via WebSocket stream
 2. Read `vaultId`, `issuer`, `path` from PendingEvmTx payload
-3. Derive child key: `predecessorId = vaultId + keccak256(sort(operators))`
+3. Derive child key: `predecessorId = vaultId + partyToText issuer`
 4. Sign EVM tx → exercise `VaultOrchestrator.SignEvmTx`
 5. Poll chain → exercise `VaultOrchestrator.ProvideEvmOutcomeSig`
 
@@ -885,9 +885,10 @@ Cross-Vault Isolation), so the `responseHash` transitively binds the MPC
 signature to the full operator set:
 
 ```
-responseHash = keccak256(requestId || serializedOutput)
-                            ↑
-                includes operatorsHash
+responseHash = eip712Hash(keccak256(
+    responseTypeHash <> assertBytes32 requestId <> safeKeccak256 serializedOutput
+))
+-- requestId transitively includes operatorsHash (from computeRequestId)
 ```
 
 `ClaimDeposit`/`CompleteWithdrawal` verifies the MPC signature against
@@ -981,10 +982,12 @@ A malicious SigNetwork participant could:
 1. Patch the JSON Ledger API to inject fake `CreatedEvent` into the
    WebSocket stream — contracts that were never confirmed by any
    operator participant
-2. The MPC service validates only the `requestId` hash
-   (`tx-handler.ts:137-153`) — it does NOT inspect
-   `CreatedEvent.signatories`, does NOT verify the contract was created
-   via an authorized choice, does NOT check who submitted it
+2. The MPC service validates the `requestId` hash and checks
+   `CreatedEvent.signatories` + `witnessParties` against the contract's
+   `operators` field (defense-in-depth, added in `tx-handler.ts`). However,
+   in single-participant mode, a malicious participant can forge BOTH
+   the contract payload AND the metadata — so this check only provides
+   real protection in multi-participant deployment.
 3. If the `requestId` is correctly computed from the forged `evmTxParams`,
    all 8 MPC nodes (connected to the same participant) sign the
    specified EVM transaction
@@ -994,8 +997,9 @@ Even though `SignBidirectionalEvent` carries `signatory operators, requester`
 (the full `[dex1, dex2, dex3]` array + requester), this protection only exists at the ledger
 level. At the API layer, SigNetwork's participant can serve fake events
 claiming these operators signed when they never did. The MPC service
-does not inspect `CreatedEvent.signatories` — it trusts whatever the
-participant reports. This is why MPC nodes must read from multiple
+now validates `CreatedEvent.signatories` against the contract's
+`operators` field, but in single-participant mode a malicious participant
+can forge metadata too. This is why MPC nodes must read from multiple
 Canton participants: distributing the read path across
 operator-controlled nodes ensures no single participant can trick enough
 nodes to reach the signing threshold.
