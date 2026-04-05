@@ -1,0 +1,161 @@
+module Signer where
+
+import DA.List (unique)
+import DA.Crypto.Text (BytesHex, SignatureHex)
+
+import EvmTypes (EvmTransactionParams)
+
+-- ---------------------------------------------------------------------------
+-- Signer singleton — MPC infrastructure
+-- ---------------------------------------------------------------------------
+
+template Signer
+  with
+    sigNetwork : Party
+  where
+    signatory sigNetwork
+
+    nonconsuming choice SignBidirectional : ContractId SignBidirectionalEvent
+      with
+        signRequestCid : ContractId SignRequest
+        sender         : Party
+      controller sender
+      do
+        exercise signRequestCid Execute
+
+    nonconsuming choice Respond : ContractId SignatureRespondedEvent
+      with
+        operators : [Party]
+        sender    : Party
+        requestId : BytesHex
+        signature : SignatureHex
+      controller sigNetwork
+      do
+        create SignatureRespondedEvent with
+          sigNetwork; operators; sender; requestId
+          responder = sigNetwork; signature
+
+    nonconsuming choice RespondBidirectional : ContractId RespondBidirectionalEvent
+      with
+        operators        : [Party]
+        sender           : Party
+        requestId        : BytesHex
+        serializedOutput : BytesHex
+        signature        : SignatureHex
+      controller sigNetwork
+      do
+        create RespondBidirectionalEvent with
+          sigNetwork; operators; sender; requestId
+          responder = sigNetwork; serializedOutput; signature
+
+-- ---------------------------------------------------------------------------
+-- SignRequest — transient authority bridge (Vault → Signer CPI)
+-- ---------------------------------------------------------------------------
+
+template SignRequest
+  with
+    operators                  : [Party]
+    sender                     : Party
+    sigNetwork                 : Party
+    evmTxParams                : EvmTransactionParams
+    vaultId                    : Text   -- MPC derives predecessorId = vaultId <> keccak256(sort(operators)) off-chain
+    caip2Id                    : Text
+    keyVersion                 : Int
+    path                       : Text
+    algo                       : Text
+    dest                       : Text
+    params                     : Text
+    nonceCidText               : Text
+    outputDeserializationSchema : Text
+    respondSerializationSchema  : Text
+  where
+    signatory operators
+    observer sigNetwork
+    ensure not (null operators) && unique operators
+
+    choice Execute : ContractId SignBidirectionalEvent
+      controller sender
+      do
+        create SignBidirectionalEvent with
+          operators; sender; sigNetwork
+          evmTxParams; vaultId; caip2Id; keyVersion; path; algo; dest; params
+          nonceCidText
+          outputDeserializationSchema; respondSerializationSchema
+
+-- ---------------------------------------------------------------------------
+-- SignBidirectionalEvent — what the MPC watches
+-- ---------------------------------------------------------------------------
+
+template SignBidirectionalEvent
+  with
+    operators                  : [Party]
+    sender                     : Party
+    sigNetwork                 : Party
+    evmTxParams                : EvmTransactionParams
+    vaultId                    : Text   -- MPC derives predecessorId = vaultId <> keccak256(sort(operators)) off-chain
+    caip2Id                    : Text
+    keyVersion                 : Int
+    path                       : Text
+    algo                       : Text
+    dest                       : Text
+    params                     : Text
+    nonceCidText               : Text
+    outputDeserializationSchema : Text
+    respondSerializationSchema  : Text
+  where
+    signatory operators, sender
+    observer sigNetwork
+    ensure not (null operators) && unique operators
+
+    choice Consume_SignBidirectional : ()
+      with actor : Party
+      controller actor
+      do
+        assertMsg "Not authorized"
+          (actor `elem` operators || actor == sender)
+        pure ()
+
+-- ---------------------------------------------------------------------------
+-- Evidence contracts — MPC response delivery
+-- ---------------------------------------------------------------------------
+
+template SignatureRespondedEvent
+  with
+    sigNetwork : Party
+    operators  : [Party]
+    sender     : Party
+    requestId  : BytesHex
+    responder  : Party
+    signature  : SignatureHex
+  where
+    signatory sigNetwork
+    observer operators, sender
+
+    choice Consume_SignatureResponded : ()
+      with actor : Party
+      controller actor
+      do
+        assertMsg "Not authorized"
+          (actor `elem` operators || actor == sender)
+        pure ()
+
+template RespondBidirectionalEvent
+  with
+    sigNetwork       : Party
+    operators        : [Party]
+    sender           : Party
+    requestId        : BytesHex
+    responder        : Party
+    serializedOutput : BytesHex
+    signature        : SignatureHex
+  where
+    signatory sigNetwork
+    observer operators, sender
+
+    choice Consume_RespondBidirectional : ()
+      with actor : Party
+      controller actor
+      do
+        assertMsg "Not authorized"
+          (actor `elem` operators || actor == sender)
+        pure ()
