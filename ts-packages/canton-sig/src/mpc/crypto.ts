@@ -29,7 +29,7 @@ export const eip712Types = {
     { name: "maxPriorityFee", type: "uint256" },
     { name: "chainId", type: "uint256" },
   ],
-  CantonMpcDepositRequest: [
+  CantonMpcSignRequest: [
     { name: "sender", type: "string" },
     { name: "evmParams", type: "EvmTransactionParams" },
     { name: "caip2Id", type: "string" },
@@ -37,7 +37,8 @@ export const eip712Types = {
     { name: "path", type: "string" },
     { name: "algo", type: "string" },
     { name: "dest", type: "string" },
-    { name: "authCidText", type: "string" },
+    { name: "params", type: "string" },
+    { name: "nonceCidText", type: "string" },
   ],
   CantonMpcResponse: [
     { name: "requestId", type: "bytes32" },
@@ -71,7 +72,7 @@ function toEvmParamsMessage(p: EvmTransactionParams) {
 
 /**
  * Compute request_id using EIP-712 typed data hashing.
- * Mirrors Daml's computeRequestId in Crypto.daml.
+ * Mirrors Daml's computeRequestId in RequestId.daml.
  */
 export function computeRequestId(
   sender: string,
@@ -81,12 +82,13 @@ export function computeRequestId(
   path: string,
   algo: string,
   dest: string,
-  authCidText: string,
+  params: string,
+  nonceCidText: string,
 ): Hex {
   return hashTypedData({
     domain: eip712Domain,
     types: eip712Types,
-    primaryType: "CantonMpcDepositRequest",
+    primaryType: "CantonMpcSignRequest",
     message: {
       sender,
       evmParams: toEvmParamsMessage(evmParams),
@@ -95,7 +97,8 @@ export function computeRequestId(
       path,
       algo,
       dest,
-      authCidText,
+      params,
+      nonceCidText,
     },
   });
 }
@@ -122,7 +125,7 @@ export function computeResponseHash(requestId: string, mpcOutput: string): Hex {
 
 /**
  * Derive the SPKI-encoded public key from an uncompressed secp256k1 public key.
- * Matches the format used by Canton's VaultOrchestrator.mpcPublicKey field.
+ * Matches the format used by Canton's Signer.mpcPublicKey field.
  */
 export function toSpkiPublicKey(uncompressedPubKey: string): string {
   const pubKeyBytes = toBytes(`0x${uncompressedPubKey}`);

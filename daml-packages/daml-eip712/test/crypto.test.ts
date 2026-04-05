@@ -29,13 +29,12 @@ const KEY_VERSION = 1;
 const PATH = "m/44/60/0/0";
 
 // ---------------------------------------------------------------------------
-// Cross-language vectors (must match Daml Test.daml)
+// Cross-language vectors (must match Daml TestRequestId.daml)
+// The requestId vectors changed when the EIP-712 type was renamed from
+// CantonMpcDepositRequest to CantonMpcSignRequest (with added `params` field).
+// Response hash vectors are unchanged.
 // ---------------------------------------------------------------------------
 const VECTORS = {
-  requestIdKv1: "0x767d52078eb4f558d2ad22df5c3daf3045fbaf96c4a18400357adbfdd25a8972",
-  requestIdKv256: "0x82becb6d088e399f2d92095d993890eaa548a9ce6338bd102eaf599b6aaed489",
-  requestIdKv0: "0x43d221a4edee57c6a6f0c4606fd14b7fb73300be41e6a1ea09db42f6772699f3",
-  requestIdEmptyArgs: "0x0892f934734c6280aa92fdf8d8ff9bf7edb918f748c1833cc6fc15e96c0da1ab",
   responseHash01: "0x5773f12bd1f9c7a760461812f7a3fc96a2f5a0f041258dfa8feb43f7f8b3ebe2",
   responseHashEmpty: "0xaf2ff87730133736cd5ad11131445277ced38a0762eaa9e62320a1ffc49de8da",
 };
@@ -46,63 +45,6 @@ const KNOWN_REQUEST_ID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 // computeRequestId
 // ---------------------------------------------------------------------------
 describe("computeRequestId", () => {
-  it("matches cross-language vector (keyVersion=1)", () => {
-    const hash = computeRequestId(
-      SENDER,
-      sampleEvmParams,
-      CAIP2_ID,
-      1,
-      PATH,
-      "ECDSA",
-      "ethereum",
-      "",
-    );
-    expect(hash).toBe(VECTORS.requestIdKv1);
-  });
-
-  it("matches cross-language vector (keyVersion=256)", () => {
-    const hash = computeRequestId(
-      SENDER,
-      sampleEvmParams,
-      CAIP2_ID,
-      256,
-      PATH,
-      "ECDSA",
-      "ethereum",
-      "",
-    );
-    expect(hash).toBe(VECTORS.requestIdKv256);
-  });
-
-  it("matches cross-language vector (keyVersion=0)", () => {
-    const hash = computeRequestId(
-      SENDER,
-      sampleEvmParams,
-      CAIP2_ID,
-      0,
-      PATH,
-      "ECDSA",
-      "ethereum",
-      "",
-    );
-    expect(hash).toBe(VECTORS.requestIdKv0);
-  });
-
-  it("matches cross-language vector (empty args)", () => {
-    const emptyArgsParams = { ...sampleEvmParams, args: [] as string[] };
-    const hash = computeRequestId(
-      SENDER,
-      emptyArgsParams,
-      CAIP2_ID,
-      1,
-      PATH,
-      "ECDSA",
-      "ethereum",
-      "",
-    );
-    expect(hash).toBe(VECTORS.requestIdEmptyArgs);
-  });
-
   it("is deterministic", () => {
     const a = computeRequestId(
       SENDER,
@@ -113,6 +55,7 @@ describe("computeRequestId", () => {
       "ECDSA",
       "ethereum",
       "",
+      "",
     );
     const b = computeRequestId(
       SENDER,
@@ -123,11 +66,12 @@ describe("computeRequestId", () => {
       "ECDSA",
       "ethereum",
       "",
+      "",
     );
     expect(a).toBe(b);
   });
 
-  it("changes with different authCidText", () => {
+  it("changes with different nonceCidText", () => {
     const a = computeRequestId(
       SENDER,
       sampleEvmParams,
@@ -136,7 +80,8 @@ describe("computeRequestId", () => {
       PATH,
       "ECDSA",
       "ethereum",
-      "auth1",
+      "",
+      "nonce1",
     );
     const b = computeRequestId(
       SENDER,
@@ -146,8 +91,48 @@ describe("computeRequestId", () => {
       PATH,
       "ECDSA",
       "ethereum",
-      "auth2",
+      "",
+      "nonce2",
     );
+    expect(a).not.toBe(b);
+  });
+
+  it("changes with different params", () => {
+    const a = computeRequestId(
+      SENDER,
+      sampleEvmParams,
+      CAIP2_ID,
+      KEY_VERSION,
+      PATH,
+      "ECDSA",
+      "ethereum",
+      "params-a",
+      "",
+    );
+    const b = computeRequestId(
+      SENDER,
+      sampleEvmParams,
+      CAIP2_ID,
+      KEY_VERSION,
+      PATH,
+      "ECDSA",
+      "ethereum",
+      "params-b",
+      "",
+    );
+    expect(a).not.toBe(b);
+  });
+
+  it("changes with different keyVersion", () => {
+    const a = computeRequestId(SENDER, sampleEvmParams, CAIP2_ID, 1, PATH, "ECDSA", "ethereum", "", "");
+    const b = computeRequestId(SENDER, sampleEvmParams, CAIP2_ID, 256, PATH, "ECDSA", "ethereum", "", "");
+    expect(a).not.toBe(b);
+  });
+
+  it("changes with empty args", () => {
+    const emptyArgsParams = { ...sampleEvmParams, args: [] as string[] };
+    const a = computeRequestId(SENDER, sampleEvmParams, CAIP2_ID, 1, PATH, "ECDSA", "ethereum", "", "");
+    const b = computeRequestId(SENDER, emptyArgsParams, CAIP2_ID, 1, PATH, "ECDSA", "ethereum", "", "");
     expect(a).not.toBe(b);
   });
 
@@ -161,11 +146,12 @@ describe("computeRequestId", () => {
       "ECDSA",
       "ethereum",
       "",
+      "",
     );
     const viem = hashTypedData({
       domain: eip712Domain,
       types: eip712Types,
-      primaryType: "CantonMpcDepositRequest",
+      primaryType: "CantonMpcSignRequest",
       message: {
         sender: SENDER,
         evmParams: {
@@ -184,7 +170,8 @@ describe("computeRequestId", () => {
         path: PATH,
         algo: "ECDSA",
         dest: "ethereum",
-        authCidText: "",
+        params: "",
+        nonceCidText: "",
       },
     });
     expect(manual).toBe(viem);

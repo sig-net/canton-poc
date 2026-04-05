@@ -43,13 +43,21 @@ export type { CantonEvmParams } from "./evm/tx-builder.js";
 
 // Daml template types (re-exported for consumer convenience)
 export {
-  VaultOrchestrator,
-  PendingEvmTx,
-  EcdsaSignature,
-  EvmTxOutcomeSignature,
+  Signer,
+  SignBidirectionalEvent,
+  SignatureRespondedEvent,
+  RespondBidirectionalEvent,
+  SignRequest,
+} from "@daml.js/daml-vault-0.0.1/lib/Signer/module";
+
+export {
+  Vault,
+  VaultProposal,
+  Authorization,
+  AuthorizationRequest,
   Erc20Holding,
-  DepositAuthorization,
-  DepositAuthProposal,
+  PendingDeposit,
+  PendingWithdrawal,
 } from "@daml.js/daml-vault-0.0.1/lib/Erc20Vault/module";
 
 // DAR path (resolves to dist/ after build)
