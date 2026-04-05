@@ -11,12 +11,16 @@ import {
   reconstructSignedTx,
   submitRawTransaction,
   DAR_PATH,
-  VaultOrchestrator,
+  Signer,
+  Vault,
   Erc20Holding,
-  EcdsaSignature,
-  EvmTxOutcomeSignature,
-  PendingEvmTx,
+  SignatureRespondedEvent,
+  RespondBidirectionalEvent,
+  PendingDeposit,
+  PendingWithdrawal,
 } from "canton-sig";
+import { keccak256, toHex } from "viem";
+import { DER } from "@noble/curves/abstract/weierstrass.js";
 import { loadEnv } from "../../config/env.js";
 import {
   DEPOSIT_AMOUNT,
@@ -26,10 +30,23 @@ import {
   fundFromFaucet,
 } from "./sepolia-helpers.js";
 
-export const VAULT_ORCHESTRATOR = VaultOrchestrator.templateId;
-export const ECDSA_SIGNATURE = EcdsaSignature.templateId;
-export const OUTCOME_SIGNATURE = EvmTxOutcomeSignature.templateId;
+export const SIGNER_TEMPLATE = Signer.templateId;
+export const VAULT_TEMPLATE = Vault.templateId;
+export const SIGNATURE_RESPONDED = SignatureRespondedEvent.templateId;
+export const RESPOND_BIDIRECTIONAL = RespondBidirectionalEvent.templateId;
 export const ERC20_HOLDING = Erc20Holding.templateId;
+export const PENDING_DEPOSIT = PendingDeposit.templateId;
+export const PENDING_WITHDRAWAL = PendingWithdrawal.templateId;
+
+/**
+ * Compute the operators hash matching Daml's computeOperatorsHash.
+ * sort operators, keccak256 each (as UTF-8), then keccak256 the concatenation.
+ */
+export function computeOperatorsHash(operators: string[]): string {
+  const sorted = [...operators].sort();
+  const individualHashes = sorted.map((op) => keccak256(toHex(op)).slice(2));
+  return keccak256(`0x${individualHashes.join("")}`).slice(2);
+}
 
 export const SEPOLIA_CHAIN_ID = 11155111;
 export const GAS_LIMIT = 100_000n;
@@ -39,7 +56,13 @@ export const KEY_VERSION = 1;
 export const ALGO = "ECDSA";
 export const DEST = "ethereum";
 
-export type { PendingEvmTx, EcdsaSignature, EvmTxOutcomeSignature, Erc20Holding };
+export type {
+  PendingDeposit,
+  PendingWithdrawal,
+  SignatureRespondedEvent,
+  RespondBidirectionalEvent,
+  Erc20Holding,
+};
 
 export function tryLoadEnv() {
   try {
@@ -72,13 +95,16 @@ export async function pollForContract(
 export interface VaultSetup {
   canton: CantonClient;
   mpcServer: MpcServer;
-  issuer: string;
+  operator: string;
   requester: string;
-  mpc: string;
-  orchCid: string;
-  orchDisclosure: Awaited<ReturnType<CantonClient["getDisclosedContract"]>>;
+  sigNetwork: string;
+  signerCid: string;
+  vaultCid: string;
+  signerDisclosure: Awaited<ReturnType<CantonClient["getDisclosedContract"]>>;
+  vaultDisclosure: Awaited<ReturnType<CantonClient["getDisclosedContract"]>>;
   vaultAddress: `0x${string}`;
   vaultAddressPadded: string;
+  predecessorId: string;
   userId: string;
 }
 
@@ -89,35 +115,55 @@ export async function setupVault(
 ): Promise<VaultSetup> {
   await canton.uploadDar(DAR_PATH);
 
-  const issuer = await canton.allocateParty(`${partyPrefix}Issuer`);
+  const sigNetwork = await canton.allocateParty(`${partyPrefix}SigNetwork`);
+  const operator = await canton.allocateParty(`${partyPrefix}Operator`);
   const requester = await canton.allocateParty(`${partyPrefix}Requester`);
-  const mpc = await canton.allocateParty(`${partyPrefix}Mpc`);
-  await canton.createUser(userId, issuer, [requester, mpc]);
+  await canton.createUser(userId, sigNetwork, [operator, requester]);
+
+  const operatorsHash = computeOperatorsHash([operator]);
+  const predecessorId = `${env.VAULT_ID}${operatorsHash}`;
 
   const vaultAddress = deriveDepositAddress(
     env.MPC_ROOT_PUBLIC_KEY,
-    `${env.VAULT_ID}${issuer}`,
+    predecessorId,
     "root",
   );
   const vaultAddressPadded = vaultAddress.slice(2).padStart(64, "0");
 
+  // Create Signer contract (signatory: sigNetwork)
+  const signerResult = await canton.createContract(userId, [sigNetwork], SIGNER_TEMPLATE, {
+    sigNetwork,
+  });
+  const signerEvent = findCreated(signerResult.transaction.events, "Signer");
+  const signerCid = signerEvent.contractId;
+  const signerDisclosure = await canton.getDisclosedContract(
+    [sigNetwork],
+    SIGNER_TEMPLATE,
+    signerCid,
+  );
+
+  // Create Vault contract (signatory: operators=[operator])
   const mpcPubKeySpki = toSpkiPublicKey(env.MPC_ROOT_PUBLIC_KEY);
-  const orchResult = await canton.createContract(userId, [issuer], VAULT_ORCHESTRATOR, {
-    issuer,
-    mpc,
-    mpcPublicKey: mpcPubKeySpki,
-    vaultAddress: vaultAddressPadded,
+  const vaultResult = await canton.createContract(userId, [operator], VAULT_TEMPLATE, {
+    operators: [operator],
+    sigNetwork,
+    evmVaultAddress: vaultAddressPadded,
+    evmMpcPublicKey: mpcPubKeySpki,
     vaultId: env.VAULT_ID,
   });
-  const orchEvent = findCreated(orchResult.transaction.events, "VaultOrchestrator");
-  const orchCid = orchEvent.contractId;
-  const orchDisclosure = await canton.getDisclosedContract([issuer], VAULT_ORCHESTRATOR, orchCid);
+  const vaultEvent = findCreated(vaultResult.transaction.events, "Vault");
+  const vaultCid = vaultEvent.contractId;
+  const vaultDisclosure = await canton.getDisclosedContract(
+    [operator],
+    VAULT_TEMPLATE,
+    vaultCid,
+  );
 
   const mpcServer = new MpcServer({
     canton,
-    orchCid,
+    signerCid,
     userId,
-    parties: [issuer],
+    parties: [sigNetwork],
     rootPrivateKey: env.MPC_ROOT_PRIVATE_KEY,
     rpcUrl: env.SEPOLIA_RPC_URL,
   });
@@ -127,13 +173,16 @@ export async function setupVault(
   return {
     canton,
     mpcServer,
-    issuer,
+    operator,
     requester,
-    mpc,
-    orchCid,
-    orchDisclosure,
+    sigNetwork,
+    signerCid,
+    vaultCid,
+    signerDisclosure,
+    vaultDisclosure,
     vaultAddress,
     vaultAddressPadded,
+    predecessorId,
     userId,
   };
 }
@@ -148,17 +197,43 @@ interface DepositResult {
   mpcOutput: string;
 }
 
+/**
+ * Parse a DER-encoded ECDSA signature into {r, s, v} for EVM tx reconstruction.
+ * The recovery bit (v) is determined by trying both 0 and 1.
+ * For simplicity we default to 0 — the MPC service already verified it on-chain.
+ */
+function parseDerSignature(derHex: string): { r: string; s: string; v: number } {
+  const { r, s } = DER.toSig(`${derHex}`);
+  return {
+    r: r.toString(16).padStart(64, "0"),
+    s: s.toString(16).padStart(64, "0"),
+    v: 0,
+  };
+}
+
 export async function executeDepositFlow(
   env: ReturnType<typeof loadEnv>,
   setup: VaultSetup,
   logPrefix = "[e2e]",
 ): Promise<DepositResult> {
-  const { canton, issuer, requester, orchCid, orchDisclosure, vaultAddressPadded, userId } = setup;
+  const {
+    canton,
+    operator,
+    requester,
+    sigNetwork,
+    signerCid,
+    vaultCid,
+    signerDisclosure,
+    vaultDisclosure,
+    vaultAddressPadded,
+    predecessorId,
+    userId,
+  } = setup;
 
   const requesterPath = requester;
   const depositAddress = deriveDepositAddress(
     env.MPC_ROOT_PUBLIC_KEY,
-    `${env.VAULT_ID}${issuer}`,
+    predecessorId,
     `${requester},${requesterPath}`,
   );
   console.log(`${logPrefix} Deposit address derived: ${depositAddress}`);
@@ -176,7 +251,7 @@ export async function executeDepositFlow(
 
   const amountPadded = toCantonHex(DEPOSIT_AMOUNT, 32);
   const erc20AddressNoPrefix = env.ERC20_ADDRESS.slice(2).toLowerCase();
-  const evmParams = {
+  const evmTxParams = {
     to: erc20AddressNoPrefix,
     functionSignature: "transfer(address,uint256)",
     args: [vaultAddressPadded, amountPadded],
@@ -189,69 +264,73 @@ export async function executeDepositFlow(
   };
 
   // ── Auth card flow ──
-  console.log(`${logPrefix} RequestDepositAuth`);
-  const proposalResult = await canton.exerciseChoice(
+  console.log(`${logPrefix} RequestAuthorization`);
+  const requestResult = await canton.exerciseChoice(
     userId,
     [requester],
-    VAULT_ORCHESTRATOR,
-    orchCid,
-    "RequestDepositAuth",
+    VAULT_TEMPLATE,
+    vaultCid,
+    "RequestAuthorization",
     { requester },
     undefined,
-    [orchDisclosure],
+    [vaultDisclosure],
   );
-  const proposalCid = firstCreated(proposalResult.transaction.events).contractId;
+  const requestCid = firstCreated(requestResult.transaction.events).contractId;
 
-  console.log(`${logPrefix} ApproveDepositAuth`);
+  console.log(`${logPrefix} ApproveAuthorization`);
   const approveResult = await canton.exerciseChoice(
     userId,
-    [issuer],
-    VAULT_ORCHESTRATOR,
-    orchCid,
-    "ApproveDepositAuth",
-    { proposalCid, remainingUses: 1 },
+    [operator],
+    VAULT_TEMPLATE,
+    vaultCid,
+    "ApproveAuthorization",
+    { requestCid, remainingUses: 1, approver: operator },
   );
-  const authEvent = findCreated(approveResult.transaction.events, "DepositAuthorization");
+  const authEvent = findCreated(approveResult.transaction.events, "Authorization");
   const authCid = authEvent.contractId;
 
   // ── Request deposit ──
-  console.log(`${logPrefix} RequestEvmDeposit`);
+  console.log(`${logPrefix} RequestDeposit`);
   const depositResult = await canton.exerciseChoice(
     userId,
     [requester],
-    VAULT_ORCHESTRATOR,
-    orchCid,
-    "RequestEvmDeposit",
+    VAULT_TEMPLATE,
+    vaultCid,
+    "RequestDeposit",
     {
       requester,
+      signerCid,
       path: requesterPath,
-      evmParams,
-      authCidText: authCid,
+      evmTxParams,
+      authCid,
+      nonceCidText: authCid,
       keyVersion: KEY_VERSION,
       algo: ALGO,
       dest: DEST,
-      authCid,
+      params: "",
       outputDeserializationSchema: '[{"name":"","type":"bool"}]',
       respondSerializationSchema: '[{"name":"","type":"bool"}]',
     },
     undefined,
-    [orchDisclosure],
+    [vaultDisclosure, signerDisclosure],
   );
 
-  const pending = findCreated(depositResult.transaction.events, "PendingEvmTx");
-  const pendingCid = pending.contractId;
-  const { requestId, path: pendingPath } = pending.createArgument as PendingEvmTx;
+  const pending = findCreated(depositResult.transaction.events, "PendingDeposit");
+  const pendingDepositCid = pending.contractId;
+  const { requestId } = pending.createArgument as PendingDeposit;
 
   // Cross-language requestId invariant
-  const caip2Id = chainIdHexToCaip2(evmParams.chainId);
+  const caip2Id = chainIdHexToCaip2(evmTxParams.chainId);
+  const fullPath = `${requester},${requesterPath}`;
   const tsRequestId = computeRequestId(
-    requester,
-    evmParams,
+    predecessorId,
+    evmTxParams,
     caip2Id,
     KEY_VERSION,
-    pendingPath,
+    fullPath,
     ALGO,
     DEST,
+    "",
     authCid,
   );
   if (tsRequestId.slice(2) !== requestId) {
@@ -259,50 +338,52 @@ export async function executeDepositFlow(
       `${logPrefix} RequestId mismatch: TS=${tsRequestId.slice(2)}, Canton=${requestId}`,
     );
   }
-  console.log(`${logPrefix} PendingEvmTx created (requestId=${requestId})`);
+  console.log(`${logPrefix} PendingDeposit created (requestId=${requestId})`);
 
   // ── MPC signs ──
-  const ecdsaSig = await pollForContract(
-    [issuer],
-    ECDSA_SIGNATURE,
+  const signatureRespondedEvent = await pollForContract(
+    [sigNetwork],
+    SIGNATURE_RESPONDED,
     (args) => args.requestId === requestId,
-    "EcdsaSignature (deposit)",
+    "SignatureRespondedEvent (deposit)",
   );
-  const ecdsaCid = ecdsaSig.contractId;
-  const ecdsaArgs = ecdsaSig.createArgument as EcdsaSignature;
-  console.log(`${logPrefix} EcdsaSignature observed`);
+  const signatureRespondedEventCid = signatureRespondedEvent.contractId;
+  const signatureRespondedArgs = signatureRespondedEvent.createArgument as SignatureRespondedEvent;
+  console.log(`${logPrefix} SignatureRespondedEvent observed`);
 
   // ── Submit to Sepolia ──
-  const signedTx = reconstructSignedTx(evmParams, {
-    r: `0x${ecdsaArgs.r}`,
-    s: `0x${ecdsaArgs.s}`,
-    v: Number(ecdsaArgs.v),
+  // Parse DER-encoded signature to r,s,v for EVM tx reconstruction
+  const { r, s, v } = parseDerSignature(signatureRespondedArgs.signature);
+  const signedTx = reconstructSignedTx(evmTxParams, {
+    r: `0x${r}`,
+    s: `0x${s}`,
+    v,
   });
   const txHash = await submitRawTransaction(env.SEPOLIA_RPC_URL, signedTx);
   console.log(`${logPrefix} Submitted signed tx: ${txHash}`);
 
   // ── Wait for outcome ──
-  const outcome = await pollForContract(
-    [issuer],
-    OUTCOME_SIGNATURE,
+  const respondBidirectionalEvent = await pollForContract(
+    [sigNetwork],
+    RESPOND_BIDIRECTIONAL,
     (args) => args.requestId === requestId,
-    "EvmTxOutcomeSignature (deposit)",
+    "RespondBidirectionalEvent (deposit)",
   );
-  const outcomeCid = outcome.contractId;
-  const outcomeArgs = outcome.createArgument as EvmTxOutcomeSignature;
-  console.log(`${logPrefix} EvmTxOutcomeSignature observed`);
+  const respondBidirectionalEventCid = respondBidirectionalEvent.contractId;
+  const respondBidirectionalArgs = respondBidirectionalEvent.createArgument as RespondBidirectionalEvent;
+  console.log(`${logPrefix} RespondBidirectionalEvent observed`);
 
   // ── Claim deposit ──
-  console.log(`${logPrefix} ClaimEvmDeposit`);
+  console.log(`${logPrefix} ClaimDeposit`);
   const claimResult = await canton.exerciseChoice(
     userId,
     [requester],
-    VAULT_ORCHESTRATOR,
-    orchCid,
-    "ClaimEvmDeposit",
-    { requester, pendingCid, outcomeCid, ecdsaCid },
+    VAULT_TEMPLATE,
+    vaultCid,
+    "ClaimDeposit",
+    { requester, pendingDepositCid, respondBidirectionalEventCid, signatureRespondedEventCid },
     undefined,
-    [orchDisclosure],
+    [vaultDisclosure],
   );
 
   const holding = findCreated(claimResult.transaction.events, "Erc20Holding");
@@ -313,6 +394,6 @@ export async function executeDepositFlow(
     holdingArgs: holding.createArgument as Erc20Holding,
     requestId,
     amountPadded,
-    mpcOutput: outcomeArgs.mpcOutput,
+    mpcOutput: respondBidirectionalArgs.serializedOutput,
   };
 }

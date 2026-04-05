@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { createPublicClient, createWalletClient, http } from "viem";
 import { privateKeyToAddress, privateKeyToAccount } from "viem/accounts";
 import { sepolia } from "viem/chains";
+import { DER } from "@noble/curves/abstract/weierstrass.js";
 import {
   findCreated,
   chainIdHexToCaip2,
@@ -15,9 +16,9 @@ import {
   setupVault,
   executeDepositFlow,
   pollForContract,
-  VAULT_ORCHESTRATOR,
-  ECDSA_SIGNATURE,
-  OUTCOME_SIGNATURE,
+  VAULT_TEMPLATE,
+  SIGNATURE_RESPONDED,
+  RESPOND_BIDIRECTIONAL,
   ERC20_HOLDING,
   SEPOLIA_CHAIN_ID,
   GAS_LIMIT,
@@ -25,9 +26,9 @@ import {
   ALGO,
   DEST,
   type VaultSetup,
-  type PendingEvmTx,
-  type EcdsaSignature,
-  type EvmTxOutcomeSignature,
+  type PendingWithdrawal,
+  type SignatureRespondedEvent,
+  type RespondBidirectionalEvent,
   type Erc20Holding,
 } from "./helpers/e2e-setup.js";
 import {
@@ -38,6 +39,18 @@ import {
   toCantonHex,
   fundFromFaucet,
 } from "./helpers/sepolia-helpers.js";
+
+/**
+ * Parse a DER-encoded ECDSA signature into {r, s, v} for EVM tx reconstruction.
+ */
+function parseDerSignature(derHex: string): { r: string; s: string; v: number } {
+  const { r, s } = DER.toSig(`${derHex}`);
+  return {
+    r: r.toString(16).padStart(64, "0"),
+    s: s.toString(16).padStart(64, "0"),
+    v: 0,
+  };
+}
 
 const env = tryLoadEnv();
 const describeIf = env ? describe : describe.skip;
@@ -78,7 +91,7 @@ describeIf("sepolia e2e withdrawal lifecycle", () => {
     const vaultNonce = await fetchNonce(env!.SEPOLIA_RPC_URL, setup.vaultAddress);
     const { maxFeePerGas, maxPriorityFeePerGas } = await fetchGasParams(env!.SEPOLIA_RPC_URL);
 
-    const evmParams = {
+    const evmTxParams = {
       to: erc20AddressNoPrefix,
       functionSignature: "transfer(address,uint256)",
       args: [recipientPadded, amountPadded],
@@ -99,103 +112,106 @@ describeIf("sepolia e2e withdrawal lifecycle", () => {
     console.log(`[wdl-e2e] Recipient ERC20 balance before: ${balanceBefore}`);
 
     // ── Request withdrawal ──
-    console.log("[wdl-e2e] User → Canton: RequestEvmWithdrawal");
+    console.log("[wdl-e2e] User → Canton: RequestWithdrawal");
     const wdlResult = await setup.canton.exerciseChoice(
       setup.userId,
       [setup.requester],
-      VAULT_ORCHESTRATOR,
-      setup.orchCid,
-      "RequestEvmWithdrawal",
+      VAULT_TEMPLATE,
+      setup.vaultCid,
+      "RequestWithdrawal",
       {
         requester: setup.requester,
-        evmParams,
+        signerCid: setup.signerCid,
+        evmTxParams,
         recipientAddress: recipientPadded,
-        balanceCidText: holdingCid,
+        nonceCidText: holdingCid,
         keyVersion: KEY_VERSION,
         algo: ALGO,
         dest: DEST,
+        params: "",
         balanceCid: holdingCid,
         outputDeserializationSchema: '[{"name":"","type":"bool"}]',
         respondSerializationSchema: '[{"name":"","type":"bool"}]',
       },
       undefined,
-      [setup.orchDisclosure],
+      [setup.vaultDisclosure, setup.signerDisclosure],
     );
 
-    const pendingWdl = findCreated(wdlResult.transaction.events, "PendingEvmTx");
-    const pendingWdlCid = pendingWdl.contractId;
-    const { requestId, path: pendingPath } = pendingWdl.createArgument as PendingEvmTx;
-    expect(pendingPath).toBe("root");
+    const pendingWdl = findCreated(wdlResult.transaction.events, "PendingWithdrawal");
+    const pendingWithdrawalCid = pendingWdl.contractId;
+    const { requestId } = pendingWdl.createArgument as PendingWithdrawal;
 
-    const caip2Id = chainIdHexToCaip2(evmParams.chainId);
+    const caip2Id = chainIdHexToCaip2(evmTxParams.chainId);
     const tsRequestId = computeRequestId(
-      setup.requester,
-      evmParams,
+      setup.predecessorId,
+      evmTxParams,
       caip2Id,
       KEY_VERSION,
       "root",
       ALGO,
       DEST,
+      "",
       holdingCid,
     );
     expect(tsRequestId.slice(2)).toBe(requestId);
-    console.log(`[wdl-e2e] PendingEvmTx created (requestId=${requestId})`);
+    console.log(`[wdl-e2e] PendingWithdrawal created (requestId=${requestId})`);
 
     // ── MPC signs withdrawal tx on Canton ──
-    const ecdsaSig = await pollForContract(
-      [setup.issuer],
-      ECDSA_SIGNATURE,
+    const signatureRespondedEvent = await pollForContract(
+      [setup.sigNetwork],
+      SIGNATURE_RESPONDED,
       (args) => args.requestId === requestId,
-      "EcdsaSignature (withdrawal)",
+      "SignatureRespondedEvent (withdrawal)",
     );
-    const ecdsaCid = ecdsaSig.contractId;
-    const ecdsaArgs = ecdsaSig.createArgument as EcdsaSignature;
-    console.log("[wdl-e2e] EcdsaSignature observed");
+    const signatureRespondedEventCid = signatureRespondedEvent.contractId;
+    const signatureRespondedArgs = signatureRespondedEvent.createArgument as SignatureRespondedEvent;
+    console.log("[wdl-e2e] SignatureRespondedEvent observed");
 
     // ── User submits signed withdrawal tx to Sepolia ──
-    const signedTx = reconstructSignedTx(evmParams, {
-      r: `0x${ecdsaArgs.r}`,
-      s: `0x${ecdsaArgs.s}`,
-      v: Number(ecdsaArgs.v),
+    const { r, s, v } = parseDerSignature(signatureRespondedArgs.signature);
+    const signedTx = reconstructSignedTx(evmTxParams, {
+      r: `0x${r}`,
+      s: `0x${s}`,
+      v,
     });
     const txHash = await submitRawTransaction(env!.SEPOLIA_RPC_URL, signedTx);
     console.log(`[wdl-e2e] User submitted signed withdrawal tx: ${txHash}`);
 
     // ── MPC verifies Sepolia receipt and posts outcome signature ──
-    const outcome = await pollForContract(
-      [setup.issuer],
-      OUTCOME_SIGNATURE,
+    const respondBidirectionalEvent = await pollForContract(
+      [setup.sigNetwork],
+      RESPOND_BIDIRECTIONAL,
       (args) => args.requestId === requestId,
-      "EvmTxOutcomeSignature (withdrawal)",
+      "RespondBidirectionalEvent (withdrawal)",
     );
-    const outcomeCid = outcome.contractId;
-    const outcomeArgs = outcome.createArgument as EvmTxOutcomeSignature;
-    expect(outcomeArgs.mpcOutput).toBe(
+    const respondBidirectionalEventCid = respondBidirectionalEvent.contractId;
+    const respondBidirectionalArgs = respondBidirectionalEvent.createArgument as RespondBidirectionalEvent;
+    expect(respondBidirectionalArgs.serializedOutput).toBe(
       "0000000000000000000000000000000000000000000000000000000000000001",
     );
-    console.log("[wdl-e2e] EvmTxOutcomeSignature observed");
+    console.log("[wdl-e2e] RespondBidirectionalEvent observed");
 
     // ── User completes withdrawal on Canton ──
     await setup.canton.exerciseChoice(
       setup.userId,
       [setup.requester],
-      VAULT_ORCHESTRATOR,
-      setup.orchCid,
-      "CompleteEvmWithdrawal",
+      VAULT_TEMPLATE,
+      setup.vaultCid,
+      "CompleteWithdrawal",
       {
         requester: setup.requester,
-        pendingCid: pendingWdlCid,
-        outcomeCid,
-        ecdsaCid,
+        pendingWithdrawalCid,
+        respondBidirectionalEventCid,
+        signatureRespondedEventCid,
       },
       undefined,
-      [setup.orchDisclosure],
+      [setup.vaultDisclosure],
     );
 
-    // CompleteEvmWithdrawal succeeded (no throw).
-    // On success (mpcOutput==ABI-encoded true): returns None — no refund Erc20Holding created.
+    // CompleteWithdrawal succeeded (no throw).
+    // On success (serializedOutput==ABI-encoded true): returns None — no refund Erc20Holding created.
     const holdings = await setup.canton.getActiveContracts(
-      [setup.issuer, setup.requester],
+      [setup.operator, setup.requester],
       ERC20_HOLDING,
     );
     const refund = holdings.find(
@@ -237,7 +253,7 @@ describeIf("sepolia e2e withdrawal lifecycle", () => {
     const vaultNonce = await fetchNonce(env!.SEPOLIA_RPC_URL, setup.vaultAddress);
     const { maxFeePerGas, maxPriorityFeePerGas } = await fetchGasParams(env!.SEPOLIA_RPC_URL);
 
-    const evmParams = {
+    const evmTxParams = {
       to: erc20AddressNoPrefix,
       functionSignature: "transfer(address,uint256)",
       args: [recipientPadded, amountPadded],
@@ -256,48 +272,50 @@ describeIf("sepolia e2e withdrawal lifecycle", () => {
     );
 
     // ── Request withdrawal ──
-    console.log("[wdl-nonce] User → Canton: RequestEvmWithdrawal");
+    console.log("[wdl-nonce] User → Canton: RequestWithdrawal");
     const wdlResult = await setup.canton.exerciseChoice(
       setup.userId,
       [setup.requester],
-      VAULT_ORCHESTRATOR,
-      setup.orchCid,
-      "RequestEvmWithdrawal",
+      VAULT_TEMPLATE,
+      setup.vaultCid,
+      "RequestWithdrawal",
       {
         requester: setup.requester,
-        evmParams,
+        signerCid: setup.signerCid,
+        evmTxParams,
         recipientAddress: recipientPadded,
-        balanceCidText: errorHoldingCid,
+        nonceCidText: errorHoldingCid,
         keyVersion: KEY_VERSION,
         algo: ALGO,
         dest: DEST,
+        params: "",
         balanceCid: errorHoldingCid,
         outputDeserializationSchema: '[{"name":"","type":"bool"}]',
         respondSerializationSchema: '[{"name":"","type":"bool"}]',
       },
       undefined,
-      [setup.orchDisclosure],
+      [setup.vaultDisclosure, setup.signerDisclosure],
     );
 
-    const pendingWdl = findCreated(wdlResult.transaction.events, "PendingEvmTx");
-    const pendingWdlCid = pendingWdl.contractId;
-    const { requestId } = pendingWdl.createArgument as PendingEvmTx;
-    console.log(`[wdl-nonce] PendingEvmTx created (requestId=${requestId})`);
+    const pendingWdl = findCreated(wdlResult.transaction.events, "PendingWithdrawal");
+    const pendingWithdrawalCid = pendingWdl.contractId;
+    const { requestId } = pendingWdl.createArgument as PendingWithdrawal;
+    console.log(`[wdl-nonce] PendingWithdrawal created (requestId=${requestId})`);
 
     // ── Wait for MPC to sign ──
-    const ecdsaSig = await pollForContract(
-      [setup.issuer],
-      ECDSA_SIGNATURE,
+    const signatureRespondedEvent = await pollForContract(
+      [setup.sigNetwork],
+      SIGNATURE_RESPONDED,
       (args) => args.requestId === requestId,
-      "EcdsaSignature (nonce-replace)",
+      "SignatureRespondedEvent (nonce-replace)",
     );
-    const ecdsaCid = ecdsaSig.contractId;
-    console.log("[wdl-nonce] EcdsaSignature observed");
+    const signatureRespondedEventCid = signatureRespondedEvent.contractId;
+    console.log("[wdl-nonce] SignatureRespondedEvent observed");
 
     // ── Submit replacement tx from vault (consumes the nonce, not the withdrawal) ──
     const vaultChildKey = deriveChildPrivateKey(
       env!.MPC_ROOT_PRIVATE_KEY,
-      `${env!.VAULT_ID}${setup.issuer}`,
+      setup.predecessorId,
       "root",
     );
     const vaultAccount = privateKeyToAccount(vaultChildKey);
@@ -320,40 +338,42 @@ describeIf("sepolia e2e withdrawal lifecycle", () => {
     await publicClient.waitForTransactionReceipt({ hash: replacementHash });
     console.log(`[wdl-nonce] Replacement tx mined: ${replacementHash}`);
 
-    // ── MPC detects nonce consumed without receipt → mpcOutput starts with "deadbeef" ──
-    const outcome = await pollForContract(
-      [setup.issuer],
-      OUTCOME_SIGNATURE,
+    // ── MPC detects nonce consumed without receipt → serializedOutput starts with "deadbeef" ──
+    const respondBidirectionalEvent = await pollForContract(
+      [setup.sigNetwork],
+      RESPOND_BIDIRECTIONAL,
       (args) => args.requestId === requestId,
-      "EvmTxOutcomeSignature (nonce-replace)",
+      "RespondBidirectionalEvent (nonce-replace)",
     );
-    const outcomeCid = outcome.contractId;
-    const outcomeArgs = outcome.createArgument as EvmTxOutcomeSignature;
-    expect(outcomeArgs.mpcOutput.startsWith("deadbeef")).toBe(true);
-    console.log("[wdl-nonce] EvmTxOutcomeSignature observed (mpcOutput starts with deadbeef)");
+    const respondBidirectionalEventCid = respondBidirectionalEvent.contractId;
+    const respondBidirectionalArgs = respondBidirectionalEvent.createArgument as RespondBidirectionalEvent;
+    expect(respondBidirectionalArgs.serializedOutput.startsWith("deadbeef")).toBe(true);
+    console.log(
+      "[wdl-nonce] RespondBidirectionalEvent observed (serializedOutput starts with deadbeef)",
+    );
 
     // ── Complete withdrawal → refund ──
     const completeResult = await setup.canton.exerciseChoice(
       setup.userId,
       [setup.requester],
-      VAULT_ORCHESTRATOR,
-      setup.orchCid,
-      "CompleteEvmWithdrawal",
+      VAULT_TEMPLATE,
+      setup.vaultCid,
+      "CompleteWithdrawal",
       {
         requester: setup.requester,
-        pendingCid: pendingWdlCid,
-        outcomeCid,
-        ecdsaCid,
+        pendingWithdrawalCid,
+        respondBidirectionalEventCid,
+        signatureRespondedEventCid,
       },
       undefined,
-      [setup.orchDisclosure],
+      [setup.vaultDisclosure],
     );
 
-    // Refund Erc20Holding should be created (mpcOutput != ABI-encoded true)
+    // Refund Erc20Holding should be created (serializedOutput != ABI-encoded true)
     const refundHolding = findCreated(completeResult.transaction.events, "Erc20Holding");
     const refundArgs = refundHolding.createArgument as Erc20Holding;
     expect(refundArgs.owner).toBe(setup.requester);
-    expect(refundArgs.issuer).toBe(setup.issuer);
+    expect(refundArgs.operators).toEqual([setup.operator]);
     expect(refundArgs.amount).toBe(amountPadded);
 
     // Recipient balance unchanged (withdrawal never executed)
