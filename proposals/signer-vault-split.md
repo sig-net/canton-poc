@@ -37,14 +37,18 @@ create instances of that template with arbitrary field values. If
 compromised SigNetwork could forge sign requests and trick the MPC
 into signing arbitrary EVM transactions.
 
-### The Mitigation: Operator + Sender Signatories
+### The Mitigation: Operator + Requester Signatories
 
-`SignBidirectionalEvent` has `signatory operators, sender` — sigNetwork
+`SignBidirectionalEvent` has `signatory operators, requester` — sigNetwork
 is only an **observer**. SigNetwork cannot create sign requests at all.
 The only path is through the Vault's `RequestDeposit` →
 create `SignRequest` + exercise `Signer.SignBidirectional` → `SignRequest.Execute` flow, which requires
-both operators' authority (Vault signatories) and sender's authority
+both operators' authority (Vault signatories) and requester's authority
 (controller).
+
+SigNetwork cannot forge `SignBidirectionalEvent` — only a `requester`
+with the `operators`' signatory authority (via the Vault) can initiate a
+signing request to SigNetwork.
 
 This uses Daml's **flexible controllers** and a create + exercise delegation pattern:
 authority established at Vault creation propagates through the atomic
@@ -81,7 +85,7 @@ stripping operators from the signed payload to weaken the multi-sig.
 | ------------ | ---------------------------------- | ------ |
 | `sigNetwork` | MPC infrastructure (single party)  | Signer |
 | `operators`  | Vault operator multi-sig `[Party]` | Vault  |
-| `sender`     | End user (depositor/holder)        | —      |
+| `requester`  | End user (depositor/holder)        | —      |
 
 `sigNetwork` is both the MPC party identity AND the Signer operator.
 No separate `mpc` party. A vault can have one or more operator parties
@@ -98,8 +102,8 @@ Names follow the Solana/Hydration MPC convention. See
 ```
 Signer (singleton)                    ← sigNetwork deploys, shares blob off-chain
   │
-  ├── SignBidirectional choice        ← sender exercises (via Vault), consumes SignRequest,
-  │     controller: sender (flexible)    creates SignBidirectionalEvent
+  ├── SignBidirectional choice        ← requester exercises (via Vault), consumes SignRequest,
+  │     controller: requester (flexible)    creates SignBidirectionalEvent
   │
   ├── Respond choice                  ← sigNetwork exercises after signing EVM tx,
   │     controller: sigNetwork           creates SignatureRespondedEvent
@@ -108,7 +112,7 @@ Signer (singleton)                    ← sigNetwork deploys, shares blob off-ch
         controller: sigNetwork           creates RespondBidirectionalEvent
 
 SignRequest (transient)               ← created, then consumed via Signer.SignBidirectional → Execute
-SignBidirectionalEvent                ← what MPC watches (signatory: operators, sender)
+SignBidirectionalEvent                ← what MPC watches (signatory: operators, requester)
 SignatureRespondedEvent               ← ECDSA signature evidence (signatory: sigNetwork)
 RespondBidirectionalEvent             ← outcome signature evidence (signatory: sigNetwork)
 ```
@@ -118,14 +122,14 @@ RespondBidirectionalEvent             ← outcome signature evidence (signatory:
 ```
 Vault (singleton)                     ← operators deploy via VaultProposal
   │
-  ├── RequestAuthorization            ← sender requests auth card
-  ├── ApproveAuthorization            ← operators approve, creates Authorization
-  ├── RequestDeposit                  ← sender consumes auth, atomic create + exercise
+  ├── RequestAuthorization            ← requester requests auth card
+  ├── ApproveAuthorization            ← operator approves, creates Authorization
+  ├── RequestDeposit                  ← requester consumes auth, atomic create + exercise
   │                                      SignRequest → Signer.SignBidirectional
   │                                      → SignBidirectionalEvent
-  ├── ClaimDeposit                    ← sender verifies MPC sig → Erc20Holding
-  ├── RequestWithdrawal               ← sender burns holding, same atomic flow
-  └── CompleteWithdrawal              ← sender verifies MPC sig → refund or finalize
+  ├── ClaimDeposit                    ← requester verifies MPC sig → Erc20Holding
+  ├── RequestWithdrawal               ← requester burns holding, same atomic flow
+  └── CompleteWithdrawal              ← requester verifies MPC sig → refund or finalize
 
 Authorization, Erc20Holding (domain contracts)
 ```
@@ -149,11 +153,11 @@ template Signer
     nonconsuming choice SignBidirectional : ContractId SignBidirectionalEvent
       with
         signRequestCid : ContractId SignRequest
-        sender         : Party          -- flexible controller
-      controller sender
+        requester      : Party          -- flexible controller
+      controller requester
       do
         -- Delegate to SignRequest.Execute to get operators authority.
-        -- This body has sigNetwork + sender, but needs operators + sender
+        -- This body has sigNetwork + requester, but needs operators + requester
         -- to create SignBidirectionalEvent. The Execute choice on SignRequest
         -- provides operators authority (SignRequest signatory).
         exercise signRequestCid Execute
@@ -161,26 +165,26 @@ template Signer
     nonconsuming choice Respond : ContractId SignatureRespondedEvent
       with
         operators : [Party]
-        sender    : Party
+        requester : Party
         requestId : BytesHex
         signature : SignatureHex        -- DER-encoded ECDSA signature
       controller sigNetwork
       do
         create SignatureRespondedEvent with
-          sigNetwork; operators; sender; requestId
+          sigNetwork; operators; requester; requestId
           responder = sigNetwork; signature
 
     nonconsuming choice RespondBidirectional : ContractId RespondBidirectionalEvent
       with
         operators        : [Party]
-        sender           : Party
+        requester        : Party
         requestId        : BytesHex
         serializedOutput : BytesHex
         signature        : SignatureHex -- DER-encoded MPC outcome signature
       controller sigNetwork
       do
         create RespondBidirectionalEvent with
-          sigNetwork; operators; sender; requestId
+          sigNetwork; operators; requester; requestId
           responder = sigNetwork; serializedOutput; signature
 ```
 
@@ -192,17 +196,17 @@ this template — it exists only to carry operator authority across the
 Vault→Signer boundary (Daml equivalent of Solana CPI).
 
 The `Execute` choice is the authority bridge: it runs with `operators`
-(SignRequest signatory) + `sender` (controller) — exactly the authority
+(SignRequest signatory) + `requester` (controller) — exactly the authority
 needed to create `SignBidirectionalEvent`.
 
 ```daml
 template SignRequest
   with
     operators                  : [Party]
-    sender                     : Party
+    requester                  : Party
     sigNetwork                 : Party
+    sender                     : Text   -- predecessorId = vaultId <> keccak256(sort(operators)), for KDF
     evmTxParams                : EvmTransactionParams
-    vaultId                    : Text   -- MPC derives predecessorId = vaultId <> keccak256(sort(operators)) off-chain
     caip2Id                    : Text
     keyVersion                 : Int
     path                       : Text
@@ -215,15 +219,15 @@ template SignRequest
   where
     signatory operators
     observer sigNetwork
-    ensure not (null operators)
+    ensure not (null operators) && unique operators
 
     choice Execute : ContractId SignBidirectionalEvent
-      controller sender
+      controller requester
       do
-        -- body authority: operators (signatory) + sender (controller)
+        -- body authority: operators (signatory) + requester (controller)
         create SignBidirectionalEvent with
-          operators; sender; sigNetwork
-          evmTxParams; vaultId; caip2Id; keyVersion; path; algo; dest; params
+          operators; requester; sigNetwork; sender
+          evmTxParams; caip2Id; keyVersion; path; algo; dest; params
           nonceCidText
           outputDeserializationSchema; respondSerializationSchema
 ```
@@ -239,10 +243,10 @@ This is what the MPC watches — equivalent to Solana's
 template SignBidirectionalEvent
   with
     operators                  : [Party]
-    sender                     : Party
+    requester                  : Party
     sigNetwork                 : Party
+    sender                     : Text   -- predecessorId = vaultId <> keccak256(sort(operators)), for KDF
     evmTxParams                : EvmTransactionParams
-    vaultId                    : Text   -- MPC derives predecessorId = vaultId <> keccak256(sort(operators)) off-chain
     caip2Id                    : Text
     keyVersion                 : Int
     path                       : Text
@@ -253,16 +257,16 @@ template SignBidirectionalEvent
     outputDeserializationSchema : Text
     respondSerializationSchema  : Text
   where
-    signatory operators, sender
+    signatory operators, requester
     observer sigNetwork
-    ensure not (null operators)
+    ensure not (null operators) && unique operators
 
     choice Consume_SignBidirectional : ()
       with actor : Party
       controller actor
       do
         assertMsg "Not authorized"
-          (actor `elem` operators || actor == sender)
+          (actor `elem` operators || actor == requester)
         pure ()
 ```
 
@@ -278,20 +282,20 @@ template SignatureRespondedEvent
   with
     sigNetwork : Party
     operators  : [Party]
-    sender     : Party
+    requester  : Party
     requestId  : BytesHex
     responder  : Party
     signature  : SignatureHex           -- DER-encoded ECDSA signature
   where
     signatory sigNetwork
-    observer operators, sender
+    observer operators, requester
 
     choice Consume_SignatureResponded : ()
       with actor : Party
       controller actor
       do
         assertMsg "Not authorized"
-          (actor `elem` operators || actor == sender)
+          (actor `elem` operators || actor == requester)
         pure ()
 ```
 
@@ -306,21 +310,21 @@ template RespondBidirectionalEvent
   with
     sigNetwork       : Party
     operators        : [Party]
-    sender           : Party
+    requester        : Party
     requestId        : BytesHex
     responder        : Party
     serializedOutput : BytesHex
     signature        : SignatureHex     -- DER-encoded MPC outcome signature
   where
     signatory sigNetwork
-    observer operators, sender
+    observer operators, requester
 
     choice Consume_RespondBidirectional : ()
       with actor : Party
       controller actor
       do
         assertMsg "Not authorized"
-          (actor `elem` operators || actor == sender)
+          (actor `elem` operators || actor == requester)
         pure ()
 ```
 
@@ -347,7 +351,7 @@ template VaultProposal
   where
     signatory alreadySigned
     observer allOperators
-    ensure unique alreadySigned
+    ensure not (null allOperators) && unique allOperators && unique alreadySigned
 
     choice SignVault : Either (ContractId VaultProposal) (ContractId Vault)
       with signer : Party
@@ -390,13 +394,13 @@ consumed by `ClaimDeposit`. Guarantees single-use via archive.
 template PendingDeposit
   with
     operators   : [Party]
-    sender      : Party
+    requester   : Party
     sigNetwork  : Party
     requestId   : BytesHex
     evmTxParams : EvmTransactionParams
   where
     signatory operators
-    observer sender, sigNetwork
+    observer requester, sigNetwork
     ensure not (null operators)
 ```
 
@@ -407,16 +411,16 @@ Same pattern for withdrawals. Carries the holding info for refund.
 ```daml
 template PendingWithdrawal
   with
-    operators      : [Party]
-    sender         : Party
-    sigNetwork     : Party
-    requestId      : BytesHex
-    evmTxParams    : EvmTransactionParams
-    erc20Address   : BytesHex
-    amount         : Text
+    operators    : [Party]
+    requester    : Party
+    sigNetwork   : Party
+    requestId    : BytesHex
+    evmTxParams  : EvmTransactionParams
+    erc20Address : BytesHex
+    amount       : BytesHex
   where
     signatory operators
-    observer sender, sigNetwork
+    observer requester, sigNetwork
     ensure not (null operators)
 ```
 
@@ -430,7 +434,7 @@ choice — everything chains internally.
     nonconsuming choice RequestDeposit
       : (ContractId SignBidirectionalEvent, ContractId PendingDeposit)
       with
-        sender       : Party
+        requester    : Party
         signerCid    : ContractId Signer   -- disclosed contract
         path         : Text
         evmTxParams  : EvmTransactionParams
@@ -443,11 +447,11 @@ choice — everything chains internally.
         params     : Text
         outputDeserializationSchema : Text
         respondSerializationSchema  : Text
-      controller sender
+      controller requester
       do
         auth <- fetch authCid
-        assertMsg "Auth issuer mismatch" (auth.issuer `elem` operators)
-        assertMsg "Auth owner mismatch" (auth.owner == sender)
+        assertMsg "Auth operators mismatch" (sort auth.operators == sort operators)
+        assertMsg "Auth owner mismatch" (auth.owner == requester)
         assertMsg "No remaining uses" (auth.remainingUses > 0)
         archive authCid
         when (auth.remainingUses > 1) do
@@ -461,34 +465,32 @@ choice — everything chains internally.
         assertMsg "Transfer recipient must be vault address"
           (recipientArg == evmVaultAddress)
 
-        let senderPath = partyToText sender <> "," <> path
+        let fullPath = partyToText requester <> "," <> path
         let caip2Id = "eip155:" <> chainIdToDecimalText evmTxParams.chainId
-
-        -- Validate Signer matches Vault's sigNetwork
-        signer <- fetch signerCid
-        assertMsg "sigNetwork mismatch" (signer.sigNetwork == sigNetwork)
+        let operatorsHash = computeOperatorsHash (map partyToText operators)
+        let predecessorId = vaultId <> operatorsHash
 
         -- Step 1: Create SignRequest (needs operators authority)
         signReqCid <- create SignRequest with
-          operators; sender; sigNetwork
-          evmTxParams; vaultId; caip2Id; keyVersion
-          path = senderPath; algo; dest; params
+          operators; requester; sigNetwork
+          evmTxParams; sender = predecessorId; caip2Id; keyVersion
+          path = fullPath; algo; dest; params
           nonceCidText
           outputDeserializationSchema; respondSerializationSchema
 
-        -- Step 2: Exercise Signer.SignBidirectional (needs sender authority)
+        -- Step 2: Exercise Signer.SignBidirectional (needs requester authority)
         -- Signer internally delegates to SignRequest.Execute
         signEventCid <- exercise signerCid SignBidirectional with
-          signRequestCid = signReqCid; sender
+          signRequestCid = signReqCid; requester
 
         -- Compute requestId for the pending anchor
         let requestId = computeRequestId
-              operatorTexts (partyToText sender) evmTxParams caip2Id keyVersion
-              senderPath algo dest params nonceCidText
+              predecessorId evmTxParams caip2Id keyVersion
+              fullPath algo dest params nonceCidText
 
         -- Create vault-layer anchor (consumed at claim time)
         pendingCid <- create PendingDeposit with
-          operators; sender; sigNetwork; requestId; evmTxParams
+          operators; requester; sigNetwork; requestId; evmTxParams
 
         pure (signEventCid, pendingCid)
 ```
@@ -501,16 +503,16 @@ signature, creates `Erc20Holding`.
 ```daml
     nonconsuming choice ClaimDeposit : ContractId Erc20Holding
       with
-        sender            : Party
+        requester         : Party
         pendingDepositCid : ContractId PendingDeposit
         outcomeCid        : ContractId RespondBidirectionalEvent
         sigCid            : ContractId SignatureRespondedEvent
-      controller sender
+      controller requester
       do
         pending <- fetch pendingDepositCid
         archive pendingDepositCid           -- single-use guarantee
 
-        assertMsg "Sender mismatch" (pending.sender == sender)
+        assertMsg "Sender mismatch" (pending.requester == requester)
         assertMsg "Operators mismatch" (sort pending.operators == sort operators)
 
         outcome <- fetch outcomeCid
@@ -527,13 +529,13 @@ signature, creates `Erc20Holding`.
         assertMsg "ERC20 transfer returned false" success
 
         -- Use Consume choices (Vault body lacks sigNetwork authority to archive directly)
-        exercise outcomeCid Consume_RespondBidirectional with actor = sender
-        exercise sigCid Consume_SignatureResponded with actor = sender
+        exercise outcomeCid Consume_RespondBidirectional with actor = requester
+        exercise sigCid Consume_SignatureResponded with actor = requester
 
         let amount = (pending.evmTxParams).args !! 1
         create Erc20Holding with
           operators
-          owner = sender
+          owner = requester
           erc20Address = (pending.evmTxParams).to
           amount
 ```
@@ -547,7 +549,7 @@ Archives the `Erc20Holding` (optimistic debit), same atomic flow as
     nonconsuming choice RequestWithdrawal
       : (ContractId SignBidirectionalEvent, ContractId PendingWithdrawal)
       with
-        sender           : Party
+        requester        : Party
         signerCid        : ContractId Signer
         evmTxParams      : EvmTransactionParams
         recipientAddress : BytesHex
@@ -559,11 +561,11 @@ Archives the `Erc20Holding` (optimistic debit), same atomic flow as
         params           : Text
         outputDeserializationSchema : Text
         respondSerializationSchema  : Text
-      controller sender
+      controller requester
       do
         holding <- fetch balanceCid
         assertMsg "Holding operators mismatch" (sort holding.operators == sort operators)
-        assertMsg "Holding owner mismatch" (holding.owner == sender)
+        assertMsg "Holding owner mismatch" (holding.owner == requester)
 
         let recipientArg = case evmTxParams.args of
               recipient :: _ -> recipient
@@ -582,28 +584,25 @@ Archives the `Erc20Holding` (optimistic debit), same atomic flow as
         archive balanceCid
 
         let caip2Id = "eip155:" <> chainIdToDecimalText evmTxParams.chainId
-
-        -- Validate Signer matches Vault
-        signer <- fetch signerCid
-        assertMsg "sigNetwork mismatch" (signer.sigNetwork == sigNetwork)
+        let operatorsHash = computeOperatorsHash (map partyToText operators)
+        let predecessorId = vaultId <> operatorsHash
 
         signReqCid <- create SignRequest with
-          operators; sender; sigNetwork
-          evmTxParams; vaultId; caip2Id; keyVersion
+          operators; requester; sigNetwork
+          evmTxParams; sender = predecessorId; caip2Id; keyVersion
           path = "root"; algo; dest; params
           nonceCidText
           outputDeserializationSchema; respondSerializationSchema
 
         signEventCid <- exercise signerCid SignBidirectional with
-          signRequestCid = signReqCid; sender
+          signRequestCid = signReqCid; requester
 
-        let operatorTexts = map partyToText operators
         let requestId = computeRequestId
-              operatorTexts (partyToText sender) evmTxParams caip2Id keyVersion
+              predecessorId evmTxParams caip2Id keyVersion
               "root" algo dest params nonceCidText
 
         pendingCid <- create PendingWithdrawal with
-          operators; sender; sigNetwork; requestId; evmTxParams
+          operators; requester; sigNetwork; requestId; evmTxParams
           erc20Address = holding.erc20Address
           amount = holding.amount
 
@@ -617,16 +616,16 @@ Consumes `PendingWithdrawal`. On failure, refunds the holding.
 ```daml
     nonconsuming choice CompleteWithdrawal : Optional (ContractId Erc20Holding)
       with
-        sender               : Party
+        requester            : Party
         pendingWithdrawalCid : ContractId PendingWithdrawal
         outcomeCid           : ContractId RespondBidirectionalEvent
         sigCid               : ContractId SignatureRespondedEvent
-      controller sender
+      controller requester
       do
         pending <- fetch pendingWithdrawalCid
         archive pendingWithdrawalCid        -- single-use guarantee
 
-        assertMsg "Sender mismatch" (pending.sender == sender)
+        assertMsg "Sender mismatch" (pending.requester == requester)
         assertMsg "Operators mismatch" (sort pending.operators == sort operators)
 
         outcome <- fetch outcomeCid
@@ -637,19 +636,19 @@ Consumes `PendingWithdrawal`. On failure, refunds the holding.
         assertMsg "Invalid MPC signature"
           (secp256k1WithEcdsaOnly outcome.signature responseHash evmMpcPublicKey)
 
-        exercise outcomeCid Consume_RespondBidirectional with actor = sender
-        exercise sigCid Consume_SignatureResponded with actor = sender
+        exercise outcomeCid Consume_RespondBidirectional with actor = requester
+        exercise sigCid Consume_SignatureResponded with actor = requester
 
         let shouldRefund =
-              if hasErrorPrefix outcome.serializedOutput then True
-              else not (abiDecodeBool outcome.serializedOutput 0)
+              hasErrorPrefix outcome.serializedOutput
+                || not (abiDecodeBool outcome.serializedOutput 0)
 
         if not shouldRefund
           then pure None
           else do
             refundCid <- create Erc20Holding with
               operators
-              owner = sender
+              owner = requester
               erc20Address = pending.erc20Address
               amount = pending.amount
             pure (Some refundCid)
@@ -660,49 +659,59 @@ Consumes `PendingWithdrawal`. On failure, refunds the holding.
 `Authorization` and `Erc20Holding` are domain-specific.
 
 ```daml
-template AuthorizationProposal
+template AuthorizationRequest
   with
-    issuer : Party
-    owner  : Party
+    operators : [Party]
+    owner     : Party
   where
-    signatory issuer
+    signatory operators
     observer owner
 
 template Authorization
   with
-    issuer        : Party
+    operators     : [Party]
     owner         : Party
     remainingUses : Int
   where
-    signatory issuer
+    signatory operators
     observer owner
-    ensure remainingUses > 0
+    ensure not (null operators) && remainingUses > 0
 ```
 
 The `RequestAuthorization` and `ApproveAuthorization` choices on the Vault:
 
 ```daml
-    nonconsuming choice RequestAuthorization : ContractId AuthorizationProposal
+    -- Auth card management — two-step flow:
+    -- 1. User requests (creates AuthorizationRequest)
+    -- 2. Any operator triggers approval (creates Authorization)
+    -- Both are Vault choices → body has all operators' authority (Daml rule:
+    -- "consequences of exercise are authorized by signatories + actors").
+    -- Individual operator approval is enforced at the Canton PROTOCOL level:
+    -- each signatory's participant must independently confirm the transaction
+    -- (signatory confirmation policy). No propose/accept pattern needed.
+    nonconsuming choice RequestAuthorization : ContractId AuthorizationRequest
       with
-        sender : Party
-      controller sender
+        requester : Party
+      controller requester
       do
-        create AuthorizationProposal with
-          issuer = head operators
-          owner = sender
+        create AuthorizationRequest with
+          operators
+          owner = requester
 
     nonconsuming choice ApproveAuthorization : ContractId Authorization
       with
-        proposalCid   : ContractId AuthorizationProposal
+        requestCid    : ContractId AuthorizationRequest
         remainingUses : Int
-      controller operators
+        approver      : Party
+      controller approver
       do
-        proposal <- fetch proposalCid
-        assertMsg "Proposal issuer mismatch" (proposal.issuer `elem` operators)
-        archive proposalCid
+        assertMsg "Not an operator" (approver `elem` operators)
+        request <- fetch requestCid
+        assertMsg "Operators mismatch" (sort request.operators == sort operators)
+        archive requestCid
         create Authorization with
-          issuer = proposal.issuer
-          owner = proposal.owner
+          operators
+          owner = request.owner
           remainingUses
 ```
 
@@ -714,7 +723,7 @@ template Erc20Holding
     operators    : [Party]
     owner        : Party
     erc20Address : BytesHex
-    amount       : Text
+    amount       : BytesHex
   where
     signatory operators
     observer owner
@@ -723,7 +732,7 @@ template Erc20Holding
 ## Cross-Vault Isolation
 
 The `requestId` includes a deterministic hash of **all operator parties**
-plus the `sender`. Since Canton party IDs are globally unique
+plus the `requester`. Since Canton party IDs are globally unique
 (`hint::sha256(namespace_key)`), two different operator sets can never
 produce the same `requestId` even with identical `evmTxParams`.
 
@@ -751,7 +760,7 @@ See `requestId` Computation above for the full formula.
  |                     | create + exercise:    |                       |                         |
  |                     | SignRequest ──────────► SignBidirectional      |                         |
  |                     |                       | → SignBidirectionalEvent                        |
- |                     | + PendingDeposit      |   (signatory: operators, sender)                 |
+ |                     | + PendingDeposit      |   (signatory: operators, requester)               |
  |                     |   (vault anchor)      |                       |                         |
  |                     |                       |                       |                         |
  |                     |                       |                       | 5. observes event       |
@@ -837,7 +846,7 @@ of deposits, withdrawals, or ERC20 concepts.
 ### New Flow (matches Solana/Hydration pattern)
 
 1. Watch `SignBidirectionalEvent` via WebSocket stream
-2. Read `operators`, `sender`, `path`, `keyVersion` from event payload
+2. Read `operators`, `requester`, `path`, `keyVersion` from event payload
 3. Derive child key using `derive_epsilon_canton()`
 4. Threshold sign the EVM tx hash
 5. Exercise `Signer.Respond` → creates `SignatureRespondedEvent`
@@ -846,6 +855,27 @@ of deposits, withdrawals, or ERC20 concepts.
 
 The MPC never sees `SignRequest` (transient). It only sees
 `SignBidirectionalEvent` — same as on Solana/Hydration.
+
+### KDF Chain ID
+
+The KDF uses `canton:global` as the source chain CAIP-2 ID (not
+`eip155:1`). The derivation path is:
+
+```
+"sig.network v2.0.0 epsilon derivation:canton:global:{predecessorId}:{path}"
+```
+
+The KDF always uses the SOURCE chain (where the request originates), not
+the destination chain. Canton requests use `canton:global`. This must
+match `Chain::Canton.caip2_chain_id()` in the Rust MPC node.
+
+### Signature Format
+
+Canton/Daml's `secp256k1WithEcdsaOnly` builtin only accepts DER-encoded
+`SignatureHex`. There is no Daml builtin for verifying structured `(r, s)`
+components. The MPC DER-encodes signatures before publishing to Canton.
+This is why we use `SignatureHex` (DER-encoded) instead of Solana's
+`AffinePoint { bigR, s, recoveryId }` struct.
 
 ### MPC Outcome Signing Over All Operators
 
@@ -875,8 +905,7 @@ determinism:
 ```
 requestId = eip712Hash(keccak256(
     requestTypeHash
-    <> keccak256(concat(sort(map (keccak256 . toHex . partyToText) operators)))
-    <> hashText (partyToText sender)
+    <> hashText sender             -- sender = predecessorId = vaultId <> operatorsHash
     <> hashEvmParams evmTxParams
     <> hashText caip2Id
     <> padLeft (toHex keyVersion) 32
@@ -888,6 +917,11 @@ requestId = eip712Hash(keccak256(
 ))
 ```
 
+Where:
+- `sender` = `predecessorId` = `vaultId <> computeOperatorsHash(map partyToText operators)`
+- `computeOperatorsHash` = `keccak256(concat(sort(map (keccak256 . toHex) operatorTexts)))`
+- `path` = pre-computed by the Vault: `partyToText requester <> "," <> userPath`
+
 Both the Daml and Rust/TypeScript implementations must produce identical
 hashes.
 
@@ -898,13 +932,13 @@ hashes.
 `RequestDeposit` on the Vault uses a two-step pattern:
 
 1. Creates `SignRequest` (signatory: `operators`)
-2. Exercises `Signer.SignBidirectional` (controller: `sender`, flexible controller on disclosed Signer)
-3. `SignBidirectional` delegates to `SignRequest.Execute` (consuming choice) which creates `SignBidirectionalEvent` (signatory: `operators, sender`)
+2. Exercises `Signer.SignBidirectional` (controller: `requester`, flexible controller on disclosed Signer)
+3. `SignBidirectional` delegates to `SignRequest.Execute` (consuming choice) which creates `SignBidirectionalEvent` (signatory: `operators, requester`)
 
-- **Body authority**: `operators` (Vault signatories) + `sender`
+- **Body authority**: `operators` (Vault signatories) + `requester`
   (controller of `RequestDeposit`)
-- `sender` has visibility of Signer via disclosed contract ✓
-- `SignBidirectionalEvent` signatory is `operators, sender` — sigNetwork
+- `requester` has visibility of Signer via disclosed contract ✓
+- `SignBidirectionalEvent` signatory is `operators, requester` — sigNetwork
   is NOT a signatory, only observer. SigNetwork cannot forge sign
   requests.
 
@@ -913,9 +947,9 @@ hashes.
 ```
 VaultProposal (propose/sign/sign/finalize)
   → Vault (signatory: [op1, op2, op3])
-    → RequestDeposit (body: op1+op2+op3 + sender)
+    → RequestDeposit (body: op1+op2+op3 + requester)
       → create SignRequest, exercise Signer.SignBidirectional → Execute
-        → SignBidirectionalEvent (signatory: [op1, op2, op3, sender])
+        → SignBidirectionalEvent (signatory: [op1, op2, op3, requester])
 ```
 
 The operator authority established at Vault creation propagates through
@@ -924,14 +958,14 @@ the entire chain. No re-signing per transaction.
 ### Disclosed contracts
 
 The Vault and Signer contracts are shared off-chain via disclosed
-contract blobs. The sender's command submission includes disclosed blobs
+contract blobs. The requester's command submission includes disclosed blobs
 for both the Vault and the Signer.
 
 ## MPC Trust Boundary: Malicious Participant Attack
 
 ### The Problem
 
-`SignBidirectionalEvent` has `signatory operators, sender` — sigNetwork
+`SignBidirectionalEvent` has `signatory operators, requester` — sigNetwork
 is only an observer. In a multi-participant Canton Network, a malicious
 SigNetwork participant cannot forge these contracts because the
 operators' Confirming Participant Nodes (CPNs) would reject the
@@ -956,8 +990,8 @@ A malicious SigNetwork participant could:
    specified EVM transaction
 4. Attacker submits signed tx to Ethereum — funds stolen
 
-Even though `SignBidirectionalEvent` carries `signatory operators, sender`
-(the full `[dex1, dex2, dex3]` array + sender), this protection only exists at the ledger
+Even though `SignBidirectionalEvent` carries `signatory operators, requester`
+(the full `[dex1, dex2, dex3]` array + requester), this protection only exists at the ledger
 level. At the API layer, SigNetwork's participant can serve fake events
 claiming these operators signed when they never did. The MPC service
 does not inspect `CreatedEvent.signatories` — it trusts whatever the
@@ -1080,7 +1114,7 @@ This removes SigNetwork from the read path entirely.
 
 **v0 (PoC):** Single Canton participant operated by SigNetwork. The MPC
 trusts SigNetwork's node — same trust model as the current
-`VaultOrchestrator`. The operators + sender signatory model is in place but provides
+`VaultOrchestrator`. The operators + requester signatory model is in place but provides
 defense-in-depth only (not full protection). Acceptable for PoC with a
 known, trusted operator.
 
@@ -1130,20 +1164,15 @@ the participant, it enforces its own rules.
    Separate DARs is cleaner architecturally but requires cross-DAR type
    sharing for `EvmTransactionParams`, `SignatureHex`, etc.
 
-2. **`issuer` on auth contracts** — `Authorization` uses
-   `issuer : Party`. With multi-sig operators, `issuer` should be one
-   of the `operators` (validated via `elem`). `Erc20Holding` uses
-   `operators : [Party]` directly.
-
-3. **Multiple Signers** — Should the Vault support switching between
+2. **Multiple Signers** — Should the Vault support switching between
    Signers (e.g., key rotation)? Currently `sigNetwork` is fixed on the
    Vault. An `UpdateSigner` choice could handle this.
 
-4. **Operator changes** — Adding or removing operators requires a new
+3. **Operator changes** — Adding or removing operators requires a new
    Vault (new multi-party agreement). An `UpdateOperators` choice could
    allow rotation without re-creating the Vault.
 
-5. **`evmTxParams` vs `serializedTransaction`** — Canton uses structured
+4. **`evmTxParams` vs `serializedTransaction`** — Canton uses structured
    `EvmTransactionParams` (can't RLP-encode on-chain). The MPC indexer
    must RLP-encode client-side before hashing. This is a Canton-specific
    divergence from Solana's raw `serialized_transaction` bytes.
