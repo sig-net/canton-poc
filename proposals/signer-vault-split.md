@@ -202,6 +202,7 @@ template SignRequest
     sender                     : Party
     sigNetwork                 : Party
     evmTxParams                : EvmTransactionParams
+    vaultId                    : Text   -- MPC derives predecessorId = vaultId <> keccak256(sort(operators)) off-chain
     caip2Id                    : Text
     keyVersion                 : Int
     path                       : Text
@@ -222,7 +223,7 @@ template SignRequest
         -- body authority: operators (signatory) + sender (controller)
         create SignBidirectionalEvent with
           operators; sender; sigNetwork
-          evmTxParams; caip2Id; keyVersion; path; algo; dest; params
+          evmTxParams; vaultId; caip2Id; keyVersion; path; algo; dest; params
           nonceCidText
           outputDeserializationSchema; respondSerializationSchema
 ```
@@ -241,6 +242,7 @@ template SignBidirectionalEvent
     sender                     : Party
     sigNetwork                 : Party
     evmTxParams                : EvmTransactionParams
+    vaultId                    : Text   -- MPC derives predecessorId = vaultId <> keccak256(sort(operators)) off-chain
     caip2Id                    : Text
     keyVersion                 : Int
     path                       : Text
@@ -469,7 +471,7 @@ choice — everything chains internally.
         -- Step 1: Create SignRequest (needs operators authority)
         signReqCid <- create SignRequest with
           operators; sender; sigNetwork
-          evmTxParams; caip2Id; keyVersion
+          evmTxParams; vaultId; caip2Id; keyVersion
           path = senderPath; algo; dest; params
           nonceCidText
           outputDeserializationSchema; respondSerializationSchema
@@ -481,7 +483,7 @@ choice — everything chains internally.
 
         -- Compute requestId for the pending anchor
         let requestId = computeRequestId
-              operators sender evmTxParams caip2Id keyVersion
+              operatorTexts (partyToText sender) evmTxParams caip2Id keyVersion
               senderPath algo dest params nonceCidText
 
         -- Create vault-layer anchor (consumed at claim time)
@@ -580,13 +582,14 @@ Archives the `Erc20Holding` (optimistic debit), same atomic flow as
         archive balanceCid
 
         let caip2Id = "eip155:" <> chainIdToDecimalText evmTxParams.chainId
+
         -- Validate Signer matches Vault
         signer <- fetch signerCid
         assertMsg "sigNetwork mismatch" (signer.sigNetwork == sigNetwork)
 
         signReqCid <- create SignRequest with
           operators; sender; sigNetwork
-          evmTxParams; caip2Id; keyVersion
+          evmTxParams; vaultId; caip2Id; keyVersion
           path = "root"; algo; dest; params
           nonceCidText
           outputDeserializationSchema; respondSerializationSchema
@@ -594,8 +597,9 @@ Archives the `Erc20Holding` (optimistic debit), same atomic flow as
         signEventCid <- exercise signerCid SignBidirectional with
           signRequestCid = signReqCid; sender
 
+        let operatorTexts = map partyToText operators
         let requestId = computeRequestId
-              operators sender evmTxParams caip2Id keyVersion
+              operatorTexts (partyToText sender) evmTxParams caip2Id keyVersion
               "root" algo dest params nonceCidText
 
         pendingCid <- create PendingWithdrawal with
@@ -826,7 +830,7 @@ of deposits, withdrawals, or ERC20 concepts.
 
 1. Watch `PendingEvmTx` via WebSocket stream
 2. Read `vaultId`, `issuer`, `path` from PendingEvmTx payload
-3. Derive child key: `predecessorId = vaultId + partyToText issuer`
+3. Derive child key: `predecessorId = vaultId + keccak256(sort(operators))`
 4. Sign EVM tx → exercise `VaultOrchestrator.SignEvmTx`
 5. Poll chain → exercise `VaultOrchestrator.ProvideEvmOutcomeSig`
 
