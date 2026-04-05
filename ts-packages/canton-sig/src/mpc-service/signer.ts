@@ -5,8 +5,13 @@ import { computeResponseHash } from "../mpc/crypto.js";
 
 const EPSILON_DERIVATION_PREFIX = "sig.network v2.0.0 epsilon derivation";
 
-/** signet.js uses eip155:1 for all EVM key derivation, regardless of network. */
-const KDF_CHAIN_ID = "eip155:1";
+/**
+ * Canton source chain ID for KDF derivation.
+ * The KDF always uses the SOURCE chain (where the request originates),
+ * not the destination chain. Canton requests use "canton:global".
+ * This must match Chain::Canton.caip2_chain_id() in the Rust MPC node.
+ */
+const KDF_CHAIN_ID = "canton:global";
 
 /** secp256k1 curve order (n). */
 const CURVE_ORDER = secp256k1.Point.Fn.ORDER;
@@ -14,7 +19,7 @@ const CURVE_ORDER = secp256k1.Point.Fn.ORDER;
 /**
  * Derive a child private key for signing EVM transactions.
  * childKey = (rootPrivateKey + epsilon) mod n
- * where epsilon = keccak256("{prefix}:eip155:1:{predecessorId}:{path}")
+ * where epsilon = keccak256("{prefix}:canton:global:{predecessorId}:{path}")
  */
 export function deriveChildPrivateKey(
   rootPrivateKey: Hex,

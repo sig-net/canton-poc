@@ -4,14 +4,18 @@ import { utils } from "signet.js";
 
 const { deriveChildPublicKey } = utils.cryptography;
 
-/** signet.js uses eip155:1 for all EVM key derivation, regardless of network. */
-const KDF_CHAIN_ID = "eip155:1";
+/**
+ * Canton source chain ID for KDF derivation.
+ * The KDF always uses the SOURCE chain (where the request originates).
+ * Must match Chain::Canton.caip2_chain_id() in the Rust MPC node.
+ */
+const KDF_CHAIN_ID = "canton:global";
 
 export const KEY_VERSION = 1;
 
 /**
  * Derive an Ethereum deposit address from MPC root key + derivation params.
- * Uses eip155:1 for KDF (signet.js protocol constant).
+ * Uses canton:global for KDF (Canton source chain ID).
  */
 export function deriveDepositAddress(
   rootPubKey: string, // "04..." uncompressed secp256k1 (no 0x)
