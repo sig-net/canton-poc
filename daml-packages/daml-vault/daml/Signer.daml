@@ -18,34 +18,34 @@ template Signer
     nonconsuming choice SignBidirectional : ContractId SignBidirectionalEvent
       with
         signRequestCid : ContractId SignRequest
-        sender         : Party
-      controller sender
+        requester         : Party
+      controller requester
       do
         exercise signRequestCid Execute
 
     nonconsuming choice Respond : ContractId SignatureRespondedEvent
       with
         operators : [Party]
-        sender    : Party
+        requester    : Party
         requestId : BytesHex
         signature : SignatureHex
       controller sigNetwork
       do
         create SignatureRespondedEvent with
-          sigNetwork; operators; sender; requestId
+          sigNetwork; operators; requester; requestId
           responder = sigNetwork; signature
 
     nonconsuming choice RespondBidirectional : ContractId RespondBidirectionalEvent
       with
         operators        : [Party]
-        sender           : Party
+        requester           : Party
         requestId        : BytesHex
         serializedOutput : BytesHex
         signature        : SignatureHex
       controller sigNetwork
       do
         create RespondBidirectionalEvent with
-          sigNetwork; operators; sender; requestId
+          sigNetwork; operators; requester; requestId
           responder = sigNetwork; serializedOutput; signature
 
 -- ---------------------------------------------------------------------------
@@ -55,10 +55,10 @@ template Signer
 template SignRequest
   with
     operators                  : [Party]
-    sender                     : Party
+    requester                  : Party
     sigNetwork                 : Party
+    sender                     : Text   -- predecessorId = vaultId <> keccak256(sort(operators)), for KDF
     evmTxParams                : EvmTransactionParams
-    vaultId                    : Text   -- MPC derives predecessorId = vaultId <> keccak256(sort(operators)) off-chain
     caip2Id                    : Text
     keyVersion                 : Int
     path                       : Text
@@ -74,11 +74,11 @@ template SignRequest
     ensure not (null operators) && unique operators
 
     choice Execute : ContractId SignBidirectionalEvent
-      controller sender
+      controller requester
       do
         create SignBidirectionalEvent with
-          operators; sender; sigNetwork
-          evmTxParams; vaultId; caip2Id; keyVersion; path; algo; dest; params
+          operators; requester; sigNetwork; sender
+          evmTxParams; caip2Id; keyVersion; path; algo; dest; params
           nonceCidText
           outputDeserializationSchema; respondSerializationSchema
 
@@ -89,10 +89,10 @@ template SignRequest
 template SignBidirectionalEvent
   with
     operators                  : [Party]
-    sender                     : Party
+    requester                  : Party
     sigNetwork                 : Party
+    sender                     : Text   -- predecessorId = vaultId <> keccak256(sort(operators)), for KDF
     evmTxParams                : EvmTransactionParams
-    vaultId                    : Text   -- MPC derives predecessorId = vaultId <> keccak256(sort(operators)) off-chain
     caip2Id                    : Text
     keyVersion                 : Int
     path                       : Text
@@ -103,7 +103,7 @@ template SignBidirectionalEvent
     outputDeserializationSchema : Text
     respondSerializationSchema  : Text
   where
-    signatory operators, sender
+    signatory operators, requester
     observer sigNetwork
     ensure not (null operators) && unique operators
 
@@ -112,7 +112,7 @@ template SignBidirectionalEvent
       controller actor
       do
         assertMsg "Not authorized"
-          (actor `elem` operators || actor == sender)
+          (actor `elem` operators || actor == requester)
         pure ()
 
 -- ---------------------------------------------------------------------------
@@ -123,39 +123,39 @@ template SignatureRespondedEvent
   with
     sigNetwork : Party
     operators  : [Party]
-    sender     : Party
+    requester     : Party
     requestId  : BytesHex
     responder  : Party
     signature  : SignatureHex
   where
     signatory sigNetwork
-    observer operators, sender
+    observer operators, requester
 
     choice Consume_SignatureResponded : ()
       with actor : Party
       controller actor
       do
         assertMsg "Not authorized"
-          (actor `elem` operators || actor == sender)
+          (actor `elem` operators || actor == requester)
         pure ()
 
 template RespondBidirectionalEvent
   with
     sigNetwork       : Party
     operators        : [Party]
-    sender           : Party
+    requester           : Party
     requestId        : BytesHex
     responder        : Party
     serializedOutput : BytesHex
     signature        : SignatureHex
   where
     signatory sigNetwork
-    observer operators, sender
+    observer operators, requester
 
     choice Consume_RespondBidirectional : ()
       with actor : Party
       controller actor
       do
         assertMsg "Not authorized"
-          (actor `elem` operators || actor == sender)
+          (actor `elem` operators || actor == requester)
         pure ()
