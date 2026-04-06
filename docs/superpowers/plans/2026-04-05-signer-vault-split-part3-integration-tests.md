@@ -20,26 +20,26 @@ regenerated, TypeScript MPC service updated.
 
 ## File Structure
 
-| File | Action | Changes |
-|------|--------|---------|
-| `test/src/test/helpers/e2e-setup.ts` | **Modify** | New party model (operators, sigNetwork, sender), create Signer + Vault |
-| `test/src/test/visibility-permissions.test.ts` | **Rewrite** | All template/choice names change, observer model changes |
-| `test/src/test/signer.test.ts` | **Modify** | Update for new signer.ts API |
-| `test/src/test/address-derivation.test.ts` | **Modify** | Update for new predecessorId computation |
-| `test/src/test/sepolia-e2e.test.ts` | **Modify** | Full deposit flow with new contracts |
-| `test/src/test/sepolia-withdrawal-e2e.test.ts` | **Modify** | Full withdrawal flow with new contracts |
-| `test/src/test/helpers/codegen-types.ts` | **Create** | Re-export codegen types for test convenience |
+| File                                           | Action      | Changes                                                                |
+| ---------------------------------------------- | ----------- | ---------------------------------------------------------------------- |
+| `test/src/test/helpers/e2e-setup.ts`           | **Modify**  | New party model (operators, sigNetwork, sender), create Signer + Vault |
+| `test/src/test/visibility-permissions.test.ts` | **Rewrite** | All template/choice names change, observer model changes               |
+| `test/src/test/signer.test.ts`                 | **Modify**  | Update for new signer.ts API                                           |
+| `test/src/test/address-derivation.test.ts`     | **Modify**  | Update for new predecessorId computation                               |
+| `test/src/test/sepolia-e2e.test.ts`            | **Modify**  | Full deposit flow with new contracts                                   |
+| `test/src/test/sepolia-withdrawal-e2e.test.ts` | **Modify**  | Full withdrawal flow with new contracts                                |
+| `test/src/test/helpers/codegen-types.ts`       | **Create**  | Re-export codegen types for test convenience                           |
 
 ## Key Test Changes
 
-| Old Pattern | New Pattern |
-|---|---|
-| `createCmd VaultOrchestrator with issuer; mpc; ...` | `createCmd Signer with sigNetwork` + `createCmd Vault with operators; sigNetwork; ...` |
-| `exerciseCmd orchCid RequestEvmDeposit with requester; ...` | `exerciseCmd vaultCid RequestDeposit with sender; signerCid; ...` |
-| `exerciseCmd orchCid SignEvmTx with requester; requestId; r; s; v` | `exerciseCmd signerCid Respond with operators; sender; requestId; signature` |
+| Old Pattern                                                                                | New Pattern                                                                                                 |
+| ------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------- |
+| `createCmd VaultOrchestrator with issuer; mpc; ...`                                        | `createCmd Signer with sigNetwork` + `createCmd Vault with operators; sigNetwork; ...`                      |
+| `exerciseCmd orchCid RequestEvmDeposit with requester; ...`                                | `exerciseCmd vaultCid RequestDeposit with sender; signerCid; ...`                                           |
+| `exerciseCmd orchCid SignEvmTx with requester; requestId; r; s; v`                         | `exerciseCmd signerCid Respond with operators; sender; requestId; signature`                                |
 | `exerciseCmd orchCid ProvideEvmOutcomeSig with requester; requestId; signature; mpcOutput` | `exerciseCmd signerCid RespondBidirectional with operators; sender; requestId; serializedOutput; signature` |
-| `exerciseCmd orchCid ClaimEvmDeposit with requester; pendingCid; outcomeCid; ecdsaCid` | `exerciseCmd vaultCid ClaimDeposit with sender; pendingDepositCid; outcomeCid; sigCid` |
-| Party `issuer` acts as vault operator AND MPC | Party `operators[0]` acts as vault operator, `sigNetwork` acts as MPC |
+| `exerciseCmd orchCid ClaimEvmDeposit with requester; pendingCid; outcomeCid; ecdsaCid`     | `exerciseCmd vaultCid ClaimDeposit with sender; pendingDepositCid; outcomeCid; sigCid`                      |
+| Party `issuer` acts as vault operator AND MPC                                              | Party `operators[0]` acts as vault operator, `sigNetwork` acts as MPC                                       |
 
 ---
 
@@ -48,6 +48,7 @@ regenerated, TypeScript MPC service updated.
 - [ ] **Step 1: Update party allocation and contract creation**
 
 The setup creates:
+
 - `sigNetwork` party (was: `issuer` served dual role)
 - `operator` party (was: part of `issuer`)
 - `sender` party (was: `requester`)
@@ -81,6 +82,7 @@ which contracts and exercise which choices. Every assertion changes.
 - [ ] **Step 1: Rewrite test for new template/visibility model**
 
 Key visibility changes:
+
 - `Signer`: signatory sigNetwork, no observers → shared via disclosed contracts
 - `Vault`: signatory operators, observer sigNetwork
 - `SignBidirectionalEvent`: signatory operators + sender, observer sigNetwork

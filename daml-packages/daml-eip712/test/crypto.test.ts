@@ -124,15 +124,55 @@ describe("computeRequestId", () => {
   });
 
   it("changes with different keyVersion", () => {
-    const a = computeRequestId(SENDER, sampleEvmParams, CAIP2_ID, 1, PATH, "ECDSA", "ethereum", "", "");
-    const b = computeRequestId(SENDER, sampleEvmParams, CAIP2_ID, 256, PATH, "ECDSA", "ethereum", "", "");
+    const a = computeRequestId(
+      SENDER,
+      sampleEvmParams,
+      CAIP2_ID,
+      1,
+      PATH,
+      "ECDSA",
+      "ethereum",
+      "",
+      "",
+    );
+    const b = computeRequestId(
+      SENDER,
+      sampleEvmParams,
+      CAIP2_ID,
+      256,
+      PATH,
+      "ECDSA",
+      "ethereum",
+      "",
+      "",
+    );
     expect(a).not.toBe(b);
   });
 
   it("changes with empty args", () => {
     const emptyArgsParams = { ...sampleEvmParams, args: [] as string[] };
-    const a = computeRequestId(SENDER, sampleEvmParams, CAIP2_ID, 1, PATH, "ECDSA", "ethereum", "", "");
-    const b = computeRequestId(SENDER, emptyArgsParams, CAIP2_ID, 1, PATH, "ECDSA", "ethereum", "", "");
+    const a = computeRequestId(
+      SENDER,
+      sampleEvmParams,
+      CAIP2_ID,
+      1,
+      PATH,
+      "ECDSA",
+      "ethereum",
+      "",
+      "",
+    );
+    const b = computeRequestId(
+      SENDER,
+      emptyArgsParams,
+      CAIP2_ID,
+      1,
+      PATH,
+      "ECDSA",
+      "ethereum",
+      "",
+      "",
+    );
     expect(a).not.toBe(b);
   });
 

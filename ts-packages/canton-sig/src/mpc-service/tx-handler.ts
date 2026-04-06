@@ -24,10 +24,7 @@ import {
 } from "../infra/canton-client.js";
 import { computeRequestId } from "../mpc/crypto.js";
 import { chainIdHexToCaip2 } from "../mpc/address-derivation.js";
-import {
-  type SignBidirectionalEvent,
-  Signer,
-} from "@daml.js/daml-vault-0.0.1/lib/Signer/module";
+import { type SignBidirectionalEvent, Signer } from "@daml.js/daml-vault-0.0.1/lib/Signer/module";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -123,7 +120,18 @@ export async function signAndEnqueue(
 ): Promise<PendingTx> {
   const { canton, signerCid, userId, actAs, rootPrivateKey } = config;
   const arg = event.createArgument as SignBidirectionalEvent;
-  const { requester, sender, operators, evmTxParams, nonceCidText, keyVersion, algo, dest, params, path: requestPath } = arg;
+  const {
+    requester,
+    sender,
+    operators,
+    evmTxParams,
+    nonceCidText,
+    keyVersion,
+    algo,
+    dest,
+    params,
+    path: requestPath,
+  } = arg;
 
   const predecessorId = sender;
 
@@ -141,7 +149,7 @@ export async function signAndEnqueue(
     if (!onLedgerSignatories.has(op)) {
       throw new Error(
         `Operator ${op} is in contract payload but not in ` +
-        `CreatedEvent.signatories — possible forgery`,
+          `CreatedEvent.signatories — possible forgery`,
       );
     }
   }
@@ -154,7 +162,7 @@ export async function signAndEnqueue(
     if (!witnesses.has(op)) {
       console.warn(
         `[MPC] Operator ${op} is not in witnessParties — ` +
-        `their participant may not have confirmed this transaction`,
+          `their participant may not have confirmed this transaction`,
       );
     }
   }
@@ -162,9 +170,7 @@ export async function signAndEnqueue(
   // 3. Cross-reference: requester must also be a signatory (SignBidirectionalEvent
   //    has signatory operators, requester)
   if (!onLedgerSignatories.has(requester)) {
-    throw new Error(
-      `Requester ${requester} is not in CreatedEvent.signatories — possible forgery`,
-    );
+    throw new Error(`Requester ${requester} is not in CreatedEvent.signatories — possible forgery`);
   }
 
   // Validate requestId via EIP-712 re-computation

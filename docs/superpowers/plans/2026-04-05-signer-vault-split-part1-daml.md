@@ -22,52 +22,54 @@ template definitions, choices, and fields)
 
 ## File Structure
 
-| File | Action | Responsibility |
-|------|--------|---------------|
-| `daml-packages/daml-vault/daml/Signer.daml` | **Create** | Signer, SignRequest, SignBidirectionalEvent, SignatureRespondedEvent, RespondBidirectionalEvent |
-| `daml-packages/daml-vault/daml/Erc20Vault.daml` | **Rewrite** | Vault, VaultProposal, PendingDeposit, PendingWithdrawal, Authorization, AuthorizationProposal, Erc20Holding + all Vault choices |
-| `daml-packages/daml-vault/daml/RequestId.daml` | **Modify** | Update `computeRequestId` signature for operators list |
-| `daml-packages/daml-vault/daml/TestVault.daml` | **Rewrite** | All tests updated for new template/choice names and multi-sig operators |
-| `daml-packages/daml-vault/daml/TestRequestId.daml` | **Modify** | Update test calls for new `computeRequestId` signature |
-| `daml-packages/daml-evm-types/daml/TestFixtures.daml` | **Modify** | Add fixtures for new signature format if needed |
+| File                                                  | Action      | Responsibility                                                                                                                  |
+| ----------------------------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `daml-packages/daml-vault/daml/Signer.daml`           | **Create**  | Signer, SignRequest, SignBidirectionalEvent, SignatureRespondedEvent, RespondBidirectionalEvent                                 |
+| `daml-packages/daml-vault/daml/Erc20Vault.daml`       | **Rewrite** | Vault, VaultProposal, PendingDeposit, PendingWithdrawal, Authorization, AuthorizationProposal, Erc20Holding + all Vault choices |
+| `daml-packages/daml-vault/daml/RequestId.daml`        | **Modify**  | Update `computeRequestId` signature for operators list                                                                          |
+| `daml-packages/daml-vault/daml/TestVault.daml`        | **Rewrite** | All tests updated for new template/choice names and multi-sig operators                                                         |
+| `daml-packages/daml-vault/daml/TestRequestId.daml`    | **Modify**  | Update test calls for new `computeRequestId` signature                                                                          |
+| `daml-packages/daml-evm-types/daml/TestFixtures.daml` | **Modify**  | Add fixtures for new signature format if needed                                                                                 |
 
 ## Naming Reference
 
-| Old Name | New Name |
-|----------|----------|
-| `VaultOrchestrator` | `Vault` + `Signer` (two templates) |
-| `issuer : Party` | `operators : [Party]` (Vault) / `sigNetwork : Party` (Signer) |
-| `mpc : Party` | removed (sigNetwork serves both roles) |
-| `requester` | `sender` |
-| `PendingEvmTx` | `SignBidirectionalEvent` (Signer) + `PendingDeposit`/`PendingWithdrawal` (Vault) |
-| `EcdsaSignature` | `SignatureRespondedEvent` |
-| `EvmTxOutcomeSignature` | `RespondBidirectionalEvent` |
-| `SignEvmTx` choice | `Respond` choice on Signer |
-| `ProvideEvmOutcomeSig` choice | `RespondBidirectional` choice on Signer |
-| `RequestEvmDeposit` | `RequestDeposit` |
-| `ClaimEvmDeposit` | `ClaimDeposit` |
-| `RequestEvmWithdrawal` | `RequestWithdrawal` |
-| `CompleteEvmWithdrawal` | `CompleteWithdrawal` |
-| `RequestDepositAuth` | `RequestAuthorization` |
-| `ApproveDepositAuth` | `ApproveAuthorization` |
-| `DepositAuthProposal` | `AuthorizationProposal` |
-| `DepositAuthorization` | `Authorization` |
-| `mpcPublicKey` | `evmMpcPublicKey` (on Vault, not Signer) |
-| `vaultAddress` | `evmVaultAddress` |
-| `evmParams` | `evmTxParams` |
-| `r, s, v` (EcdsaSignature) | `signature : SignatureHex` (DER-encoded) |
-| `signature, mpcOutput` (EvmTxOutcomeSignature) | `signature : SignatureHex, serializedOutput : BytesHex` |
+| Old Name                                       | New Name                                                                         |
+| ---------------------------------------------- | -------------------------------------------------------------------------------- |
+| `VaultOrchestrator`                            | `Vault` + `Signer` (two templates)                                               |
+| `issuer : Party`                               | `operators : [Party]` (Vault) / `sigNetwork : Party` (Signer)                    |
+| `mpc : Party`                                  | removed (sigNetwork serves both roles)                                           |
+| `requester`                                    | `sender`                                                                         |
+| `PendingEvmTx`                                 | `SignBidirectionalEvent` (Signer) + `PendingDeposit`/`PendingWithdrawal` (Vault) |
+| `EcdsaSignature`                               | `SignatureRespondedEvent`                                                        |
+| `EvmTxOutcomeSignature`                        | `RespondBidirectionalEvent`                                                      |
+| `SignEvmTx` choice                             | `Respond` choice on Signer                                                       |
+| `ProvideEvmOutcomeSig` choice                  | `RespondBidirectional` choice on Signer                                          |
+| `RequestEvmDeposit`                            | `RequestDeposit`                                                                 |
+| `ClaimEvmDeposit`                              | `ClaimDeposit`                                                                   |
+| `RequestEvmWithdrawal`                         | `RequestWithdrawal`                                                              |
+| `CompleteEvmWithdrawal`                        | `CompleteWithdrawal`                                                             |
+| `RequestDepositAuth`                           | `RequestAuthorization`                                                           |
+| `ApproveDepositAuth`                           | `ApproveAuthorization`                                                           |
+| `DepositAuthProposal`                          | `AuthorizationProposal`                                                          |
+| `DepositAuthorization`                         | `Authorization`                                                                  |
+| `mpcPublicKey`                                 | `evmMpcPublicKey` (on Vault, not Signer)                                         |
+| `vaultAddress`                                 | `evmVaultAddress`                                                                |
+| `evmParams`                                    | `evmTxParams`                                                                    |
+| `r, s, v` (EcdsaSignature)                     | `signature : SignatureHex` (DER-encoded)                                         |
+| `signature, mpcOutput` (EvmTxOutcomeSignature) | `signature : SignatureHex, serializedOutput : BytesHex`                          |
 
 ---
 
 ### Task 1: Create `Signer.daml` — Signer layer templates
 
 **Files:**
+
 - Create: `daml-packages/daml-vault/daml/Signer.daml`
 
 - [ ] **Step 1: Create `Signer.daml` with all Signer layer templates**
 
 Copy the following templates from the proposal (`proposals/signer-vault-split.md` lines 142-323) into a new file. The module exports:
+
 - `Signer` template (singleton, `signatory sigNetwork`)
 - `SignRequest` template (transient, `signatory operators`, with `Execute` consuming choice)
 - `SignBidirectionalEvent` template (`signatory operators, sender`, with `Consume_SignBidirectional`)
@@ -241,9 +243,11 @@ template RespondBidirectionalEvent
 - [ ] **Step 2: Verify it compiles**
 
 Run:
+
 ```bash
 cd daml-packages/daml-vault && dpm build
 ```
+
 Expected: Build succeeds (no errors). The new module has no dependencies on the old `Erc20Vault` module.
 
 - [ ] **Step 3: Commit**
@@ -258,6 +262,7 @@ git commit -m "feat(daml): add Signer layer templates (SignBidirectionalEvent, S
 ### Task 2: Update `RequestId.daml` — new `computeRequestId` signature
 
 **Files:**
+
 - Modify: `daml-packages/daml-vault/daml/RequestId.daml`
 
 The current `computeRequestId` takes `sender : Text` as first arg. The new version takes `operators : [Text]` and `sender : Party` separately, and includes `operatorsHash` in the EIP-712 struct.
@@ -346,6 +351,7 @@ computeResponseHash requestId output =
 ```
 
 **Key changes from current:**
+
 - `requestTypeHash` uses `CantonMpcSignRequest` (was `CantonMpcDepositRequest`)
 - Added `bytes32 operatorsHash` as first field in the EIP-712 struct
 - Added `params` and `nonceCidText` as named fields (was `authCidText`)
@@ -356,9 +362,11 @@ computeResponseHash requestId output =
 - [ ] **Step 2: Verify it compiles**
 
 Run:
+
 ```bash
 cd daml-packages/daml-vault && dpm build
 ```
+
 Expected: Build may fail because `TestRequestId.daml` and `Erc20Vault.daml` still use the old signature. That's OK — we fix those next.
 
 - [ ] **Step 3: Commit**
@@ -373,6 +381,7 @@ git commit -m "feat(daml): update computeRequestId for operators multi-sig and n
 ### Task 3: Rewrite `Erc20Vault.daml` — Vault layer
 
 **Files:**
+
 - Rewrite: `daml-packages/daml-vault/daml/Erc20Vault.daml`
 
 Replace the entire `VaultOrchestrator` monolith with the new Vault layer. This is the largest single change.
@@ -739,9 +748,11 @@ template Vault
 - [ ] **Step 2: Verify it compiles**
 
 Run:
+
 ```bash
 dpm build --all
 ```
+
 Expected: `Signer.daml` and `Erc20Vault.daml` compile. `TestVault.daml` and `TestRequestId.daml` will fail (they use old names). That's expected — we fix those next.
 
 - [ ] **Step 3: Commit**
@@ -756,9 +767,11 @@ git commit -m "feat(daml): replace VaultOrchestrator with Vault + multi-sig oper
 ### Task 4: Rewrite `TestVault.daml` — all Daml Script tests
 
 **Files:**
+
 - Rewrite: `daml-packages/daml-vault/daml/TestVault.daml`
 
 Every test must be updated for:
+
 1. New party model: `operators : [Party]` instead of `issuer : Party`, no `mpc` party
 2. New template names: `Vault`, `Signer`, `Authorization`, etc.
 3. New choice names: `RequestDeposit`, `ClaimDeposit`, etc.
@@ -766,6 +779,7 @@ Every test must be updated for:
 5. `Erc20Holding` now has `operators : [Party]` instead of `issuer : Party`
 
 The test structure should mirror the current tests but with new names. Key tests:
+
 - Deposit lifecycle (happy path)
 - Auth card management (request, approve, decrement, reject 0 uses)
 - Claim deposit (happy path with MPC sig verification)
@@ -780,6 +794,7 @@ The test structure should mirror the current tests but with new names. Key tests
 For tests that verify MPC signature validation (`testClaimHappyPath`), the test fixtures (`claimTestPubKey`, `claimTestSignature`, `claimTestRequestId`) are hardcoded golden values. The `requestId` computation changed (new EIP-712 type hash, new fields). So **the golden requestId will change** and we need to regenerate it.
 
 **Approach for test fixtures:** For v1 of the tests, use a simplified approach:
+
 - Skip MPC signature verification tests temporarily (comment out `testClaimHappyPath` etc.)
 - OR use the new `computeRequestId` to compute requestIds in tests instead of hardcoded values
 - Regenerate golden values after TypeScript crypto tests are updated (Part 2)
@@ -787,6 +802,7 @@ For tests that verify MPC signature validation (`testClaimHappyPath`), the test 
 - [ ] **Step 1: Write the test file**
 
 This is a large file. Write tests incrementally — start with the setup helper and basic lifecycle tests. The test must:
+
 1. Create a `Signer` (sigNetwork party)
 2. Create a `Vault` (operators party) — directly via `createCmd` (skip VaultProposal for unit tests)
 3. Exercise vault choices using `submit (actAs sender <> readAs operators <> readAs sigNetwork)`
@@ -800,6 +816,7 @@ Write the full test file. Due to the size, focus on the core tests first and add
 - [ ] **Step 2: Build and run tests**
 
 Run:
+
 ```bash
 dpm build --all
 cd daml-packages/daml-vault && dpm test
@@ -819,9 +836,11 @@ git commit -m "test(daml): rewrite vault tests for signer/vault split"
 ### Task 5: Update `TestRequestId.daml` — new `computeRequestId` signature
 
 **Files:**
+
 - Modify: `daml-packages/daml-vault/daml/TestRequestId.daml`
 
 Update all `computeRequestId` calls to use the new signature:
+
 ```daml
 -- Old: computeRequestId sender evmParams caip2Id keyVersion path algo dest authCidText
 -- New: computeRequestId operatorTexts sender evmParams caip2Id keyVersion path algo dest params nonceCidText

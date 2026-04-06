@@ -164,7 +164,8 @@ describeIf("sepolia e2e withdrawal lifecycle", () => {
       "SignatureRespondedEvent (withdrawal)",
     );
     const signatureRespondedEventCid = signatureRespondedEvent.contractId;
-    const signatureRespondedArgs = signatureRespondedEvent.createArgument as SignatureRespondedEvent;
+    const signatureRespondedArgs =
+      signatureRespondedEvent.createArgument as SignatureRespondedEvent;
     console.log("[wdl-e2e] SignatureRespondedEvent observed");
 
     // ── User submits signed withdrawal tx to Sepolia ──
@@ -185,7 +186,8 @@ describeIf("sepolia e2e withdrawal lifecycle", () => {
       "RespondBidirectionalEvent (withdrawal)",
     );
     const respondBidirectionalEventCid = respondBidirectionalEvent.contractId;
-    const respondBidirectionalArgs = respondBidirectionalEvent.createArgument as RespondBidirectionalEvent;
+    const respondBidirectionalArgs =
+      respondBidirectionalEvent.createArgument as RespondBidirectionalEvent;
     expect(respondBidirectionalArgs.serializedOutput).toBe(
       "0000000000000000000000000000000000000000000000000000000000000001",
     );
@@ -346,7 +348,8 @@ describeIf("sepolia e2e withdrawal lifecycle", () => {
       "RespondBidirectionalEvent (nonce-replace)",
     );
     const respondBidirectionalEventCid = respondBidirectionalEvent.contractId;
-    const respondBidirectionalArgs = respondBidirectionalEvent.createArgument as RespondBidirectionalEvent;
+    const respondBidirectionalArgs =
+      respondBidirectionalEvent.createArgument as RespondBidirectionalEvent;
     expect(respondBidirectionalArgs.serializedOutput.startsWith("deadbeef")).toBe(true);
     console.log(
       "[wdl-nonce] RespondBidirectionalEvent observed (serializedOutput starts with deadbeef)",

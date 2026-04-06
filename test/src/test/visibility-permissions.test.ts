@@ -114,15 +114,16 @@ describe("ledger visibility + permission model", () => {
     vaultAddress = deriveDepositAddress(MPC_ROOT_PUBLIC_KEY, predecessorId, "root");
 
     // Create Signer (signatory: sigNetwork)
-    const signerResult = await canton.createContract(SIGNETWORK_USER, [sigNetwork], SIGNER_TEMPLATE, {
-      sigNetwork,
-    });
-    signerCid = firstCreated(signerResult.transaction.events).contractId;
-    signerDisclosure = await canton.getDisclosedContract(
+    const signerResult = await canton.createContract(
+      SIGNETWORK_USER,
       [sigNetwork],
       SIGNER_TEMPLATE,
-      signerCid,
+      {
+        sigNetwork,
+      },
     );
+    signerCid = firstCreated(signerResult.transaction.events).contractId;
+    signerDisclosure = await canton.getDisclosedContract([sigNetwork], SIGNER_TEMPLATE, signerCid);
 
     // Create Vault (signatory: operators=[operator])
     const mpcPubKeySpki = toSpkiPublicKey(MPC_ROOT_PUBLIC_KEY);
@@ -232,10 +233,7 @@ describe("ledger visibility + permission model", () => {
       "ApproveAuthorization",
       { requestCid, remainingUses: 2, approver: operator },
     );
-    const authCid = findCreated(
-      approveResult.transaction.events,
-      "Authorization",
-    ).contractId;
+    const authCid = findCreated(approveResult.transaction.events, "Authorization").contractId;
 
     // Authorization: signatory=operators, observer=owner
     await assertVisibility(AUTH_TEMPLATE, authCid, [operator, requester], [sigNetwork]);
@@ -270,7 +268,12 @@ describe("ledger visibility + permission model", () => {
     const { requestId } = pending.createArgument as PendingDeposit;
 
     // PendingDeposit: signatory=operators, observer=requester,sigNetwork
-    await assertVisibility(PENDING_DEPOSIT_TEMPLATE, pendingCid, [operator, requester, sigNetwork], []);
+    await assertVisibility(
+      PENDING_DEPOSIT_TEMPLATE,
+      pendingCid,
+      [operator, requester, sigNetwork],
+      [],
+    );
 
     // -- Step 4: Respond (controller=sigNetwork) — creates SignatureRespondedEvent
     // Requester cannot exercise sigNetwork-controlled choices
@@ -295,10 +298,18 @@ describe("ledger visibility + permission model", () => {
       "Respond",
       { operators: [operator], requester, requestId, signature: "00" },
     );
-    const signatureRespondedEventCid = findCreated(signResult.transaction.events, "SignatureRespondedEvent").contractId;
+    const signatureRespondedEventCid = findCreated(
+      signResult.transaction.events,
+      "SignatureRespondedEvent",
+    ).contractId;
 
     // SignatureRespondedEvent: signatory=sigNetwork, observer=operators,requester
-    await assertVisibility(SIG_RESPONDED_TEMPLATE, signatureRespondedEventCid, [sigNetwork, operator, requester], []);
+    await assertVisibility(
+      SIG_RESPONDED_TEMPLATE,
+      signatureRespondedEventCid,
+      [sigNetwork, operator, requester],
+      [],
+    );
 
     // -- Step 5: RespondBidirectional (controller=sigNetwork) — creates RespondBidirectionalEvent
     await expect(
@@ -328,7 +339,13 @@ describe("ledger visibility + permission model", () => {
       SIGNER_TEMPLATE,
       signerCid,
       "RespondBidirectional",
-      { operators: [operator], requester, requestId, serializedOutput: mpcOutput, signature: mpcSignature },
+      {
+        operators: [operator],
+        requester,
+        requestId,
+        serializedOutput: mpcOutput,
+        signature: mpcSignature,
+      },
     );
     const respondBidirectionalEventCid = findCreated(
       outcomeResult.transaction.events,
@@ -336,7 +353,12 @@ describe("ledger visibility + permission model", () => {
     ).contractId;
 
     // RespondBidirectionalEvent: signatory=sigNetwork, observer=operators,requester
-    await assertVisibility(RESPOND_BIDIR_TEMPLATE, respondBidirectionalEventCid, [sigNetwork, operator, requester], []);
+    await assertVisibility(
+      RESPOND_BIDIR_TEMPLATE,
+      respondBidirectionalEventCid,
+      [sigNetwork, operator, requester],
+      [],
+    );
 
     // -- Step 6: ClaimDeposit (controller=requester)
     // Operator cannot claim (controller is requester, not operator)
@@ -356,7 +378,12 @@ describe("ledger visibility + permission model", () => {
       VAULT_TEMPLATE,
       vaultCid,
       "ClaimDeposit",
-      { requester, pendingDepositCid: pendingCid, respondBidirectionalEventCid, signatureRespondedEventCid },
+      {
+        requester,
+        pendingDepositCid: pendingCid,
+        respondBidirectionalEventCid,
+        signatureRespondedEventCid,
+      },
       undefined,
       [vaultDisclosure],
     );

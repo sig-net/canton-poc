@@ -20,31 +20,31 @@ The service now holds a `signerCid` instead of `orchCid`.
 
 ## File Structure
 
-| File | Action | Changes |
-|------|--------|---------|
-| `ts-packages/canton-sig/src/mpc/crypto.ts` | **Modify** | Update `computeRequestId` for operators + nonceCidText |
+| File                                                   | Action     | Changes                                                                             |
+| ------------------------------------------------------ | ---------- | ----------------------------------------------------------------------------------- |
+| `ts-packages/canton-sig/src/mpc/crypto.ts`             | **Modify** | Update `computeRequestId` for operators + nonceCidText                              |
 | `ts-packages/canton-sig/src/mpc-service/tx-handler.ts` | **Modify** | Watch `SignBidirectionalEvent`, exercise `Respond`/`RespondBidirectional` on Signer |
-| `ts-packages/canton-sig/src/mpc-service/server.ts` | **Modify** | Watch `SignBidirectionalEvent` instead of `PendingEvmTx`, hold `signerCid` |
-| `ts-packages/canton-sig/src/mpc-service/signer.ts` | **Modify** | Update `signEvmTxHash` return type, update `predecessorId` computation |
-| `ts-packages/canton-sig/src/index.ts` | **Modify** | Update exports for new template names |
-| `test/src/test/helpers/e2e-setup.ts` | **Modify** | Update party setup, contract creation |
-| `test/package.json` | **Modify** | Codegen scripts may need update |
+| `ts-packages/canton-sig/src/mpc-service/server.ts`     | **Modify** | Watch `SignBidirectionalEvent` instead of `PendingEvmTx`, hold `signerCid`          |
+| `ts-packages/canton-sig/src/mpc-service/signer.ts`     | **Modify** | Update `signEvmTxHash` return type, update `predecessorId` computation              |
+| `ts-packages/canton-sig/src/index.ts`                  | **Modify** | Update exports for new template names                                               |
+| `test/src/test/helpers/e2e-setup.ts`                   | **Modify** | Update party setup, contract creation                                               |
+| `test/package.json`                                    | **Modify** | Codegen scripts may need update                                                     |
 
 ## Key Mapping
 
-| Old TS | New TS |
-|--------|--------|
-| `VaultOrchestrator.templateId` | `Signer.templateId` (for MPC) + `Vault.templateId` (for client) |
-| `PendingEvmTx` | `SignBidirectionalEvent` |
-| `orchCid` | `signerCid` |
-| `"SignEvmTx"` choice | `"Respond"` choice |
-| `"ProvideEvmOutcomeSig"` choice | `"RespondBidirectional"` choice |
-| `requester` field | `sender` field |
-| `issuer` field | `operators` field (list) |
-| `evmParams` field | `evmTxParams` field |
-| `mpcOutput` field | `serializedOutput` field |
-| `r, s, v` args | `signature : SignatureHex` arg |
-| `vaultId + issuer` predecessorId | `vaultId + operatorsId` predecessorId |
+| Old TS                           | New TS                                                          |
+| -------------------------------- | --------------------------------------------------------------- |
+| `VaultOrchestrator.templateId`   | `Signer.templateId` (for MPC) + `Vault.templateId` (for client) |
+| `PendingEvmTx`                   | `SignBidirectionalEvent`                                        |
+| `orchCid`                        | `signerCid`                                                     |
+| `"SignEvmTx"` choice             | `"Respond"` choice                                              |
+| `"ProvideEvmOutcomeSig"` choice  | `"RespondBidirectional"` choice                                 |
+| `requester` field                | `sender` field                                                  |
+| `issuer` field                   | `operators` field (list)                                        |
+| `evmParams` field                | `evmTxParams` field                                             |
+| `mpcOutput` field                | `serializedOutput` field                                        |
+| `r, s, v` args                   | `signature : SignatureHex` arg                                  |
+| `vaultId + issuer` predecessorId | `vaultId + operatorsId` predecessorId                           |
 
 ---
 
@@ -62,6 +62,7 @@ This generates new TypeScript types for `Signer`, `Vault`, `SignBidirectionalEve
 - [ ] **Step 2: Verify codegen output**
 
 Check that the generated types include the new templates:
+
 ```bash
 ls test/src/daml-codegen/daml-vault-0.0.1/lib/Signer/
 ls test/src/daml-codegen/daml-vault-0.0.1/lib/Erc20Vault/
@@ -88,6 +89,7 @@ The EIP-712 type hash MUST match the Daml `requestTypeHash` exactly.
 **File:** `ts-packages/canton-sig/src/mpc/crypto.ts`
 
 Update `computeRequestId` to:
+
 - Take `operatorTexts: string[]` as first arg
 - Take `sender: string` as second arg
 - Compute `operatorsHash = keccak256(concat(sort(operatorTexts).map(t => keccak256(toHex(t)))))`
@@ -119,16 +121,26 @@ git commit -m "feat(ts): update computeRequestId for operators multi-sig"
 - [ ] **Step 1: Update imports and types**
 
 Replace:
+
 ```typescript
-import { VaultOrchestrator, type PendingEvmTx } from "@daml.js/daml-vault-0.0.1/lib/Erc20Vault/module";
+import {
+  VaultOrchestrator,
+  type PendingEvmTx,
+} from "@daml.js/daml-vault-0.0.1/lib/Erc20Vault/module";
 ```
+
 With:
+
 ```typescript
-import { Vault, type SignBidirectionalEvent } from "@daml.js/daml-vault-0.0.1/lib/Erc20Vault/module";
+import {
+  Vault,
+  type SignBidirectionalEvent,
+} from "@daml.js/daml-vault-0.0.1/lib/Erc20Vault/module";
 import { Signer } from "@daml.js/daml-vault-0.0.1/lib/Signer/module";
 ```
 
 Update `VAULT_ORCHESTRATOR` → `SIGNER_TEMPLATE`:
+
 ```typescript
 const SIGNER_TEMPLATE = Signer.templateId;
 ```
@@ -138,7 +150,7 @@ const SIGNER_TEMPLATE = Signer.templateId;
 ```typescript
 export interface MpcServiceConfig {
   canton: CantonClient;
-  signerCid: string;    // was orchCid
+  signerCid: string; // was orchCid
   userId: string;
   actAs: string[];
   rootPrivateKey: Hex;
@@ -149,6 +161,7 @@ export interface MpcServiceConfig {
 - [ ] **Step 3: Update `signAndEnqueue`**
 
 The function reads `SignBidirectionalEvent` fields (was `PendingEvmTx`):
+
 - `sender` (was `requester`)
 - `operators` (was `issuer`)
 - `evmTxParams` (was `evmParams`)
@@ -156,11 +169,13 @@ The function reads `SignBidirectionalEvent` fields (was `PendingEvmTx`):
 - `vaultId` + `operators` available on event — MPC computes `predecessorId` off-chain
 
 Exercises `Signer.Respond` (was `VaultOrchestrator.SignEvmTx`):
+
 - Choice args: `{ operators, sender, requestId, signature }` (DER-encoded, was `r, s, v`)
 
 - [ ] **Step 4: Update `reportOutcome`**
 
 Exercises `Signer.RespondBidirectional` (was `VaultOrchestrator.ProvideEvmOutcomeSig`):
+
 - Choice args: `{ operators, sender, requestId, serializedOutput, signature }`
   (was `{ requester, requestId, signature, mpcOutput }`)
 
@@ -184,6 +199,7 @@ git commit -m "feat(ts): update tx-handler for signer/vault split"
 - [ ] **Step 1: Update imports and template filter**
 
 Replace `PendingEvmTx` with `SignBidirectionalEvent`:
+
 ```typescript
 import { SignBidirectionalEvent } from "@daml.js/daml-vault-0.0.1/lib/Signer/module";
 const SIGN_EVENT_SUFFIX = templateSuffix(SignBidirectionalEvent.templateId);
@@ -194,7 +210,7 @@ const SIGN_EVENT_SUFFIX = templateSuffix(SignBidirectionalEvent.templateId);
 ```typescript
 export interface MpcServerConfig {
   canton: CantonClient;
-  signerCid: string;    // was orchCid
+  signerCid: string; // was orchCid
   userId: string;
   parties: string[];
   rootPrivateKey: Hex;
@@ -220,8 +236,7 @@ git commit -m "feat(ts): update MPC server to watch SignBidirectionalEvent"
 
 - [ ] **Step 1: Update `predecessorId` computation**
 
-Currently: `const predecessorId = \`${vaultId}${issuer}\`;`
-New: compute from `vaultId` + sorted operators (both fields on `SignBidirectionalEvent`)
+Currently: `const predecessorId = \`${vaultId}${issuer}\`;`New: compute from`vaultId`+ sorted operators (both fields on`SignBidirectionalEvent`)
 
 ```typescript
 import { keccak256, toBytes } from "viem";

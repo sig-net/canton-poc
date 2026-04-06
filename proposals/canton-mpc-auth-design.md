@@ -9,6 +9,7 @@ Compatible with Canton 3.x / Daml SDK 3.4.x+.
 The MPC codebase authenticates to every chain with private keys: Solana (ed25519 keypair), Ethereum (secp256k1 private key), NEAR (ed25519 key). Each node loads the key once at startup, signs each transaction with it. No expiration, no refresh, no external dependency.
 
 Canton's default auth setup uses Keycloak with shared secrets (`client_secret`). This diverges from the MPC pattern:
+
 1. The secret exists in two places (node + Keycloak DB)
 2. The secret is transmitted over the wire on every token request
 3. Best practice says rotate periodically (like a password)
@@ -23,12 +24,12 @@ To approximate per-transaction signing (like Solana/ETH), the node mints a fresh
 
 On Solana/ETH/NEAR, the private key signs each blockchain-native transaction -- the signature is bound to that specific payload and non-replayable. On Canton, the private key signs a JWT bearer token that authorizes API calls. These are different auth models:
 
-| | Solana/ETH/NEAR | Canton |
-|---|---|---|
-| Key signs | Chain-native transaction (payload-bound) | JWT bearer token (grants API access) |
-| Verified by | Blockchain consensus (decentralized) | Canton participant Ledger API (centralized) |
-| Stolen credential scope | One transaction only | All operations for token lifetime |
-| Token lifecycle | None | Mint per-request (~1ms local crypto) |
+|                         | Solana/ETH/NEAR                          | Canton                                      |
+| ----------------------- | ---------------------------------------- | ------------------------------------------- |
+| Key signs               | Chain-native transaction (payload-bound) | JWT bearer token (grants API access)        |
+| Verified by             | Blockchain consensus (decentralized)     | Canton participant Ledger API (centralized) |
+| Stolen credential scope | One transaction only                     | All operations for token lifetime           |
+| Token lifecycle         | None                                     | Mint per-request (~1ms local crypto)        |
 
 The security boundary is the same across all chains: the MPC threshold signature and on-chain/on-ledger cryptographic verification protect funds. The operational key (Solana keypair or Canton JWT key) is a door key to the API, not the vault key.
 
@@ -59,13 +60,13 @@ Each MPC node is a Rust process running the MPC signing protocol.
 
 Canton users are created at setup time via the User Management Service (`POST /v2/users` on the JSON Ledger API v2). Users are participant-local -- a user ID on participant A has no meaning on participant B. The `sub` claim in a JWT maps to a user ID, and Canton dynamically looks up that user's current rights at request time (rights are NOT encoded in the token, so they can be changed without reissuing JWTs).
 
-| User | Party Rights | Purpose |
-|------|-------------|---------|
-| `mpc-node-1` | `can_act_as` + `can_read_as` `mpc-signer` | MPC node 1 |
-| `mpc-node-2` | `can_act_as` + `can_read_as` `mpc-signer` | MPC node 2 |
-| ... | ... | ... |
-| `mpc-node-8` | `can_act_as` + `can_read_as` `mpc-signer` | MPC node 8 |
-| `temple-backend` | `can_act_as` `issuer` | Temple/Sig Network backend |
+| User             | Party Rights                              | Purpose                    |
+| ---------------- | ----------------------------------------- | -------------------------- |
+| `mpc-node-1`     | `can_act_as` + `can_read_as` `mpc-signer` | MPC node 1                 |
+| `mpc-node-2`     | `can_act_as` + `can_read_as` `mpc-signer` | MPC node 2                 |
+| ...              | ...                                       | ...                        |
+| `mpc-node-8`     | `can_act_as` + `can_read_as` `mpc-signer` | MPC node 8                 |
+| `temple-backend` | `can_act_as` `issuer`                     | Temple/Sig Network backend |
 
 ### Required Daml Contract Changes
 
@@ -136,6 +137,7 @@ openssl req -x509 -noenc -days 3650 \
 ```
 
 This produces:
+
 - `mpc-node-1.key` -- EC P-256 private key in PKCS#8 PEM format (stays on the node, never shared). Note: OpenSSL 3.x outputs PKCS#8 (`BEGIN PRIVATE KEY`); OpenSSL 1.x outputs SEC1 (`BEGIN EC PRIVATE KEY`). Both work for JWT signing.
 - `mpc-node-1.crt` -- X.509 certificate containing the public key (given to Canton participant). Canton uses the cert purely as a public key container -- no chain validation, no expiry checking, self-signed is fine. Verified in Canton source: `KeyUtils.readECPublicKeyFromCrt` only calls `.getPublicKey` on the cert -- never checks issuer, validity dates, or chain.
 
@@ -217,6 +219,7 @@ canton.participants.signet-participant.ledger-api {
 ```
 
 Advantages of JWKS over per-certificate:
+
 - O(1) key lookup via JWT `kid` header vs O(n) sequential trial
 - No participant restart for key rotation (just update the JWKS JSON)
 - Single config entry regardless of node count
@@ -250,6 +253,7 @@ For **WebSocket streams** (observing PendingEvmTx events), the node uses a sligh
 ```
 
 Canton supports two token formats:
+
 - **Audience-based** (recommended): uses `aud` claim to target a specific participant
 - **Scope-based**: uses `scope: "daml_ledger_api"` for generic API access
 
@@ -356,19 +360,20 @@ Dedup key = (userId, actAs, commandId)
 The EC P-256 key authenticates the node to Canton's Ledger API. It proves "I am mpc-node-3 and I have the right to act as mpc-signer."
 
 It does NOT:
+
 - Sign EVM transactions (that's the MPC threshold key)
 - Prove the EVM signature is correct (verified on EVM via `ecrecover`)
 - Prove the outcome is real (verified in Daml via `secp256k1WithEcdsaOnly` against `mpcPublicKey`)
 
 ### Threat Analysis
 
-| Threat | Impact | Mitigation |
-|--------|--------|------------|
-| **1 node's Canton key compromised** | Attacker can exercise choices as `mpc-signer`. Can create junk EcdsaSignature contracts. | Fake signatures fail EVM verification. Fake outcomes fail `secp256k1WithEcdsaOnly` at claim time. Short JWT expiry (30s) limits replay window. |
-| **JWT intercepted** | Attacker can submit commands for up to 30 seconds (per-request JWT lifetime). | TLS required on Ledger API. Per-request minting keeps window minimal. |
-| **Canton participant compromised (POC)** | Total system compromise -- attacker can read all state, forge contracts, modify ledger. | In single-participant POC, the participant IS the ledger. Production requires multi-participant Canton Network where parties on different participants provide mutual validation. |
-| **Rogue MPC node** | Can create junk evidence contracts (DoS), but cannot forge MPC threshold signatures. | `SignEvmTx` should validate that a matching `PendingEvmTx` exists and enforce at-most-once creation. |
-| **Node's key file leaked** | Attacker can mint JWTs for that node's user. | Revoke: remove cert from config (requires restart with per-cert, or JWKS update without restart). |
+| Threat                                   | Impact                                                                                   | Mitigation                                                                                                                                                                        |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **1 node's Canton key compromised**      | Attacker can exercise choices as `mpc-signer`. Can create junk EcdsaSignature contracts. | Fake signatures fail EVM verification. Fake outcomes fail `secp256k1WithEcdsaOnly` at claim time. Short JWT expiry (30s) limits replay window.                                    |
+| **JWT intercepted**                      | Attacker can submit commands for up to 30 seconds (per-request JWT lifetime).            | TLS required on Ledger API. Per-request minting keeps window minimal.                                                                                                             |
+| **Canton participant compromised (POC)** | Total system compromise -- attacker can read all state, forge contracts, modify ledger.  | In single-participant POC, the participant IS the ledger. Production requires multi-participant Canton Network where parties on different participants provide mutual validation. |
+| **Rogue MPC node**                       | Can create junk evidence contracts (DoS), but cannot forge MPC threshold signatures.     | `SignEvmTx` should validate that a matching `PendingEvmTx` exists and enforce at-most-once creation.                                                                              |
+| **Node's key file leaked**               | Attacker can mint JWTs for that node's user.                                             | Revoke: remove cert from config (requires restart with per-cert, or JWKS update without restart).                                                                                 |
 
 ### What's Safe (Confirmed by Red-Team Review)
 
@@ -434,19 +439,19 @@ Canton supports four authentication approaches. Self-signed JWTs are the only vi
 
 ### v0 / v1 Comparison
 
-| | v0: Self-Signed JWT per-cert (`jwt-es-256-crt`) | v1: Self-Signed JWT via JWKS (`jwt-jwks`) | Keycloak (shared secret) | External Signing (external parties) |
-|---|---|---|---|---|
-| **Ranking** | **v0 (PoC)** | **v1 (Production)** | **Rejected** | **Rejected** |
-| Key loaded at startup | Yes (EC P-256 from file) | Yes (EC P-256 from file) | Yes (client_secret) | Yes (signing key) |
-| What the key signs | JWT bearer token (local ~1ms) | JWT bearer token (local ~1ms) | Nothing -- secret sent as password | Canton transaction directly |
-| External service needed | No | No (static JSON file) | Yes (Keycloak server) | No |
-| Network call per auth | No | No | Yes (to Keycloak) | No |
-| Credential replayable | 30s window (per-request JWT) | 30s window (per-request JWT) | Until secret rotated | No (tx-bound) |
-| Node add/remove | Edit config + restart participant | Update JSON file, no restart | Keycloak admin UI | **On-ledger contract update** (observer/signatory changes) |
-| All nodes share one party | Yes (`mpc-signer`) | Yes (`mpc-signer`) | Yes | No (each node = own party) |
-| Node mgmt decoupled from ledger | Yes | Yes | Yes | **No** |
-| Key lookup cost | O(n) sequential cert trial | O(1) via JWT `kid` header | O(1) via Keycloak token | N/A |
-| Closest to MPC pattern | Close -- same "load key, sign locally" | Close -- same as per-cert from node side | Distant -- shared secret, central dependency | Closest in theory, worst in practice |
+|                                 | v0: Self-Signed JWT per-cert (`jwt-es-256-crt`) | v1: Self-Signed JWT via JWKS (`jwt-jwks`) | Keycloak (shared secret)                     | External Signing (external parties)                        |
+| ------------------------------- | ----------------------------------------------- | ----------------------------------------- | -------------------------------------------- | ---------------------------------------------------------- |
+| **Ranking**                     | **v0 (PoC)**                                    | **v1 (Production)**                       | **Rejected**                                 | **Rejected**                                               |
+| Key loaded at startup           | Yes (EC P-256 from file)                        | Yes (EC P-256 from file)                  | Yes (client_secret)                          | Yes (signing key)                                          |
+| What the key signs              | JWT bearer token (local ~1ms)                   | JWT bearer token (local ~1ms)             | Nothing -- secret sent as password           | Canton transaction directly                                |
+| External service needed         | No                                              | No (static JSON file)                     | Yes (Keycloak server)                        | No                                                         |
+| Network call per auth           | No                                              | No                                        | Yes (to Keycloak)                            | No                                                         |
+| Credential replayable           | 30s window (per-request JWT)                    | 30s window (per-request JWT)              | Until secret rotated                         | No (tx-bound)                                              |
+| Node add/remove                 | Edit config + restart participant               | Update JSON file, no restart              | Keycloak admin UI                            | **On-ledger contract update** (observer/signatory changes) |
+| All nodes share one party       | Yes (`mpc-signer`)                              | Yes (`mpc-signer`)                        | Yes                                          | No (each node = own party)                                 |
+| Node mgmt decoupled from ledger | Yes                                             | Yes                                       | Yes                                          | **No**                                                     |
+| Key lookup cost                 | O(n) sequential cert trial                      | O(1) via JWT `kid` header                 | O(1) via Keycloak token                      | N/A                                                        |
+| Closest to MPC pattern          | Close -- same "load key, sign locally"          | Close -- same as per-cert from node side  | Distant -- shared secret, central dependency | Closest in theory, worst in practice                       |
 
 ### Why This Ranking
 
@@ -472,18 +477,18 @@ Each node becomes its own Canton party. Adding or removing a node requires on-le
 
 All claims in this design were verified against Canton 3.x documentation and source code (April 2026). Key source files examined:
 
-| Claim | Status | Source |
-|-------|--------|--------|
-| `jwt-es-256-crt` config type | Confirmed | Canton 3.5 docs, `AuthServiceConfig.scala` |
-| `jwt-jwks` config type | Confirmed | Canton 3.5 docs, `JwksVerifier.scala` |
-| Self-signed cert acceptance | Confirmed | `KeyUtils.readECPublicKeyFromCrt` -- only calls `.getPublicKey`, no chain/expiry check |
-| No cert-to-user binding | Confirmed | `AuthInterceptor.headerToClaims` discards cert identity after validation |
-| Audience-based JWT format (`sub` + `aud`) | Confirmed | Canton 3.5 JWT docs. Fixed: `aud`/`scope` mutual exclusivity is config-level, not payload-level |
-| `POST /v2/users` + party rights | Confirmed | OpenAPI spec, `UserManagementService` |
-| Command dedup key `(userId, actAs, commandId)` | Confirmed | Canton protobuf + OpenAPI spec |
-| `max-token-lifetime` (remaining TTL semantics) | Confirmed | Canton 3.5 docs -- checks `exp - now`, not `exp - iat` |
-| JWKS no-restart rotation | Confirmed | `CachedJwtVerifierLoader.scala` -- cache expiry triggers re-fetch |
-| OpenSSL keygen command | Confirmed | Minor fix: `-nodes` → `-noenc` (OpenSSL 3.x deprecation) |
+| Claim                                          | Status    | Source                                                                                          |
+| ---------------------------------------------- | --------- | ----------------------------------------------------------------------------------------------- |
+| `jwt-es-256-crt` config type                   | Confirmed | Canton 3.5 docs, `AuthServiceConfig.scala`                                                      |
+| `jwt-jwks` config type                         | Confirmed | Canton 3.5 docs, `JwksVerifier.scala`                                                           |
+| Self-signed cert acceptance                    | Confirmed | `KeyUtils.readECPublicKeyFromCrt` -- only calls `.getPublicKey`, no chain/expiry check          |
+| No cert-to-user binding                        | Confirmed | `AuthInterceptor.headerToClaims` discards cert identity after validation                        |
+| Audience-based JWT format (`sub` + `aud`)      | Confirmed | Canton 3.5 JWT docs. Fixed: `aud`/`scope` mutual exclusivity is config-level, not payload-level |
+| `POST /v2/users` + party rights                | Confirmed | OpenAPI spec, `UserManagementService`                                                           |
+| Command dedup key `(userId, actAs, commandId)` | Confirmed | Canton protobuf + OpenAPI spec                                                                  |
+| `max-token-lifetime` (remaining TTL semantics) | Confirmed | Canton 3.5 docs -- checks `exp - now`, not `exp - iat`                                          |
+| JWKS no-restart rotation                       | Confirmed | `CachedJwtVerifierLoader.scala` -- cache expiry triggers re-fetch                               |
+| OpenSSL keygen command                         | Confirmed | Minor fix: `-nodes` → `-noenc` (OpenSSL 3.x deprecation)                                        |
 
 Pending empirical verification: whether Canton checks X.509 certificate expiry dates (source code says no, but not explicitly documented by DA). Recommend testing with an expired cert to confirm.
 
@@ -492,39 +497,47 @@ Pending empirical verification: whether Canton checks X.509 certificate expiry d
 ## References
 
 ### Canton Authentication
+
 - [Configure API Authentication and Authorization with JWT (Canton 3.5)](https://docs.digitalasset.com/operate/3.5/howtos/secure/apis/jwt.html)
 - [Configure API Authentication and Authorization with JWT (Canton 3.4)](https://docs.digitalasset.com/operate/3.4/howtos/secure/apis/jwt.html)
 - [gRPC Ledger API Configuration (Canton 3.5)](https://docs.digitalasset.com/operate/3.5/howtos/configure/apis/ledger_api.html)
 
 ### Canton User/Party Management
+
 - [Parties and Users on a Canton Ledger](https://docs.digitalasset.com/build/3.5/explanations/parties-users.html)
 - [The gRPC Ledger API Services](https://docs.digitalasset.com/build/3.5/explanations/ledger-api-services.html)
 - [How to Allocate and Query Daml Parties](https://docs.digitalasset.com/build/3.4/sdlc-howtos/applications/develop/manage-daml-parties.html)
 
 ### Canton Security
+
 - [Cryptographic Keys in Canton](https://docs.digitalasset.com/overview/3.4/explanations/canton/security.html)
 - [Configure TLS for APIs](https://docs.digitalasset.com/operate/3.5/howtos/secure/apis/tls.html)
 - [Local and External Parties](https://docs.digitalasset.com/overview/3.4/explanations/canton/external-party.html)
 - [Topology Management](https://docs.digitalasset.com/overview/3.4/explanations/canton/topology.html)
 
 ### Canton JSON Ledger API v2
+
 - [JSON Ledger API Service V2](https://docs.digitalasset.com/build/3.4/explanations/json-api/index.html)
 - [Authorization (Daml SDK)](https://docs.daml.com/app-dev/authorization.html)
 
 ### Reference Implementations
+
 - [ex-secure-canton-infra (GitHub)](https://github.com/digital-asset/ex-secure-canton-infra) -- Reference deployment with JWT, JWKS, TLS, PKI
 - [Secure Daml Infrastructure Part 2: JWT, JWKS and Auth0](https://blog.digitalasset.com/blog/secure-daml-infrastructure-part-2-jwt-jwks-and-auth0)
 - [cn-quickstart (GitHub)](https://github.com/digital-asset/cn-quickstart) -- Canton Network app quickstart
 
 ### Canton External Parties (Rejected Path -- Reference Only)
+
 - [External Signing Overview](https://docs.digitalasset.com/build/3.4/tutorials/app-dev/external_signing_overview.html)
 - [Submit Externally Signed Transactions](https://docs.digitalasset.com/build/3.4/tutorials/app-dev/external_signing_submission.html)
 - [Onboard External Party Using Admin API](https://docs.digitalasset.com/build/3.4/tutorials/app-dev/external_signing_onboarding.html)
 
 ### Keycloak (Alternative to Self-Signed JWTs)
+
 - [Keycloak JWT Authorization Grant (RFC 7523)](https://www.keycloak.org/securing-apps/jwt-authorization-grant)
 - [Keycloak in cn-quickstart](https://docs.digitalasset.com/build/3.4/quickstart/secure/keycloak-in-cnqs.html)
 
 ### Standards
+
 - [RFC 7519 -- JSON Web Token](https://datatracker.ietf.org/doc/html/rfc7519)
 - [RFC 7523 -- JWT Profile for OAuth 2.0 Client Authentication](https://datatracker.ietf.org/doc/html/rfc7523)
