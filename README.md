@@ -73,7 +73,7 @@ These don't need the sandbox:
 
 ```bash
 dpm build --all
-for pkg in daml-abi daml-uint256 daml-evm-types daml-eip712 daml-vault; do
+for pkg in daml-abi daml-uint256 daml-evm-types daml-eip712 daml-signer daml-vault; do
   (cd daml-packages/$pkg && dpm test)
 done
 ```

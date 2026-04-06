@@ -1054,6 +1054,98 @@ malicious participant could also forge the metadata. But combined with
 multi-participant deployment (where metadata is populated from the
 actual confirmation protocol), it closes the gap.
 
+### Nonce Contract: `nonceCidText` and MPC Verification
+
+`nonceCidText` is a user-provided string passed through the Vault's
+`RequestDeposit`/`RequestWithdrawal` choices into
+`SignBidirectionalEvent`. It must be the contract ID of a consumed
+domain contract — specifically an `Authorization` or `Erc20Holding`.
+This field serves as a uniqueness nonce: it is hashed into `requestId`
+via `computeRequestId`, binding each MPC signing request to a specific
+consumed contract and preventing replay.
+
+#### Nonce rules
+
+- **Deposits and other vault operations** require an `Authorization`
+  contract as the nonce. The operator must approve an auth card before
+  the user can request a signing operation. This enforces the
+  two-step authorization flow (request → approve → use).
+- **Withdrawals** use the `Erc20Holding` being burned as the nonce.
+  This means a user can always withdraw their own holdings without
+  needing a separate auth card — the holding itself is the
+  authorization.
+- **No other contract type is accepted** as a nonce. The MPC rejects
+  `nonceCidText` values that don't correspond to an archived
+  `Authorization` or `Erc20Holding`.
+
+#### Why Daml can't enforce this on-chain
+
+Daml cannot convert `ContractId` to `Text` on-chain — `show` on
+`ContractId` throws a runtime error in Daml 3.x, and
+`contractIdToText` returns `None` in ledger code. The Vault therefore
+accepts `nonceCidText` as a plain `Text` parameter without verifying
+it matches the actual `authCid` (deposit) or `balanceCid` (withdrawal).
+Both the Vault and the MPC derive `requestId` from the same
+user-provided value — if the user provides a fake nonce, the hashes
+still match.
+
+The actual single-use guarantee comes from the Vault archiving the auth
+card / holding in the same transaction. Daml enforces that archived
+contracts cannot be reused. But the binding between `nonceCidText` and
+the archived contract is not verifiable on-chain.
+
+#### MPC-side enforcement
+
+The Canton `/v2/updates` WebSocket stream returns full transactions
+containing both `CreatedEvent` and `ArchivedEvent` entries (in
+`ACS_DELTA` mode, non-transient archives are visible). The MPC
+verifies two properties of `nonceCidText`:
+
+1. **Contract was archived in the same transaction** — `nonceCidText`
+   must match the `contractId` of an `ArchivedEvent` in the same
+   transaction that created the `SignBidirectionalEvent`.
+2. **Contract is a known domain type** — the `ArchivedEvent.templateId`
+   must be `Authorization` or `Erc20Holding`. Any other template type
+   is rejected.
+
+```typescript
+const archivedEvents = txEvents.filter((e) => "ArchivedEvent" in e).map((e) => e.ArchivedEvent);
+
+const nonceEvent = archivedEvents.find((a) => a.contractId === nonceCidText);
+if (!nonceEvent) {
+  throw new Error("nonceCidText does not match any ArchivedEvent");
+}
+if (!ALLOWED_NONCE_TEMPLATES.has(templateSuffix(nonceEvent.templateId))) {
+  throw new Error("nonceCidText is not an Authorization or Erc20Holding");
+}
+```
+
+This requires passing the full transaction event list (not just the
+`CreatedEvent`) from the MPC server's stream callback to
+`signAndEnqueue`. During catch-up (reconnection via
+`getActiveContracts`), the transaction context is unavailable — the
+catch-up path trusts the ledger state, which is acceptable because
+catch-up only processes contracts that survived the confirmation
+protocol.
+
+#### Why `SignRequest` cannot be used as the nonce
+
+`SignRequest` is a transient contract — created and consumed in the
+same atomic transaction. Three blockers prevent using it as the nonce:
+
+1. **`show` on `ContractId` doesn't work on-chain** — Daml 3.x
+   throws a runtime error, so the Vault can't compute
+   `show signReqCid` to pass as `nonceCidText`.
+2. **Chicken-and-egg** — `nonceCidText` is a field of `SignRequest`
+   itself, needed at creation time. The `signReqCid` isn't assigned
+   until after creation.
+3. **Transient contracts are invisible in `ACS_DELTA`** — Canton's
+   default stream shape filters out contracts that are created and
+   consumed in the same transaction. The MPC would never see the
+   `SignRequest` archive. Switching to `LEDGER_EFFECTS` would show
+   it, but adds complexity for no security benefit since the auth
+   card / holding archive already provides the uniqueness guarantee.
+
 ### Why Canton Cannot Provide Light Client Proofs
 
 Unlike Ethereum (where a light client can verify Merkle proofs against
@@ -1162,23 +1254,27 @@ the participant, it enforces its own rules.
 - [Glossary: Virtual Global Ledger](https://docs.digitalasset.com/build/3.4/reference/glossary) — each participant holds a fragment of the virtual ledger; Canton protocol guarantees consistency
 - [Glossary: Mediator](https://docs.digitalasset.com/build/3.4/reference/glossary) — commit coordinator that aggregates participant verdicts without seeing contract contents
 
+## Decisions
+
+1. **Separate DARs** — Signer and Vault are separate DAR packages.
+   `daml-signer` depends only on `daml-evm-types` (for
+   `EvmTransactionParams`). `daml-vault` depends on `daml-signer` via
+   `data-dependencies`. Shared types (`BytesHex`, `SignatureHex`) come
+   from `DA.Crypto.Text` (stdlib) — no cross-DAR type sharing needed.
+   This enables independent versioning, deployment, and reuse of the
+   Signer layer across multiple vault implementations.
+
 ## Open Questions
 
-1. **Separate DARs or single DAR?** — The Signer and Vault could be
-   separate DAR packages (different SDK versions, independent deployment)
-   or modules within the same DAR (simpler codegen, shared types).
-   Separate DARs is cleaner architecturally but requires cross-DAR type
-   sharing for `EvmTransactionParams`, `SignatureHex`, etc.
-
-2. **Multiple Signers** — Should the Vault support switching between
+1. **Multiple Signers** — Should the Vault support switching between
    Signers (e.g., key rotation)? Currently `sigNetwork` is fixed on the
    Vault. An `UpdateSigner` choice could handle this.
 
-3. **Operator changes** — Adding or removing operators requires a new
+2. **Operator changes** — Adding or removing operators requires a new
    Vault (new multi-party agreement). An `UpdateOperators` choice could
    allow rotation without re-creating the Vault.
 
-4. **`evmTxParams` vs `serializedTransaction`** — Canton uses structured
+3. **`evmTxParams` vs `serializedTransaction`** — Canton uses structured
    `EvmTransactionParams` (can't RLP-encode on-chain). The MPC indexer
    must RLP-encode client-side before hashing. This is a Canton-specific
    divergence from Solana's raw `serialized_transaction` bytes.

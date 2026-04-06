@@ -80,7 +80,8 @@ testOperatorsHash = do
   let h1 = computeOperatorsHash ["Alice", "Bob"]
   let h2 = computeOperatorsHash ["Alice", "Bob"]
   assertMsg "computeOperatorsHash is deterministic" (h1 == h2)
-  assertMsg "computeOperatorsHash is 32 bytes" (byteCount h1 == 32)
+  assertMsg "computeOperatorsHash matches TS golden vector"
+    (h1 == "9b1a0a45cfdc60f45820808958c1895d44da61c8f804f5560020a373b23ad51e")
   let h3 = computeOperatorsHash ["Bob", "Alice"]
   assertMsg "computeOperatorsHash is order-independent" (h1 == h3)
   let h4 = computeOperatorsHash ["Alice", "Charlie"]
@@ -148,10 +149,12 @@ testCrossLanguageVectors = do
   let path = "m/44/60/0/0"
 
   let rid1 = computeRequestId predecessorId sampleEvmParams caip2Id 1 path "ECDSA" "ethereum" "" ""
-  assertMsg "requestId(kv=1) must be 32 bytes" (byteCount rid1 == 32)
+  assertMsg "requestId(kv=1) matches TS"
+    (rid1 == "48084e4dab73dd6a34eb557e790ea350d37ec13a4b30b5d5bd967baf9b75d67d")
 
   let rid256 = computeRequestId predecessorId sampleEvmParams caip2Id 256 path "ECDSA" "ethereum" "" ""
-  assertMsg "requestId(kv=256) must be 32 bytes" (byteCount rid256 == 32)
+  assertMsg "requestId(kv=256) matches TS"
+    (rid256 == "297f14c8d4cde50276af6a473a090b88637be47e5a569e41d055c32ede3b0221")
 
   let knownId = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   assertMsg "computeResponseHash(knownId, 01) matches TS"
@@ -163,10 +166,12 @@ testCrossLanguageVectors = do
       == "af2ff87730133736cd5ad11131445277ced38a0762eaa9e62320a1ffc49de8da")
 
   let rid0 = computeRequestId predecessorId sampleEvmParams caip2Id 0 path "ECDSA" "ethereum" "" ""
-  assertMsg "requestId(kv=0) must be 32 bytes" (byteCount rid0 == 32)
+  assertMsg "requestId(kv=0) matches TS"
+    (rid0 == "983e89dfc51870788b6f74086fcb0d0187d9b869671df079ef2bb3988a01a5b6")
 
   let emptyArgsParams = sampleEvmParams with args = []
   assertMsg "hashEvmParams(emptyArgs) matches TS"
     (hashEvmParams emptyArgsParams == "6e2af85ef5f8770dc382c8fa9a1cdbb4560c6e18a4d14ec9d266af538f2a37bc")
   let ridEmpty = computeRequestId predecessorId emptyArgsParams caip2Id 1 path "ECDSA" "ethereum" "" ""
-  assertMsg "requestId(emptyArgs) must be 32 bytes" (byteCount ridEmpty == 32)
+  assertMsg "requestId(emptyArgs) matches TS"
+    (ridEmpty == "82ec5e0131c464782bba715199a630fc56a89d973f22eed4f1babee5242c06b0")

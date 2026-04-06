@@ -19,7 +19,13 @@ import {
   PendingDeposit,
   PendingWithdrawal,
 } from "canton-sig";
-import { keccak256, toHex } from "viem";
+import {
+  keccak256,
+  toHex,
+  recoverTransactionAddress,
+  type Hex,
+  type TransactionSerializedEIP1559,
+} from "viem";
 import { DER } from "@noble/curves/abstract/weierstrass.js";
 import { loadEnv } from "../../config/env.js";
 import {
@@ -183,16 +189,30 @@ interface DepositResult {
 
 /**
  * Parse a DER-encoded ECDSA signature into {r, s, v} for EVM tx reconstruction.
- * The recovery bit (v) is determined by trying both 0 and 1.
- * For simplicity we default to 0 — the MPC service already verified it on-chain.
+ * Tries both recovery parities (0 and 1) and picks the one whose recovered
+ * sender matches `expectedFrom`.
  */
-function parseDerSignature(derHex: string): { r: string; s: string; v: number } {
-  const { r, s } = DER.toSig(`${derHex}`);
-  return {
-    r: r.toString(16).padStart(64, "0"),
-    s: s.toString(16).padStart(64, "0"),
-    v: 0,
-  };
+export async function parseDerSignature(
+  derHex: string,
+  evmTxParams: import("canton-sig").CantonEvmParams,
+  expectedFrom: Hex,
+): Promise<{ r: string; s: string; v: number }> {
+  const { r, s } = DER.toSig(Uint8Array.from(Buffer.from(derHex, "hex")));
+  const rHex = r.toString(16).padStart(64, "0");
+  const sHex = s.toString(16).padStart(64, "0");
+
+  for (const v of [0, 1] as const) {
+    const signed = reconstructSignedTx(evmTxParams, { r: `0x${rHex}`, s: `0x${sHex}`, v });
+    const recovered = await recoverTransactionAddress({
+      serializedTransaction: signed as TransactionSerializedEIP1559,
+    });
+    if (recovered.toLowerCase() === expectedFrom.toLowerCase()) {
+      return { r: rHex, s: sHex, v };
+    }
+  }
+  throw new Error(
+    `parseDerSignature: neither v=0 nor v=1 recovers expected sender ${expectedFrom}`,
+  );
 }
 
 export async function executeDepositFlow(
@@ -337,7 +357,11 @@ export async function executeDepositFlow(
 
   // ── Submit to Sepolia ──
   // Parse DER-encoded signature to r,s,v for EVM tx reconstruction
-  const { r, s, v } = parseDerSignature(signatureRespondedArgs.signature);
+  const { r, s, v } = await parseDerSignature(
+    signatureRespondedArgs.signature,
+    evmTxParams,
+    depositAddress,
+  );
   const signedTx = reconstructSignedTx(evmTxParams, {
     r: `0x${r}`,
     s: `0x${s}`,

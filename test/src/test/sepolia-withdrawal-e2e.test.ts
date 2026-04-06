@@ -2,7 +2,6 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { createPublicClient, createWalletClient, http } from "viem";
 import { privateKeyToAddress, privateKeyToAccount } from "viem/accounts";
 import { sepolia } from "viem/chains";
-import { DER } from "@noble/curves/abstract/weierstrass.js";
 import {
   findCreated,
   chainIdHexToCaip2,
@@ -16,6 +15,7 @@ import {
   setupVault,
   executeDepositFlow,
   pollForContract,
+  parseDerSignature,
   VAULT_TEMPLATE,
   SIGNATURE_RESPONDED,
   RESPOND_BIDIRECTIONAL,
@@ -39,18 +39,6 @@ import {
   toCantonHex,
   fundFromFaucet,
 } from "./helpers/sepolia-helpers.js";
-
-/**
- * Parse a DER-encoded ECDSA signature into {r, s, v} for EVM tx reconstruction.
- */
-function parseDerSignature(derHex: string): { r: string; s: string; v: number } {
-  const { r, s } = DER.toSig(`${derHex}`);
-  return {
-    r: r.toString(16).padStart(64, "0"),
-    s: s.toString(16).padStart(64, "0"),
-    v: 0,
-  };
-}
 
 const env = tryLoadEnv();
 const describeIf = env ? describe : describe.skip;
@@ -169,7 +157,11 @@ describeIf("sepolia e2e withdrawal lifecycle", () => {
     console.log("[wdl-e2e] SignatureRespondedEvent observed");
 
     // ── User submits signed withdrawal tx to Sepolia ──
-    const { r, s, v } = parseDerSignature(signatureRespondedArgs.signature);
+    const { r, s, v } = await parseDerSignature(
+      signatureRespondedArgs.signature,
+      evmTxParams,
+      setup.vaultAddress,
+    );
     const signedTx = reconstructSignedTx(evmTxParams, {
       r: `0x${r}`,
       s: `0x${s}`,

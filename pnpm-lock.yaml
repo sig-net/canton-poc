@@ -124,6 +124,9 @@ importers:
         specifier: ^8.19.0
         version: 8.20.0(bufferutil@4.1.0)(utf-8-validate@6.0.6)
     devDependencies:
+      '@daml.js/daml-signer-0.0.1':
+        specifier: file:./generated/model/daml-signer-0.0.1
+        version: file:ts-packages/canton-sig/generated/model/daml-signer-0.0.1
       '@daml.js/daml-vault-0.0.1':
         specifier: file:./generated/model/daml-vault-0.0.1
         version: file:ts-packages/canton-sig/generated/model/daml-vault-0.0.1
@@ -239,6 +242,9 @@ packages:
 
   '@daml.js/daml-prim-DA-Types-1.0.0@file:ts-packages/canton-sig/generated/model/daml-prim-DA-Types-1.0.0':
     resolution: {directory: ts-packages/canton-sig/generated/model/daml-prim-DA-Types-1.0.0, type: directory}
+
+  '@daml.js/daml-signer-0.0.1@file:ts-packages/canton-sig/generated/model/daml-signer-0.0.1':
+    resolution: {directory: ts-packages/canton-sig/generated/model/daml-signer-0.0.1, type: directory}
 
   '@daml.js/daml-vault-0.0.1@file:ts-packages/canton-sig/generated/model/daml-vault-0.0.1':
     resolution: {directory: ts-packages/canton-sig/generated/model/daml-vault-0.0.1, type: directory}
@@ -2347,10 +2353,17 @@ snapshots:
     dependencies:
       '@mojotech/json-type-validation': 3.1.0
 
+  '@daml.js/daml-signer-0.0.1@file:ts-packages/canton-sig/generated/model/daml-signer-0.0.1':
+    dependencies:
+      '@daml.js/daml-evm-types-0.0.1': file:ts-packages/canton-sig/generated/model/daml-evm-types-0.0.1
+      '@daml.js/ghc-stdlib-DA-Internal-Template-1.0.0': file:ts-packages/canton-sig/generated/model/ghc-stdlib-DA-Internal-Template-1.0.0
+      '@mojotech/json-type-validation': 3.1.0
+
   '@daml.js/daml-vault-0.0.1@file:ts-packages/canton-sig/generated/model/daml-vault-0.0.1':
     dependencies:
       '@daml.js/daml-evm-types-0.0.1': file:ts-packages/canton-sig/generated/model/daml-evm-types-0.0.1
       '@daml.js/daml-prim-DA-Types-1.0.0': file:ts-packages/canton-sig/generated/model/daml-prim-DA-Types-1.0.0
+      '@daml.js/daml-signer-0.0.1': file:ts-packages/canton-sig/generated/model/daml-signer-0.0.1
       '@daml.js/ghc-stdlib-DA-Internal-Template-1.0.0': file:ts-packages/canton-sig/generated/model/ghc-stdlib-DA-Internal-Template-1.0.0
       '@mojotech/json-type-validation': 3.1.0
 

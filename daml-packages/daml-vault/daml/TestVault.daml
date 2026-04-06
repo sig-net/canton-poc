@@ -53,6 +53,7 @@ getAuth operator requester vaultCid n = do
 -- Deposit lifecycle
 ------------------------------------------------------------------------
 
+-- RequestDeposit creates SignBidirectionalEvent + PendingDeposit with correct requestId and evmTxParams
 testDepositLifecycle : Script ()
 testDepositLifecycle = do
   (sigNetwork, operator, requester, signerCid, vaultCid) <- setup
@@ -80,6 +81,7 @@ testDepositLifecycle = do
 -- RequestAuthorization creates proposal
 ------------------------------------------------------------------------
 
+-- RequestAuthorization creates AuthorizationRequest with correct operators and owner
 testRequestAuthorization : Script ()
 testRequestAuthorization = do
   (sigNetwork, operator, requester, _signerCid, vaultCid) <- setup
@@ -96,6 +98,7 @@ testRequestAuthorization = do
 -- ApproveAuthorization creates Authorization
 ------------------------------------------------------------------------
 
+-- ApproveAuthorization creates Authorization with correct operators, owner, and remainingUses
 testApproveAuthorization : Script ()
 testApproveAuthorization = do
   (sigNetwork, operator, requester, _signerCid, vaultCid) <- setup
@@ -117,6 +120,7 @@ testApproveAuthorization = do
 -- RequestDeposit validates and decrements auth card
 ------------------------------------------------------------------------
 
+-- RequestDeposit archives original auth card and creates decremented one (remainingUses 2 → 1)
 testRequestDepositBurnsAuthCard : Script ()
 testRequestDepositBurnsAuthCard = do
   (sigNetwork, operator, requester, signerCid, vaultCid) <- setup
@@ -145,6 +149,7 @@ testRequestDepositBurnsAuthCard = do
 -- Happy-path ClaimDeposit produces Erc20Holding
 ------------------------------------------------------------------------
 
+-- ClaimDeposit with valid MPC signature creates Erc20Holding and archives all evidence contracts
 testClaimHappyPath : Script ()
 testClaimHappyPath = do
   (sigNetwork, operator, requester, _signerCid, vaultCid) <- setupWithKey claimTestPubKey
@@ -155,14 +160,14 @@ testClaimHappyPath = do
       operators = [operator]; requester; sigNetwork
       requestId = claimTestRequestId; evmTxParams = sampleEvmParams
 
-  outcomeCid <- submit sigNetwork do
+  respondBidirectionalEventCid <- submit sigNetwork do
     createCmd RespondBidirectionalEvent with
       sigNetwork; operators = [operator]; requester
       requestId = claimTestRequestId
       responder = sigNetwork; serializedOutput = boolTrueMpcOutput
       signature = claimTestSignature
 
-  sigCid <- submit sigNetwork do
+  signatureRespondedEventCid <- submit sigNetwork do
     createCmd SignatureRespondedEvent with
       sigNetwork; operators = [operator]; requester
       requestId = claimTestRequestId
@@ -170,7 +175,7 @@ testClaimHappyPath = do
 
   holdingCid <- submit (actAs requester <> readAs operator <> readAs sigNetwork) do
     exerciseCmd vaultCid ClaimDeposit with
-      requester; pendingDepositCid = pendingCid; outcomeCid; sigCid
+      requester; pendingDepositCid = pendingCid; respondBidirectionalEventCid; signatureRespondedEventCid
 
   holding <- queryContractId requester holdingCid
   let h = fromSome holding
@@ -182,15 +187,16 @@ testClaimHappyPath = do
   -- Evidence and pending must be archived
   oldPending <- queryContractId requester pendingCid
   assertMsg "pending archived" (oldPending == None)
-  oldOutcome <- queryContractId requester outcomeCid
+  oldOutcome <- queryContractId requester respondBidirectionalEventCid
   assertMsg "outcome archived" (oldOutcome == None)
-  oldSig <- queryContractId requester sigCid
+  oldSig <- queryContractId requester signatureRespondedEventCid
   assertMsg "sig archived" (oldSig == None)
 
 ------------------------------------------------------------------------
 -- ClaimDeposit rejects wrong requester
 ------------------------------------------------------------------------
 
+-- ClaimDeposit rejects when requester differs from PendingDeposit.requester
 testClaimRequesterMismatchFails : Script ()
 testClaimRequesterMismatchFails = do
   (sigNetwork, operator, requester, _signerCid, vaultCid) <- setupWithKey claimTestPubKey
@@ -201,14 +207,14 @@ testClaimRequesterMismatchFails = do
       operators = [operator]; requester; sigNetwork
       requestId = claimTestRequestId; evmTxParams = sampleEvmParams
 
-  outcomeCid <- submit sigNetwork do
+  respondBidirectionalEventCid <- submit sigNetwork do
     createCmd RespondBidirectionalEvent with
       sigNetwork; operators = [operator]; requester
       requestId = claimTestRequestId
       responder = sigNetwork; serializedOutput = boolTrueMpcOutput
       signature = claimTestSignature
 
-  sigCid <- submit sigNetwork do
+  signatureRespondedEventCid <- submit sigNetwork do
     createCmd SignatureRespondedEvent with
       sigNetwork; operators = [operator]; requester
       requestId = claimTestRequestId
@@ -216,7 +222,7 @@ testClaimRequesterMismatchFails = do
 
   submitMustFail (actAs wrongUser <> readAs operator <> readAs sigNetwork) do
     exerciseCmd vaultCid ClaimDeposit with
-      requester = wrongUser; pendingDepositCid = pendingCid; outcomeCid; sigCid
+      requester = wrongUser; pendingDepositCid = pendingCid; respondBidirectionalEventCid; signatureRespondedEventCid
 
   pure ()
 
@@ -224,6 +230,7 @@ testClaimRequesterMismatchFails = do
 -- Auth card with 0 remaining uses is rejected (ensure fails)
 ------------------------------------------------------------------------
 
+-- Authorization with remainingUses=0 is rejected by ensure clause
 testAuthCardNoRemainingUsesFails : Script ()
 testAuthCardNoRemainingUsesFails = do
   (_sigNetwork, operator, requester, _signerCid, _vaultCid) <- setup
@@ -239,6 +246,7 @@ testAuthCardNoRemainingUsesFails = do
 -- ClaimDeposit rejects MPC failure (error prefix)
 ------------------------------------------------------------------------
 
+-- ClaimDeposit rejects when serializedOutput has error prefix (0xDEADBEEF)
 testClaimRejectsMpcFailure : Script ()
 testClaimRejectsMpcFailure = do
   (sigNetwork, operator, requester, _signerCid, vaultCid) <- setupWithKey claimTestPubKey
@@ -248,14 +256,14 @@ testClaimRejectsMpcFailure = do
       operators = [operator]; requester; sigNetwork
       requestId = claimTestRequestId; evmTxParams = sampleEvmParams
 
-  outcomeCid <- submit sigNetwork do
+  respondBidirectionalEventCid <- submit sigNetwork do
     createCmd RespondBidirectionalEvent with
       sigNetwork; operators = [operator]; requester
       requestId = claimTestRequestId
       responder = sigNetwork; serializedOutput = errorPrefixMpcOutput
       signature = refundTestSignature
 
-  sigCid <- submit sigNetwork do
+  signatureRespondedEventCid <- submit sigNetwork do
     createCmd SignatureRespondedEvent with
       sigNetwork; operators = [operator]; requester
       requestId = claimTestRequestId
@@ -263,7 +271,7 @@ testClaimRejectsMpcFailure = do
 
   submitMustFail (actAs requester <> readAs operator <> readAs sigNetwork) do
     exerciseCmd vaultCid ClaimDeposit with
-      requester; pendingDepositCid = pendingCid; outcomeCid; sigCid
+      requester; pendingDepositCid = pendingCid; respondBidirectionalEventCid; signatureRespondedEventCid
 
   pure ()
 
@@ -271,6 +279,7 @@ testClaimRejectsMpcFailure = do
 -- ClaimDeposit rejects requestId mismatch
 ------------------------------------------------------------------------
 
+-- ClaimDeposit rejects when outcome.requestId differs from pending.requestId
 testClaimRejectsRequestIdMismatch : Script ()
 testClaimRejectsRequestIdMismatch = do
   (sigNetwork, operator, requester, _signerCid, vaultCid) <- setupWithKey claimTestPubKey
@@ -281,14 +290,14 @@ testClaimRejectsRequestIdMismatch = do
       requestId = "aa"; evmTxParams = sampleEvmParams
 
   -- Outcome has a different requestId
-  outcomeCid <- submit sigNetwork do
+  respondBidirectionalEventCid <- submit sigNetwork do
     createCmd RespondBidirectionalEvent with
       sigNetwork; operators = [operator]; requester
       requestId = "bb"
       responder = sigNetwork; serializedOutput = boolTrueMpcOutput
       signature = claimTestSignature
 
-  sigCid <- submit sigNetwork do
+  signatureRespondedEventCid <- submit sigNetwork do
     createCmd SignatureRespondedEvent with
       sigNetwork; operators = [operator]; requester
       requestId = "bb"
@@ -296,7 +305,7 @@ testClaimRejectsRequestIdMismatch = do
 
   submitMustFail (actAs requester <> readAs operator <> readAs sigNetwork) do
     exerciseCmd vaultCid ClaimDeposit with
-      requester; pendingDepositCid = pendingCid; outcomeCid; sigCid
+      requester; pendingDepositCid = pendingCid; respondBidirectionalEventCid; signatureRespondedEventCid
 
   pure ()
 
@@ -304,6 +313,7 @@ testClaimRejectsRequestIdMismatch = do
 -- ClaimDeposit rejects bool(false) return value
 ------------------------------------------------------------------------
 
+-- ClaimDeposit rejects when ABI-decoded ERC20 return value is false
 testClaimRejectsBoolFalse : Script ()
 testClaimRejectsBoolFalse = do
   (sigNetwork, operator, requester, _signerCid, vaultCid) <- setupWithKey claimTestPubKey
@@ -313,14 +323,14 @@ testClaimRejectsBoolFalse = do
       operators = [operator]; requester; sigNetwork
       requestId = claimTestRequestId; evmTxParams = sampleEvmParams
 
-  outcomeCid <- submit sigNetwork do
+  respondBidirectionalEventCid <- submit sigNetwork do
     createCmd RespondBidirectionalEvent with
       sigNetwork; operators = [operator]; requester
       requestId = claimTestRequestId
       responder = sigNetwork; serializedOutput = boolFalseMpcOutput
       signature = boolFalseTestSignature
 
-  sigCid <- submit sigNetwork do
+  signatureRespondedEventCid <- submit sigNetwork do
     createCmd SignatureRespondedEvent with
       sigNetwork; operators = [operator]; requester
       requestId = claimTestRequestId
@@ -328,7 +338,7 @@ testClaimRejectsBoolFalse = do
 
   submitMustFail (actAs requester <> readAs operator <> readAs sigNetwork) do
     exerciseCmd vaultCid ClaimDeposit with
-      requester; pendingDepositCid = pendingCid; outcomeCid; sigCid
+      requester; pendingDepositCid = pendingCid; respondBidirectionalEventCid; signatureRespondedEventCid
 
   pure ()
 
@@ -336,6 +346,7 @@ testClaimRejectsBoolFalse = do
 -- Controller / validation negative tests
 ------------------------------------------------------------------------
 
+-- requester cannot exercise ApproveAuthorization (controller is operator/approver)
 testApproveAuthorizationWrongController : Script ()
 testApproveAuthorizationWrongController = do
   (_sigNetwork, operator, requester, _signerCid, vaultCid) <- setup
@@ -348,6 +359,7 @@ testApproveAuthorizationWrongController = do
     exerciseCmd vaultCid ApproveAuthorization with
       requestCid; remainingUses = 1; approver = requester
 
+-- requester cannot exercise Signer.Respond (controller is sigNetwork)
 testRespondWrongController : Script ()
 testRespondWrongController = do
   (sigNetwork, operator, requester, signerCid, _vaultCid) <- setup
@@ -357,6 +369,7 @@ testRespondWrongController = do
     exerciseCmd signerCid Respond with
       operators = [operator]; requester; requestId = "aa"; signature = "00"
 
+-- RequestDeposit rejects auth card with operators that don't match the Vault's operators
 testAuthCardWrongIssuer : Script ()
 testAuthCardWrongIssuer = do
   (sigNetwork, operator, requester, signerCid, vaultCid) <- setup
@@ -375,6 +388,7 @@ testAuthCardWrongIssuer = do
       outputDeserializationSchema = erc20BoolSchema
       respondSerializationSchema = erc20BoolSchema
 
+-- RequestDeposit rejects auth card whose owner differs from the requester
 testAuthCardWrongOwner : Script ()
 testAuthCardWrongOwner = do
   (sigNetwork, operator, requester, signerCid, vaultCid) <- setup
@@ -393,6 +407,7 @@ testAuthCardWrongOwner = do
       outputDeserializationSchema = erc20BoolSchema
       respondSerializationSchema = erc20BoolSchema
 
+-- RequestDeposit rejects EVM call with function other than transfer(address,uint256)
 testWrongFunctionSignature : Script ()
 testWrongFunctionSignature = do
   (sigNetwork, operator, requester, signerCid, vaultCid) <- setup
@@ -407,6 +422,7 @@ testWrongFunctionSignature = do
       outputDeserializationSchema = erc20BoolSchema
       respondSerializationSchema = erc20BoolSchema
 
+-- RequestDeposit rejects transfer to address other than the vault address
 testWrongRecipient : Script ()
 testWrongRecipient = do
   (sigNetwork, operator, requester, signerCid, vaultCid) <- setup
@@ -428,6 +444,7 @@ testWrongRecipient = do
 -- Withdrawal lifecycle
 ------------------------------------------------------------------------
 
+-- RequestWithdrawal archives holding, creates SignBidirectionalEvent + PendingWithdrawal with correct fields
 testWithdrawalLifecycle : Script ()
 testWithdrawalLifecycle = do
   (sigNetwork, operator, requester, signerCid, vaultCid) <- setup
@@ -460,6 +477,7 @@ testWithdrawalLifecycle = do
 -- Withdrawal complete success returns None
 ------------------------------------------------------------------------
 
+-- CompleteWithdrawal with bool(true) MPC output returns None (no refund)
 testWithdrawalCompleteSuccess : Script ()
 testWithdrawalCompleteSuccess = do
   (sigNetwork, operator, requester, _signerCid, vaultCid) <- setupWithKey claimTestPubKey
@@ -470,14 +488,14 @@ testWithdrawalCompleteSuccess = do
       requestId = claimTestRequestId; evmTxParams = sampleWithdrawalEvmParams
       erc20Address = sampleErc20Address; amount = sampleHoldingAmount
 
-  outcomeCid <- submit sigNetwork do
+  respondBidirectionalEventCid <- submit sigNetwork do
     createCmd RespondBidirectionalEvent with
       sigNetwork; operators = [operator]; requester
       requestId = claimTestRequestId
       responder = sigNetwork; serializedOutput = boolTrueMpcOutput
       signature = claimTestSignature
 
-  sigCid <- submit sigNetwork do
+  signatureRespondedEventCid <- submit sigNetwork do
     createCmd SignatureRespondedEvent with
       sigNetwork; operators = [operator]; requester
       requestId = claimTestRequestId
@@ -485,7 +503,7 @@ testWithdrawalCompleteSuccess = do
 
   result <- submit (actAs requester <> readAs operator <> readAs sigNetwork) do
     exerciseCmd vaultCid CompleteWithdrawal with
-      requester; pendingWithdrawalCid = pendingCid; outcomeCid; sigCid
+      requester; pendingWithdrawalCid = pendingCid; respondBidirectionalEventCid; signatureRespondedEventCid
 
   assertMsg "success must return None" (isNone result)
 
@@ -493,6 +511,7 @@ testWithdrawalCompleteSuccess = do
 -- Withdrawal complete failure returns refund holding
 ------------------------------------------------------------------------
 
+-- CompleteWithdrawal with error-prefix MPC output returns Some (refund holding with correct fields)
 testWithdrawalCompleteFailureRefund : Script ()
 testWithdrawalCompleteFailureRefund = do
   (sigNetwork, operator, requester, _signerCid, vaultCid) <- setupWithKey claimTestPubKey
@@ -503,14 +522,14 @@ testWithdrawalCompleteFailureRefund = do
       requestId = claimTestRequestId; evmTxParams = sampleWithdrawalEvmParams
       erc20Address = sampleErc20Address; amount = sampleHoldingAmount
 
-  outcomeCid <- submit sigNetwork do
+  respondBidirectionalEventCid <- submit sigNetwork do
     createCmd RespondBidirectionalEvent with
       sigNetwork; operators = [operator]; requester
       requestId = claimTestRequestId
       responder = sigNetwork; serializedOutput = errorPrefixMpcOutput
       signature = refundTestSignature
 
-  sigCid <- submit sigNetwork do
+  signatureRespondedEventCid <- submit sigNetwork do
     createCmd SignatureRespondedEvent with
       sigNetwork; operators = [operator]; requester
       requestId = claimTestRequestId
@@ -518,7 +537,7 @@ testWithdrawalCompleteFailureRefund = do
 
   result <- submit (actAs requester <> readAs operator <> readAs sigNetwork) do
     exerciseCmd vaultCid CompleteWithdrawal with
-      requester; pendingWithdrawalCid = pendingCid; outcomeCid; sigCid
+      requester; pendingWithdrawalCid = pendingCid; respondBidirectionalEventCid; signatureRespondedEventCid
 
   assertMsg "failure must return Some" (isSome result)
   let refundCid = fromSome result
@@ -533,6 +552,7 @@ testWithdrawalCompleteFailureRefund = do
 -- Withdrawal validation negative tests
 ------------------------------------------------------------------------
 
+-- RequestWithdrawal rejects when requester differs from holding owner
 testWithdrawalRejectsWrongOwner : Script ()
 testWithdrawalRejectsWrongOwner = do
   (sigNetwork, operator, requester, signerCid, vaultCid) <- setup
@@ -552,6 +572,7 @@ testWithdrawalRejectsWrongOwner = do
       outputDeserializationSchema = erc20BoolSchema
       respondSerializationSchema = erc20BoolSchema
 
+-- RequestWithdrawal rejects when evmTxParams.to differs from holding erc20Address
 testWithdrawalRejectsWrongErc20 : Script ()
 testWithdrawalRejectsWrongErc20 = do
   (sigNetwork, operator, requester, signerCid, vaultCid) <- setup
@@ -571,6 +592,7 @@ testWithdrawalRejectsWrongErc20 = do
       outputDeserializationSchema = erc20BoolSchema
       respondSerializationSchema = erc20BoolSchema
 
+-- RequestWithdrawal rejects when withdrawal amount differs from holding amount
 testWithdrawalRejectsAmountMismatch : Script ()
 testWithdrawalRejectsAmountMismatch = do
   (sigNetwork, operator, requester, signerCid, vaultCid) <- setup
@@ -590,6 +612,7 @@ testWithdrawalRejectsAmountMismatch = do
       outputDeserializationSchema = erc20BoolSchema
       respondSerializationSchema = erc20BoolSchema
 
+-- RequestWithdrawal rejects when transfer recipient differs from recipientAddress parameter
 testWithdrawalRejectsWrongRecipient : Script ()
 testWithdrawalRejectsWrongRecipient = do
   (sigNetwork, operator, requester, signerCid, vaultCid) <- setup
@@ -608,6 +631,7 @@ testWithdrawalRejectsWrongRecipient = do
       outputDeserializationSchema = erc20BoolSchema
       respondSerializationSchema = erc20BoolSchema
 
+-- CompleteWithdrawal rejects when requester differs from PendingWithdrawal.requester
 testCompleteWithdrawalRejectsWrongRequester : Script ()
 testCompleteWithdrawalRejectsWrongRequester = do
   (sigNetwork, operator, requester, _signerCid, vaultCid) <- setupWithKey claimTestPubKey
@@ -619,14 +643,14 @@ testCompleteWithdrawalRejectsWrongRequester = do
       requestId = claimTestRequestId; evmTxParams = sampleWithdrawalEvmParams
       erc20Address = sampleErc20Address; amount = sampleHoldingAmount
 
-  outcomeCid <- submit sigNetwork do
+  respondBidirectionalEventCid <- submit sigNetwork do
     createCmd RespondBidirectionalEvent with
       sigNetwork; operators = [operator]; requester
       requestId = claimTestRequestId
       responder = sigNetwork; serializedOutput = boolTrueMpcOutput
       signature = claimTestSignature
 
-  sigCid <- submit sigNetwork do
+  signatureRespondedEventCid <- submit sigNetwork do
     createCmd SignatureRespondedEvent with
       sigNetwork; operators = [operator]; requester
       requestId = claimTestRequestId
@@ -634,4 +658,202 @@ testCompleteWithdrawalRejectsWrongRequester = do
 
   submitMustFail (actAs userB <> readAs operator <> readAs sigNetwork) do
     exerciseCmd vaultCid CompleteWithdrawal with
-      requester = userB; pendingWithdrawalCid = pendingCid; outcomeCid; sigCid
+      requester = userB; pendingWithdrawalCid = pendingCid; respondBidirectionalEventCid; signatureRespondedEventCid
+
+------------------------------------------------------------------------
+-- Double-claim: second ClaimDeposit on archived PendingDeposit fails
+------------------------------------------------------------------------
+
+-- second ClaimDeposit on same PendingDeposit fails (contract archived after first claim)
+testPendingDepositDoubleClaimFails : Script ()
+testPendingDepositDoubleClaimFails = do
+  (sigNetwork, operator, requester, _signerCid, vaultCid) <- setupWithKey claimTestPubKey
+
+  pendingCid <- submit operator do
+    createCmd PendingDeposit with
+      operators = [operator]; requester; sigNetwork
+      requestId = claimTestRequestId; evmTxParams = sampleEvmParams
+
+  respondBidirectionalEventCid1 <- submit sigNetwork do
+    createCmd RespondBidirectionalEvent with
+      sigNetwork; operators = [operator]; requester
+      requestId = claimTestRequestId
+      responder = sigNetwork; serializedOutput = boolTrueMpcOutput
+      signature = claimTestSignature
+
+  signatureRespondedEventCid1 <- submit sigNetwork do
+    createCmd SignatureRespondedEvent with
+      sigNetwork; operators = [operator]; requester
+      requestId = claimTestRequestId
+      responder = sigNetwork; signature = claimTestSignature
+
+  -- First claim succeeds
+  _holdingCid <- submit (actAs requester <> readAs operator <> readAs sigNetwork) do
+    exerciseCmd vaultCid ClaimDeposit with
+      requester; pendingDepositCid = pendingCid; respondBidirectionalEventCid = respondBidirectionalEventCid1; signatureRespondedEventCid = signatureRespondedEventCid1
+
+  -- Fresh evidence for the second attempt (first pair was archived)
+  respondBidirectionalEventCid2 <- submit sigNetwork do
+    createCmd RespondBidirectionalEvent with
+      sigNetwork; operators = [operator]; requester
+      requestId = claimTestRequestId
+      responder = sigNetwork; serializedOutput = boolTrueMpcOutput
+      signature = claimTestSignature
+
+  signatureRespondedEventCid2 <- submit sigNetwork do
+    createCmd SignatureRespondedEvent with
+      sigNetwork; operators = [operator]; requester
+      requestId = claimTestRequestId
+      responder = sigNetwork; signature = claimTestSignature
+
+  -- Second claim must fail — pendingCid was archived
+  submitMustFail (actAs requester <> readAs operator <> readAs sigNetwork) do
+    exerciseCmd vaultCid ClaimDeposit with
+      requester; pendingDepositCid = pendingCid; respondBidirectionalEventCid = respondBidirectionalEventCid2; signatureRespondedEventCid = signatureRespondedEventCid2
+
+  pure ()
+
+------------------------------------------------------------------------
+-- Auth card with remainingUses=1 is fully consumed after one deposit
+------------------------------------------------------------------------
+
+-- RequestDeposit with remainingUses=1 fully consumes auth card (no replacement created)
+testAuthCardSingleUseFullyConsumed : Script ()
+testAuthCardSingleUseFullyConsumed = do
+  (sigNetwork, operator, requester, signerCid, vaultCid) <- setup
+  authCid <- getAuth operator requester vaultCid 1
+
+  _result <- submit (actAs requester <> readAs operator <> readAs sigNetwork) do
+    exerciseCmd vaultCid RequestDeposit with
+      requester; signerCid; path = partyToText requester; evmTxParams = sampleEvmParams
+      authCid; nonceCidText = "test-nonce"
+      keyVersion = 1; algo = "ECDSA"; dest = "ethereum"; params = ""
+      outputDeserializationSchema = erc20BoolSchema
+      respondSerializationSchema = erc20BoolSchema
+
+  -- No authorization should remain for this requester
+  auths <- queryFilter @Authorization operator (\a -> a.owner == requester)
+  assertMsg "auth card must be fully consumed" (null auths)
+
+------------------------------------------------------------------------
+-- RequestWithdrawal rejects wrong function signature
+------------------------------------------------------------------------
+
+-- RequestWithdrawal rejects EVM call with function other than transfer(address,uint256)
+testWithdrawalRejectsWrongFunctionSignature : Script ()
+testWithdrawalRejectsWrongFunctionSignature = do
+  (sigNetwork, operator, requester, signerCid, vaultCid) <- setup
+
+  holdingCid <- submit operator do
+    createCmd Erc20Holding with
+      operators = [operator]; owner = requester
+      erc20Address = sampleErc20Address; amount = sampleHoldingAmount
+
+  let badParams = sampleWithdrawalEvmParams with functionSignature = "approve(address,uint256)"
+  submitMustFail (actAs requester <> readAs operator <> readAs sigNetwork) do
+    exerciseCmd vaultCid RequestWithdrawal with
+      requester; signerCid; evmTxParams = badParams
+      recipientAddress = sampleRecipientAddress; balanceCid = holdingCid
+      nonceCidText = "holding-nonce"
+      keyVersion = 1; algo = "ECDSA"; dest = "ethereum"; params = ""
+      outputDeserializationSchema = erc20BoolSchema
+      respondSerializationSchema = erc20BoolSchema
+
+------------------------------------------------------------------------
+-- RequestWithdrawal rejects holding with mismatched operators
+------------------------------------------------------------------------
+
+-- RequestWithdrawal rejects holding whose operators differ from Vault operators
+testWithdrawalRejectsHoldingOperatorsMismatch : Script ()
+testWithdrawalRejectsHoldingOperatorsMismatch = do
+  (sigNetwork, operator, requester, signerCid, vaultCid) <- setup
+  rogue <- allocateParty "Rogue"
+
+  holdingCid <- submit rogue do
+    createCmd Erc20Holding with
+      operators = [rogue]; owner = requester
+      erc20Address = sampleErc20Address; amount = sampleHoldingAmount
+
+  submitMustFail (actAs requester <> readAs operator <> readAs sigNetwork <> readAs rogue) do
+    exerciseCmd vaultCid RequestWithdrawal with
+      requester; signerCid; evmTxParams = sampleWithdrawalEvmParams
+      recipientAddress = sampleRecipientAddress; balanceCid = holdingCid
+      nonceCidText = "holding-nonce"
+      keyVersion = 1; algo = "ECDSA"; dest = "ethereum"; params = ""
+      outputDeserializationSchema = erc20BoolSchema
+      respondSerializationSchema = erc20BoolSchema
+
+------------------------------------------------------------------------
+-- CompleteWithdrawal rejects requestId mismatch
+------------------------------------------------------------------------
+
+-- CompleteWithdrawal rejects when outcome.requestId differs from pending.requestId
+testCompleteWithdrawalRejectsRequestIdMismatch : Script ()
+testCompleteWithdrawalRejectsRequestIdMismatch = do
+  (sigNetwork, operator, requester, _signerCid, vaultCid) <- setupWithKey claimTestPubKey
+
+  pendingCid <- submit operator do
+    createCmd PendingWithdrawal with
+      operators = [operator]; requester; sigNetwork
+      requestId = "aa"; evmTxParams = sampleWithdrawalEvmParams
+      erc20Address = sampleErc20Address; amount = sampleHoldingAmount
+
+  respondBidirectionalEventCid <- submit sigNetwork do
+    createCmd RespondBidirectionalEvent with
+      sigNetwork; operators = [operator]; requester
+      requestId = "bb"
+      responder = sigNetwork; serializedOutput = boolTrueMpcOutput
+      signature = claimTestSignature
+
+  signatureRespondedEventCid <- submit sigNetwork do
+    createCmd SignatureRespondedEvent with
+      sigNetwork; operators = [operator]; requester
+      requestId = "bb"
+      responder = sigNetwork; signature = claimTestSignature
+
+  submitMustFail (actAs requester <> readAs operator <> readAs sigNetwork) do
+    exerciseCmd vaultCid CompleteWithdrawal with
+      requester; pendingWithdrawalCid = pendingCid; respondBidirectionalEventCid; signatureRespondedEventCid
+
+  pure ()
+
+------------------------------------------------------------------------
+-- CompleteWithdrawal with bool(false) MPC output returns refund
+------------------------------------------------------------------------
+
+-- CompleteWithdrawal with bool(false) MPC output returns Some (refund holding with correct fields)
+testCompleteWithdrawalBoolFalseRefunds : Script ()
+testCompleteWithdrawalBoolFalseRefunds = do
+  (sigNetwork, operator, requester, _signerCid, vaultCid) <- setupWithKey claimTestPubKey
+
+  pendingCid <- submit operator do
+    createCmd PendingWithdrawal with
+      operators = [operator]; requester; sigNetwork
+      requestId = claimTestRequestId; evmTxParams = sampleWithdrawalEvmParams
+      erc20Address = sampleErc20Address; amount = sampleHoldingAmount
+
+  respondBidirectionalEventCid <- submit sigNetwork do
+    createCmd RespondBidirectionalEvent with
+      sigNetwork; operators = [operator]; requester
+      requestId = claimTestRequestId
+      responder = sigNetwork; serializedOutput = boolFalseMpcOutput
+      signature = boolFalseTestSignature
+
+  signatureRespondedEventCid <- submit sigNetwork do
+    createCmd SignatureRespondedEvent with
+      sigNetwork; operators = [operator]; requester
+      requestId = claimTestRequestId
+      responder = sigNetwork; signature = boolFalseTestSignature
+
+  result <- submit (actAs requester <> readAs operator <> readAs sigNetwork) do
+    exerciseCmd vaultCid CompleteWithdrawal with
+      requester; pendingWithdrawalCid = pendingCid; respondBidirectionalEventCid; signatureRespondedEventCid
+
+  assertMsg "bool(false) must return Some (refund)" (isSome result)
+  let refundCid = fromSome result
+  refund <- queryContractId requester refundCid
+  let h = fromSome refund
+  assertMsg "refund owner" (h.owner == requester)
+  assertMsg "refund operators" (h.operators == [operator])
+  assertMsg "refund erc20Address" (h.erc20Address == sampleErc20Address)
+  assertMsg "refund amount" (h.amount == sampleHoldingAmount)

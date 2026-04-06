@@ -65,7 +65,10 @@ template SignRequest
     algo                       : Text
     dest                       : Text
     params                     : Text
-    nonceCidText               : Text
+    nonceCidText               : Text   -- contract ID of consumed Authorization (deposits) or
+                                        -- Erc20Holding (withdrawals); hashed into requestId for
+                                        -- replay prevention. MPC verifies this matches an archived
+                                        -- contract of the correct template in the same transaction.
     outputDeserializationSchema : Text
     respondSerializationSchema  : Text
   where
@@ -99,7 +102,7 @@ template SignBidirectionalEvent
     algo                       : Text
     dest                       : Text
     params                     : Text
-    nonceCidText               : Text
+    nonceCidText               : Text   -- same as SignRequest.nonceCidText; propagated from Vault
     outputDeserializationSchema : Text
     respondSerializationSchema  : Text
   where

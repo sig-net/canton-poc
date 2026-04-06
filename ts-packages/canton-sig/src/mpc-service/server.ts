@@ -2,6 +2,7 @@ import type { Hex } from "viem";
 import {
   CantonClient,
   type CreatedEvent,
+  type Event,
   type JsGetUpdatesResponse,
 } from "../infra/canton-client.js";
 import { createLedgerStream, type StreamHandle } from "../infra/ledger-stream.js";
@@ -11,7 +12,7 @@ import {
   type PendingTx,
   type MpcServiceConfig,
 } from "./tx-handler.js";
-import { SignBidirectionalEvent } from "@daml.js/daml-vault-0.0.1/lib/Signer/module";
+import { SignBidirectionalEvent } from "@daml.js/daml-signer-0.0.1/lib/Signer/module";
 
 const MONITOR_INTERVAL_MS = 5_000;
 
@@ -56,15 +57,15 @@ export class MpcServer {
     };
   }
 
-  private dispatch(event: CreatedEvent): void {
+  private dispatch(event: CreatedEvent, txEvents?: Event[]): void {
     if (this.pendingTxs.has(event.contractId)) return;
     console.log(`[MPC] SignBidirectionalEvent detected, contractId=${event.contractId}`);
-    void this.process(event);
+    void this.process(event, txEvents);
   }
 
-  private async process(event: CreatedEvent): Promise<void> {
+  private async process(event: CreatedEvent, txEvents?: Event[]): Promise<void> {
     try {
-      const pending = await signAndEnqueue(this.serviceConfig, event);
+      const pending = await signAndEnqueue(this.serviceConfig, event, txEvents);
       this.pendingTxs.set(event.contractId, pending);
       console.log(`[MPC] Monitoring tx ${pending.signedTxHash} for requestId=${pending.requestId}`);
     } catch (err) {
@@ -133,11 +134,12 @@ export class MpcServer {
         const update = item.update;
         if (!("Transaction" in update)) return;
 
-        for (const event of update.Transaction.value.events ?? []) {
+        const txEvents = update.Transaction.value.events ?? [];
+        for (const event of txEvents) {
           if (!("CreatedEvent" in event)) continue;
           const created = event.CreatedEvent;
           if (templateSuffix(created.templateId) === SIGN_EVENT_SUFFIX) {
-            this.dispatch(created);
+            this.dispatch(created, txEvents);
           }
         }
       },

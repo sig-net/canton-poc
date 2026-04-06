@@ -20,17 +20,42 @@ import { deriveChildPrivateKey, signEvmTxHash, signMpcResponse } from "./signer.
 import {
   CantonClient,
   type CreatedEvent,
+  type Event,
   type TransactionResponse,
 } from "../infra/canton-client.js";
 import { computeRequestId } from "../mpc/crypto.js";
 import { chainIdHexToCaip2 } from "../mpc/address-derivation.js";
-import { type SignBidirectionalEvent, Signer } from "@daml.js/daml-vault-0.0.1/lib/Signer/module";
+import { type SignBidirectionalEvent, Signer } from "@daml.js/daml-signer-0.0.1/lib/Signer/module";
+import { Authorization, Erc20Holding } from "@daml.js/daml-vault-0.0.1/lib/Erc20Vault/module";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
 const SIGNER_TEMPLATE = Signer.templateId;
+
+/** Extract "Module:Template" suffix, ignoring package hash vs name prefix. */
+function templateSuffix(templateId: string): string {
+  const parts = templateId.split(":");
+  return parts.slice(-2).join(":");
+}
+
+/**
+ * Allowed nonce contract templates.
+ *
+ * The nonceCidText must be the contract ID of an archived Authorization or
+ * Erc20Holding — no other contract type is accepted. This enforces:
+ *
+ * - Deposits (and any future vault operation): require an Authorization card
+ *   as the nonce, meaning an operator must approve before the user can request
+ *   a signing operation (two-step auth flow).
+ * - Withdrawals: use the Erc20Holding being burned as the nonce, so a user
+ *   can always withdraw their own holdings without a separate auth card.
+ */
+const ALLOWED_NONCE_TEMPLATES = new Set([
+  templateSuffix(Authorization.templateId),
+  templateSuffix(Erc20Holding.templateId),
+]);
 
 export interface MpcServiceConfig {
   canton: CantonClient;
@@ -117,6 +142,7 @@ async function exerciseChoiceWithRetry(
 export async function signAndEnqueue(
   config: MpcServiceConfig,
   event: CreatedEvent,
+  txEvents?: Event[],
 ): Promise<PendingTx> {
   const { canton, signerCid, userId, actAs, rootPrivateKey } = config;
   const arg = event.createArgument as SignBidirectionalEvent;
@@ -171,6 +197,35 @@ export async function signAndEnqueue(
   //    has signatory operators, requester)
   if (!onLedgerSignatories.has(requester)) {
     throw new Error(`Requester ${requester} is not in CreatedEvent.signatories — possible forgery`);
+  }
+
+  // 4. Verify nonceCidText corresponds to an archived Authorization or Erc20Holding
+  //    in the same transaction. This ensures: (a) the nonce contract was actually
+  //    consumed (replay prevention), and (b) it's a known domain contract — not an
+  //    arbitrary string or a different contract type.
+  //    During catch-up (no txEvents), we skip this check — catch-up trusts the ledger.
+  if (txEvents) {
+    const archivedEvents = txEvents
+      .filter((e): e is Event & { ArchivedEvent: unknown } => "ArchivedEvent" in e)
+      .map(
+        (e) => (e as { ArchivedEvent: { contractId: string; templateId: string } }).ArchivedEvent,
+      );
+
+    const nonceEvent = archivedEvents.find((a) => a.contractId === nonceCidText);
+    if (!nonceEvent) {
+      throw new Error(
+        `nonceCidText ${nonceCidText} does not match any ArchivedEvent in the transaction — ` +
+          `possible replay or forged nonce`,
+      );
+    }
+
+    const suffix = templateSuffix(nonceEvent.templateId);
+    if (!ALLOWED_NONCE_TEMPLATES.has(suffix)) {
+      throw new Error(
+        `nonceCidText ${nonceCidText} was archived but its template ${suffix} is not ` +
+          `Authorization or Erc20Holding — unexpected nonce contract type`,
+      );
+    }
   }
 
   // Validate requestId via EIP-712 re-computation

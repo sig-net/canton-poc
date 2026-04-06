@@ -225,10 +225,10 @@ template Vault
 
     nonconsuming choice ClaimDeposit : ContractId Erc20Holding
       with
-        requester            : Party
-        pendingDepositCid : ContractId PendingDeposit
-        outcomeCid        : ContractId RespondBidirectionalEvent
-        sigCid            : ContractId SignatureRespondedEvent
+        requester                    : Party
+        pendingDepositCid            : ContractId PendingDeposit
+        respondBidirectionalEventCid : ContractId RespondBidirectionalEvent
+        signatureRespondedEventCid   : ContractId SignatureRespondedEvent
       controller requester
       do
         pending <- fetch pendingDepositCid
@@ -237,7 +237,7 @@ template Vault
         assertMsg "Sender mismatch" (pending.requester == requester)
         assertMsg "Operators mismatch" (sort pending.operators == sort operators)
 
-        outcome <- fetch outcomeCid
+        outcome <- fetch respondBidirectionalEventCid
         assertMsg "Outcome requestId mismatch"
           (outcome.requestId == pending.requestId)
 
@@ -250,8 +250,8 @@ template Vault
         let success = abiDecodeBool outcome.serializedOutput 0
         assertMsg "ERC20 transfer returned false" success
 
-        exercise outcomeCid Consume_RespondBidirectional with actor = requester
-        exercise sigCid Consume_SignatureResponded with actor = requester
+        exercise respondBidirectionalEventCid Consume_RespondBidirectional with actor = requester
+        exercise signatureRespondedEventCid Consume_SignatureResponded with actor = requester
 
         let amount = (pending.evmTxParams).args !! 1
         create Erc20Holding with
@@ -325,10 +325,10 @@ template Vault
 
     nonconsuming choice CompleteWithdrawal : Optional (ContractId Erc20Holding)
       with
-        requester               : Party
-        pendingWithdrawalCid : ContractId PendingWithdrawal
-        outcomeCid           : ContractId RespondBidirectionalEvent
-        sigCid               : ContractId SignatureRespondedEvent
+        requester                    : Party
+        pendingWithdrawalCid         : ContractId PendingWithdrawal
+        respondBidirectionalEventCid : ContractId RespondBidirectionalEvent
+        signatureRespondedEventCid   : ContractId SignatureRespondedEvent
       controller requester
       do
         pending <- fetch pendingWithdrawalCid
@@ -337,7 +337,7 @@ template Vault
         assertMsg "Sender mismatch" (pending.requester == requester)
         assertMsg "Operators mismatch" (sort pending.operators == sort operators)
 
-        outcome <- fetch outcomeCid
+        outcome <- fetch respondBidirectionalEventCid
         assertMsg "Outcome requestId mismatch"
           (outcome.requestId == pending.requestId)
 
@@ -345,8 +345,8 @@ template Vault
         assertMsg "Invalid MPC signature"
           (secp256k1WithEcdsaOnly outcome.signature responseHash evmMpcPublicKey)
 
-        exercise outcomeCid Consume_RespondBidirectional with actor = requester
-        exercise sigCid Consume_SignatureResponded with actor = requester
+        exercise respondBidirectionalEventCid Consume_RespondBidirectional with actor = requester
+        exercise signatureRespondedEventCid Consume_SignatureResponded with actor = requester
 
         let shouldRefund =
               hasErrorPrefix outcome.serializedOutput

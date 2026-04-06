@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { hashTypedData } from "viem";
+import { hashTypedData, hashDomain } from "viem";
 import {
   computeRequestId,
   computeResponseHash,
@@ -35,6 +35,8 @@ const PATH = "m/44/60/0/0";
 // Response hash vectors are unchanged.
 // ---------------------------------------------------------------------------
 const VECTORS = {
+  domainSeparator: "0x6399709c8eafb86e7ba1529eaf5519bf2667716e3c694e7868b652b7245ca80f",
+  requestIdKv1: "0xf92d628e4b03f27cd3c8dd54615937c121bab2d6eaceee0fa52739a32b634b13",
   responseHash01: "0x5773f12bd1f9c7a760461812f7a3fc96a2f5a0f041258dfa8feb43f7f8b3ebe2",
   responseHashEmpty: "0xaf2ff87730133736cd5ad11131445277ced38a0762eaa9e62320a1ffc49de8da",
 };
@@ -42,9 +44,42 @@ const VECTORS = {
 const KNOWN_REQUEST_ID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
 // ---------------------------------------------------------------------------
+// Domain separator
+// ---------------------------------------------------------------------------
+describe("eip712Domain", () => {
+  it("domain separator matches Daml golden vector", () => {
+    const domainSep = hashDomain({
+      domain: eip712Domain,
+      types: {
+        EIP712Domain: [
+          { name: "name", type: "string" },
+          { name: "version", type: "string" },
+        ],
+      },
+    });
+    expect(domainSep).toBe(VECTORS.domainSeparator);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // computeRequestId
 // ---------------------------------------------------------------------------
 describe("computeRequestId", () => {
+  it("matches golden vector (kv=1)", () => {
+    const rid = computeRequestId(
+      SENDER,
+      sampleEvmParams,
+      CAIP2_ID,
+      KEY_VERSION,
+      PATH,
+      "ECDSA",
+      "ethereum",
+      "",
+      "",
+    );
+    expect(rid).toBe(VECTORS.requestIdKv1);
+  });
+
   it("is deterministic", () => {
     const a = computeRequestId(
       SENDER,
