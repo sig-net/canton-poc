@@ -5,794 +5,855 @@ import DA.List (head)
 import DA.Crypto.Text (byteCount)
 import Daml.Script
 
+import Signer
 import Erc20Vault
-import TestFixtures (testPubKeyHex, testSignatureHex, claimTestPubKey, claimTestSignature, claimTestRequestId, refundTestSignature, sampleVaultAddress, sampleEvmParams, sampleWithdrawalEvmParams, sampleRecipientAddress, sampleErc20Address, sampleHoldingAmount, erc20BoolSchema, boolTrueMpcOutput, boolFalseMpcOutput, errorPrefixMpcOutput, boolFalseTestSignature)
+import TestFixtures
+  ( testPubKeyHex, claimTestPubKey, claimTestSignature, claimTestRequestId
+  , refundTestSignature, boolFalseTestSignature
+  , sampleVaultAddress, sampleEvmParams, sampleWithdrawalEvmParams
+  , sampleRecipientAddress, sampleErc20Address, sampleHoldingAmount
+  , erc20BoolSchema, boolTrueMpcOutput, boolFalseMpcOutput, errorPrefixMpcOutput
+  )
+
+------------------------------------------------------------------------
+-- Helpers
+------------------------------------------------------------------------
+
+-- Standard three-party setup returning (signerCid, vaultCid)
+setup : Script (Party, Party, Party, ContractId Signer, ContractId Vault)
+setup = setupWithKey testPubKeyHex
+
+setupWithKey : Text -> Script (Party, Party, Party, ContractId Signer, ContractId Vault)
+setupWithKey pubKey = do
+  sigNetwork <- allocateParty "SigNetwork"
+  operator   <- allocateParty "Operator"
+  requester     <- allocateParty "Sender"
+
+  signerCid <- submit sigNetwork do
+    createCmd Signer with sigNetwork
+
+  vaultCid <- submit operator do
+    createCmd Vault with
+      operators = [operator]; sigNetwork
+      evmVaultAddress = sampleVaultAddress
+      evmMpcPublicKey = pubKey
+      vaultId = "test-vault"
+
+  pure (sigNetwork, operator, requester, signerCid, vaultCid)
+
+-- Obtain an Authorization with `n` remaining uses
+getAuth : Party -> Party -> ContractId Vault -> Int -> Script (ContractId Authorization)
+getAuth operator requester vaultCid n = do
+  requestCid <- submit (actAs requester <> readAs operator) do
+    exerciseCmd vaultCid RequestAuthorization with requester
+  submit operator do
+    exerciseCmd vaultCid ApproveAuthorization with requestCid; remainingUses = n; approver = operator
 
 ------------------------------------------------------------------------
 -- Deposit lifecycle
 ------------------------------------------------------------------------
 
+-- RequestDeposit creates SignBidirectionalEvent + PendingDeposit with correct requestId and evmTxParams
 testDepositLifecycle : Script ()
 testDepositLifecycle = do
-  issuer    <- allocateParty "Issuer"
-  depositor <- allocateParty "Depositor"
-  mpc       <- allocateParty "Mpc"
+  (sigNetwork, operator, requester, signerCid, vaultCid) <- setup
+  authCid <- getAuth operator requester vaultCid 3
 
-  orchCid <- submit issuer do
-    createCmd VaultOrchestrator with
-      issuer; mpc; mpcPublicKey = testPubKeyHex; vaultAddress = sampleVaultAddress; vaultId = "test-vault"
+  let depositPath = partyToText requester
+  (signEventCid, pendingCid) <- submit (actAs requester <> readAs operator <> readAs sigNetwork) do
+    exerciseCmd vaultCid RequestDeposit with
+      requester; signerCid; path = depositPath; evmTxParams = sampleEvmParams
+      authCid; nonceCidText = "test-nonce"
+      keyVersion = 1; algo = "ECDSA"; dest = "ethereum"; params = ""
+      outputDeserializationSchema = erc20BoolSchema
+      respondSerializationSchema = erc20BoolSchema
 
-  proposalCid <- submit (actAs depositor <> readAs issuer) do
-    exerciseCmd orchCid RequestDepositAuth with
-      requester = depositor
-
-  authCid <- submit issuer do
-    exerciseCmd orchCid ApproveDepositAuth with
-      proposalCid
-      remainingUses = 3
-
-  let depositPath = partyToText depositor
-  pendingCid <- submit (actAs depositor <> readAs issuer) do
-    exerciseCmd orchCid RequestEvmDeposit with
-      requester = depositor; path = depositPath; evmParams = sampleEvmParams
-      authCidText = ""; keyVersion = 1; algo = "ECDSA"; dest = "ethereum"; authCid
-      outputDeserializationSchema = erc20BoolSchema; respondSerializationSchema = erc20BoolSchema
-
-  pending <- queryContractId depositor pendingCid
+  pending <- queryContractId requester pendingCid
   let pd = fromSome pending
   assertMsg "requestId must be 32 bytes" (byteCount pd.requestId == 32)
-  assertMsg "path must match" (pd.path == partyToText depositor <> "," <> depositPath)
-  assertMsg "evmParams must match" (pd.evmParams == sampleEvmParams)
+  assertMsg "evmTxParams must match" (pd.evmTxParams == sampleEvmParams)
+
+  -- SignBidirectionalEvent must exist
+  signEvent <- queryContractId requester signEventCid
+  assertMsg "sign event must exist" (isSome signEvent)
 
 ------------------------------------------------------------------------
--- RequestDepositAuth creates proposal
+-- RequestAuthorization creates proposal
 ------------------------------------------------------------------------
 
-testRequestDepositAuth : Script ()
-testRequestDepositAuth = do
-  issuer    <- allocateParty "Issuer"
-  depositor <- allocateParty "Depositor"
-  mpc       <- allocateParty "Mpc"
+-- RequestAuthorization creates AuthorizationRequest with correct operators and owner
+testRequestAuthorization : Script ()
+testRequestAuthorization = do
+  (sigNetwork, operator, requester, _signerCid, vaultCid) <- setup
 
-  orchCid <- submit issuer do
-    createCmd VaultOrchestrator with
-      issuer; mpc; mpcPublicKey = testPubKeyHex; vaultAddress = sampleVaultAddress; vaultId = "test-vault"
+  requestCid <- submit (actAs requester <> readAs operator) do
+    exerciseCmd vaultCid RequestAuthorization with requester
 
-  proposalCid <- submit (actAs depositor <> readAs issuer) do
-    exerciseCmd orchCid RequestDepositAuth with
-      requester = depositor
-
-  proposal <- queryContractId issuer proposalCid
-  let p = fromSome proposal
-  assertMsg "proposal issuer" (p.issuer == issuer)
-  assertMsg "proposal owner" (p.owner == depositor)
+  request <- queryContractId operator requestCid
+  let p = fromSome request
+  assertMsg "request operators" (p.operators == [operator])
+  assertMsg "request owner"  (p.owner  == requester)
 
 ------------------------------------------------------------------------
--- ApproveDepositAuth creates authorization
+-- ApproveAuthorization creates Authorization
 ------------------------------------------------------------------------
 
-testApproveDepositAuth : Script ()
-testApproveDepositAuth = do
-  issuer    <- allocateParty "Issuer"
-  depositor <- allocateParty "Depositor"
-  mpc       <- allocateParty "Mpc"
+-- ApproveAuthorization creates Authorization with correct operators, owner, and remainingUses
+testApproveAuthorization : Script ()
+testApproveAuthorization = do
+  (sigNetwork, operator, requester, _signerCid, vaultCid) <- setup
 
-  orchCid <- submit issuer do
-    createCmd VaultOrchestrator with
-      issuer; mpc; mpcPublicKey = testPubKeyHex; vaultAddress = sampleVaultAddress; vaultId = "test-vault"
+  requestCid <- submit (actAs requester <> readAs operator) do
+    exerciseCmd vaultCid RequestAuthorization with requester
 
-  proposalCid <- submit (actAs depositor <> readAs issuer) do
-    exerciseCmd orchCid RequestDepositAuth with
-      requester = depositor
+  authCid <- submit operator do
+    exerciseCmd vaultCid ApproveAuthorization with
+      requestCid; remainingUses = 5; approver = operator
 
-  authCid <- submit issuer do
-    exerciseCmd orchCid ApproveDepositAuth with
-      proposalCid; remainingUses = 5
-
-  auth <- queryContractId issuer authCid
+  auth <- queryContractId operator authCid
   let a = fromSome auth
-  assertMsg "auth issuer" (a.issuer == issuer)
-  assertMsg "auth mpc" (a.mpc == mpc)
-  assertMsg "auth owner" (a.owner == depositor)
+  assertMsg "auth operators" (a.operators == [operator])
+  assertMsg "auth owner"  (a.owner  == requester)
   assertMsg "auth remainingUses" (a.remainingUses == 5)
 
 ------------------------------------------------------------------------
--- RequestEvmDeposit validates and decrements auth card
+-- RequestDeposit validates and decrements auth card
 ------------------------------------------------------------------------
 
-testRequestEvmDepositBurnsAuthCard : Script ()
-testRequestEvmDepositBurnsAuthCard = do
-  issuer    <- allocateParty "Issuer"
-  depositor <- allocateParty "Depositor"
-  mpc       <- allocateParty "Mpc"
+-- RequestDeposit archives original auth card and creates decremented one (remainingUses 2 → 1)
+testRequestDepositBurnsAuthCard : Script ()
+testRequestDepositBurnsAuthCard = do
+  (sigNetwork, operator, requester, signerCid, vaultCid) <- setup
+  authCid <- getAuth operator requester vaultCid 2
 
-  orchCid <- submit issuer do
-    createCmd VaultOrchestrator with
-      issuer; mpc; mpcPublicKey = testPubKeyHex; vaultAddress = sampleVaultAddress; vaultId = "test-vault"
+  let depositPath = partyToText requester
+  _result <- submit (actAs requester <> readAs operator <> readAs sigNetwork) do
+    exerciseCmd vaultCid RequestDeposit with
+      requester; signerCid; path = depositPath; evmTxParams = sampleEvmParams
+      authCid; nonceCidText = "test-nonce"
+      keyVersion = 1; algo = "ECDSA"; dest = "ethereum"; params = ""
+      outputDeserializationSchema = erc20BoolSchema
+      respondSerializationSchema = erc20BoolSchema
 
-  proposalCid <- submit (actAs depositor <> readAs issuer) do
-    exerciseCmd orchCid RequestDepositAuth with
-      requester = depositor
-
-  authCid <- submit issuer do
-    exerciseCmd orchCid ApproveDepositAuth with
-      proposalCid; remainingUses = 2
-
-  let depositPath = partyToText depositor
-  _pendingCid <- submit (actAs depositor <> readAs issuer) do
-    exerciseCmd orchCid RequestEvmDeposit with
-      requester = depositor; path = depositPath; evmParams = sampleEvmParams
-      authCidText = ""; keyVersion = 1; algo = "ECDSA"; dest = "ethereum"; authCid
-      outputDeserializationSchema = erc20BoolSchema; respondSerializationSchema = erc20BoolSchema
-
-  oldAuth <- queryContractId issuer authCid
+  -- Original auth card must be archived
+  oldAuth <- queryContractId operator authCid
   assertMsg "original auth card must be archived" (oldAuth == None)
 
-  auths <- queryFilter @DepositAuthorization issuer (\a -> a.owner == depositor)
+  -- Decremented auth card must exist
+  auths <- queryFilter @Authorization operator (\a -> a.owner == requester)
   assertMsg "decremented auth card must exist" (length auths == 1)
   let (_, decremented) = head auths
   assertMsg "decremented remainingUses" (decremented.remainingUses == 1)
 
 ------------------------------------------------------------------------
--- ClaimEvmDeposit as requester
+-- Happy-path ClaimDeposit produces Erc20Holding
 ------------------------------------------------------------------------
 
-testClaimAsRequester : Script ()
-testClaimAsRequester = do
-  issuer    <- allocateParty "Issuer"
-  depositor <- allocateParty "Depositor"
-  mpc       <- allocateParty "Mpc"
-
-  orchCid <- submit issuer do
-    createCmd VaultOrchestrator with
-      issuer; mpc; mpcPublicKey = testPubKeyHex; vaultAddress = sampleVaultAddress; vaultId = "test-vault"
-
-  proposalCid <- submit (actAs depositor <> readAs issuer) do
-    exerciseCmd orchCid RequestDepositAuth with
-      requester = depositor
-
-  authCid <- submit issuer do
-    exerciseCmd orchCid ApproveDepositAuth with
-      proposalCid; remainingUses = 1
-
-  let depositPath = partyToText depositor
-  pendingCid <- submit (actAs depositor <> readAs issuer) do
-    exerciseCmd orchCid RequestEvmDeposit with
-      requester = depositor; path = depositPath; evmParams = sampleEvmParams
-      authCidText = ""; keyVersion = 1; algo = "ECDSA"; dest = "ethereum"; authCid
-      outputDeserializationSchema = erc20BoolSchema; respondSerializationSchema = erc20BoolSchema
-
-  pending <- queryContractId depositor pendingCid
-  let pd = fromSome pending
-
-  ecdsaCid <- submit issuer do
-    exerciseCmd orchCid SignEvmTx with
-      requester = depositor; requestId = pd.requestId; r = "00"; s = "00"; v = 0
-
-  outcomeCid <- submit issuer do
-    exerciseCmd orchCid ProvideEvmOutcomeSig with
-      requester = depositor; requestId = pd.requestId
-      signature = testSignatureHex; mpcOutput = boolTrueMpcOutput
-
-  submitMustFail (actAs depositor <> readAs issuer) do
-    exerciseCmd orchCid ClaimEvmDeposit with
-      requester = depositor; pendingCid; outcomeCid; ecdsaCid
-
-  submitMustFail issuer do
-    exerciseCmd orchCid ClaimEvmDeposit with
-      requester = depositor; pendingCid; outcomeCid; ecdsaCid
-
-  pure ()
-
-------------------------------------------------------------------------
--- ClaimEvmDeposit rejects wrong requester
-------------------------------------------------------------------------
-
-testClaimRequesterMismatchFails : Script ()
-testClaimRequesterMismatchFails = do
-  issuer    <- allocateParty "Issuer"
-  depositor <- allocateParty "Depositor"
-  wrongUser <- allocateParty "WrongUser"
-  mpc       <- allocateParty "Mpc"
-
-  orchCid <- submit issuer do
-    createCmd VaultOrchestrator with
-      issuer; mpc; mpcPublicKey = testPubKeyHex; vaultAddress = sampleVaultAddress; vaultId = "test-vault"
-
-  proposalCid <- submit (actAs depositor <> readAs issuer) do
-    exerciseCmd orchCid RequestDepositAuth with
-      requester = depositor
-
-  authCid <- submit issuer do
-    exerciseCmd orchCid ApproveDepositAuth with
-      proposalCid; remainingUses = 1
-
-  let depositPath = partyToText depositor
-  pendingCid <- submit (actAs depositor <> readAs issuer) do
-    exerciseCmd orchCid RequestEvmDeposit with
-      requester = depositor; path = depositPath; evmParams = sampleEvmParams
-      authCidText = ""; keyVersion = 1; algo = "ECDSA"; dest = "ethereum"; authCid
-      outputDeserializationSchema = erc20BoolSchema; respondSerializationSchema = erc20BoolSchema
-
-  pending <- queryContractId depositor pendingCid
-  let pd = fromSome pending
-
-  ecdsaCid <- submit issuer do
-    exerciseCmd orchCid SignEvmTx with
-      requester = depositor; requestId = pd.requestId; r = "00"; s = "00"; v = 0
-
-  outcomeCid <- submit issuer do
-    exerciseCmd orchCid ProvideEvmOutcomeSig with
-      requester = depositor; requestId = pd.requestId
-      signature = testSignatureHex; mpcOutput = boolTrueMpcOutput
-
-  submitMustFail (actAs wrongUser <> readAs issuer) do
-    exerciseCmd orchCid ClaimEvmDeposit with
-      requester = wrongUser; pendingCid; outcomeCid; ecdsaCid
-
-  pure ()
-
-------------------------------------------------------------------------
--- Auth card with 0 remaining uses is rejected
-------------------------------------------------------------------------
-
-testAuthCardNoRemainingUsesFails : Script ()
-testAuthCardNoRemainingUsesFails = do
-  issuer    <- allocateParty "Issuer"
-  depositor <- allocateParty "Depositor"
-  mpc       <- allocateParty "Mpc"
-
-  orchCid <- submit issuer do
-    createCmd VaultOrchestrator with
-      issuer; mpc; mpcPublicKey = testPubKeyHex; vaultAddress = sampleVaultAddress; vaultId = "test-vault"
-
-  authCid <- submit issuer do
-    createCmd DepositAuthorization with
-      issuer; mpc; owner = depositor; remainingUses = 0
-
-  submitMustFail (actAs depositor <> readAs issuer) do
-    exerciseCmd orchCid RequestEvmDeposit with
-      requester = depositor; path = partyToText depositor; evmParams = sampleEvmParams
-      authCidText = ""; keyVersion = 1; algo = "ECDSA"; dest = "ethereum"; authCid
-      outputDeserializationSchema = erc20BoolSchema; respondSerializationSchema = erc20BoolSchema
-
-  pure ()
-
-------------------------------------------------------------------------
--- Happy-path ClaimEvmDeposit produces Erc20Holding
-------------------------------------------------------------------------
-
+-- ClaimDeposit with valid MPC signature creates Erc20Holding and archives all evidence contracts
 testClaimHappyPath : Script ()
 testClaimHappyPath = do
-  issuer    <- allocateParty "Issuer"
-  depositor <- allocateParty "Depositor"
-  mpc       <- allocateParty "Mpc"
+  (sigNetwork, operator, requester, _signerCid, vaultCid) <- setupWithKey claimTestPubKey
 
-  orchCid <- submit issuer do
-    createCmd VaultOrchestrator with
-      issuer; mpc; mpcPublicKey = claimTestPubKey; vaultAddress = sampleVaultAddress; vaultId = "test-vault"
+  -- Create evidence contracts directly
+  pendingCid <- submit operator do
+    createCmd PendingDeposit with
+      operators = [operator]; requester; sigNetwork
+      requestId = claimTestRequestId; evmTxParams = sampleEvmParams
 
-  dummyAuthCid <- submit issuer do
-    createCmd DepositAuthorization with
-      issuer; mpc; owner = depositor; remainingUses = 0
+  respondBidirectionalEventCid <- submit sigNetwork do
+    createCmd RespondBidirectionalEvent with
+      sigNetwork; operators = [operator]; requester
+      requestId = claimTestRequestId
+      responder = sigNetwork; serializedOutput = boolTrueMpcOutput
+      signature = claimTestSignature
 
-  pendingCid <- submit issuer do
-    createCmd PendingEvmTx with
-      issuer; requester = depositor; mpc
-      requestId = claimTestRequestId; path = "test"; evmParams = sampleEvmParams; vaultId = "test-vault"
-      nonceCidText = ""; source = DepositSource dummyAuthCid; keyVersion = 1; algo = "ECDSA"; dest = "ethereum"
-      outputDeserializationSchema = erc20BoolSchema; respondSerializationSchema = erc20BoolSchema
+  signatureRespondedEventCid <- submit sigNetwork do
+    createCmd SignatureRespondedEvent with
+      sigNetwork; operators = [operator]; requester
+      requestId = claimTestRequestId
+      responder = sigNetwork; signature = claimTestSignature
 
-  ecdsaCid <- submit issuer do
-    createCmd EcdsaSignature with
-      issuer; requester = depositor
-      requestId = claimTestRequestId; r = "00"; s = "00"; v = 0
+  holdingCid <- submit (actAs requester <> readAs operator <> readAs sigNetwork) do
+    exerciseCmd vaultCid ClaimDeposit with
+      requester; pendingDepositCid = pendingCid; respondBidirectionalEventCid; signatureRespondedEventCid
 
-  outcomeCid <- submit issuer do
-    createCmd EvmTxOutcomeSignature with
-      issuer; requester = depositor; requestId = claimTestRequestId
-      signature = claimTestSignature; mpcOutput = boolTrueMpcOutput
-
-  holdingCid <- submit (actAs depositor <> readAs issuer) do
-    exerciseCmd orchCid ClaimEvmDeposit with
-      requester = depositor; pendingCid; outcomeCid; ecdsaCid
-
-  holding <- queryContractId depositor holdingCid
+  holding <- queryContractId requester holdingCid
   let h = fromSome holding
-  assertMsg "holding owner" (h.owner == depositor)
-  assertMsg "holding issuer" (h.issuer == issuer)
+  assertMsg "holding owner" (h.owner == requester)
+  assertMsg "holding operators" (h.operators == [operator])
   assertMsg "holding erc20Address" (h.erc20Address == sampleEvmParams.to)
   assertMsg "holding amount" (h.amount == "0000000000000000000000000000000000000000000000000000000005f5e100")
 
-  oldPending <- queryContractId depositor pendingCid
+  -- Evidence and pending must be archived
+  oldPending <- queryContractId requester pendingCid
   assertMsg "pending archived" (oldPending == None)
-  oldEcdsa <- queryContractId depositor ecdsaCid
-  assertMsg "ecdsa archived" (oldEcdsa == None)
-  oldOutcome <- queryContractId depositor outcomeCid
+  oldOutcome <- queryContractId requester respondBidirectionalEventCid
   assertMsg "outcome archived" (oldOutcome == None)
+  oldSig <- queryContractId requester signatureRespondedEventCid
+  assertMsg "sig archived" (oldSig == None)
+
+------------------------------------------------------------------------
+-- ClaimDeposit rejects wrong requester
+------------------------------------------------------------------------
+
+-- ClaimDeposit rejects when requester differs from PendingDeposit.requester
+testClaimRequesterMismatchFails : Script ()
+testClaimRequesterMismatchFails = do
+  (sigNetwork, operator, requester, _signerCid, vaultCid) <- setupWithKey claimTestPubKey
+  wrongUser <- allocateParty "WrongUser"
+
+  pendingCid <- submit operator do
+    createCmd PendingDeposit with
+      operators = [operator]; requester; sigNetwork
+      requestId = claimTestRequestId; evmTxParams = sampleEvmParams
+
+  respondBidirectionalEventCid <- submit sigNetwork do
+    createCmd RespondBidirectionalEvent with
+      sigNetwork; operators = [operator]; requester
+      requestId = claimTestRequestId
+      responder = sigNetwork; serializedOutput = boolTrueMpcOutput
+      signature = claimTestSignature
+
+  signatureRespondedEventCid <- submit sigNetwork do
+    createCmd SignatureRespondedEvent with
+      sigNetwork; operators = [operator]; requester
+      requestId = claimTestRequestId
+      responder = sigNetwork; signature = claimTestSignature
+
+  submitMustFail (actAs wrongUser <> readAs operator <> readAs sigNetwork) do
+    exerciseCmd vaultCid ClaimDeposit with
+      requester = wrongUser; pendingDepositCid = pendingCid; respondBidirectionalEventCid; signatureRespondedEventCid
+
+  pure ()
+
+------------------------------------------------------------------------
+-- Auth card with 0 remaining uses is rejected (ensure fails)
+------------------------------------------------------------------------
+
+-- Authorization with remainingUses=0 is rejected by ensure clause
+testAuthCardNoRemainingUsesFails : Script ()
+testAuthCardNoRemainingUsesFails = do
+  (sigNetwork, operator, requester, _signerCid, _vaultCid) <- setup
+
+  -- Authorization has ensure remainingUses > 0, so createCmd with 0 must fail
+  submitMustFail operator do
+    createCmd Authorization with
+      operators = [operator]; owner = requester; sigNetwork = sigNetwork; remainingUses = 0
+
+  pure ()
+
+------------------------------------------------------------------------
+-- ClaimDeposit rejects MPC failure (error prefix)
+------------------------------------------------------------------------
+
+-- ClaimDeposit rejects when serializedOutput has error prefix (0xDEADBEEF)
+testClaimRejectsMpcFailure : Script ()
+testClaimRejectsMpcFailure = do
+  (sigNetwork, operator, requester, _signerCid, vaultCid) <- setupWithKey claimTestPubKey
+
+  pendingCid <- submit operator do
+    createCmd PendingDeposit with
+      operators = [operator]; requester; sigNetwork
+      requestId = claimTestRequestId; evmTxParams = sampleEvmParams
+
+  respondBidirectionalEventCid <- submit sigNetwork do
+    createCmd RespondBidirectionalEvent with
+      sigNetwork; operators = [operator]; requester
+      requestId = claimTestRequestId
+      responder = sigNetwork; serializedOutput = errorPrefixMpcOutput
+      signature = refundTestSignature
+
+  signatureRespondedEventCid <- submit sigNetwork do
+    createCmd SignatureRespondedEvent with
+      sigNetwork; operators = [operator]; requester
+      requestId = claimTestRequestId
+      responder = sigNetwork; signature = refundTestSignature
+
+  submitMustFail (actAs requester <> readAs operator <> readAs sigNetwork) do
+    exerciseCmd vaultCid ClaimDeposit with
+      requester; pendingDepositCid = pendingCid; respondBidirectionalEventCid; signatureRespondedEventCid
+
+  pure ()
+
+------------------------------------------------------------------------
+-- ClaimDeposit rejects requestId mismatch
+------------------------------------------------------------------------
+
+-- ClaimDeposit rejects when outcome.requestId differs from pending.requestId
+testClaimRejectsRequestIdMismatch : Script ()
+testClaimRejectsRequestIdMismatch = do
+  (sigNetwork, operator, requester, _signerCid, vaultCid) <- setupWithKey claimTestPubKey
+
+  pendingCid <- submit operator do
+    createCmd PendingDeposit with
+      operators = [operator]; requester; sigNetwork
+      requestId = "aa"; evmTxParams = sampleEvmParams
+
+  -- Outcome has a different requestId
+  respondBidirectionalEventCid <- submit sigNetwork do
+    createCmd RespondBidirectionalEvent with
+      sigNetwork; operators = [operator]; requester
+      requestId = "bb"
+      responder = sigNetwork; serializedOutput = boolTrueMpcOutput
+      signature = claimTestSignature
+
+  signatureRespondedEventCid <- submit sigNetwork do
+    createCmd SignatureRespondedEvent with
+      sigNetwork; operators = [operator]; requester
+      requestId = "bb"
+      responder = sigNetwork; signature = claimTestSignature
+
+  submitMustFail (actAs requester <> readAs operator <> readAs sigNetwork) do
+    exerciseCmd vaultCid ClaimDeposit with
+      requester; pendingDepositCid = pendingCid; respondBidirectionalEventCid; signatureRespondedEventCid
+
+  pure ()
+
+------------------------------------------------------------------------
+-- ClaimDeposit rejects bool(false) return value
+------------------------------------------------------------------------
+
+-- ClaimDeposit rejects when ABI-decoded ERC20 return value is false
+testClaimRejectsBoolFalse : Script ()
+testClaimRejectsBoolFalse = do
+  (sigNetwork, operator, requester, _signerCid, vaultCid) <- setupWithKey claimTestPubKey
+
+  pendingCid <- submit operator do
+    createCmd PendingDeposit with
+      operators = [operator]; requester; sigNetwork
+      requestId = claimTestRequestId; evmTxParams = sampleEvmParams
+
+  respondBidirectionalEventCid <- submit sigNetwork do
+    createCmd RespondBidirectionalEvent with
+      sigNetwork; operators = [operator]; requester
+      requestId = claimTestRequestId
+      responder = sigNetwork; serializedOutput = boolFalseMpcOutput
+      signature = boolFalseTestSignature
+
+  signatureRespondedEventCid <- submit sigNetwork do
+    createCmd SignatureRespondedEvent with
+      sigNetwork; operators = [operator]; requester
+      requestId = claimTestRequestId
+      responder = sigNetwork; signature = boolFalseTestSignature
+
+  submitMustFail (actAs requester <> readAs operator <> readAs sigNetwork) do
+    exerciseCmd vaultCid ClaimDeposit with
+      requester; pendingDepositCid = pendingCid; respondBidirectionalEventCid; signatureRespondedEventCid
+
+  pure ()
 
 ------------------------------------------------------------------------
 -- Controller / validation negative tests
 ------------------------------------------------------------------------
 
-testApproveDepositAuthWrongController : Script ()
-testApproveDepositAuthWrongController = do
-  issuer    <- allocateParty "Issuer"
-  depositor <- allocateParty "Depositor"
-  mpc       <- allocateParty "Mpc"
+-- requester cannot exercise ApproveAuthorization (controller is operator/approver)
+testApproveAuthorizationWrongController : Script ()
+testApproveAuthorizationWrongController = do
+  (_sigNetwork, operator, requester, _signerCid, vaultCid) <- setup
 
-  orchCid <- submit issuer do
-    createCmd VaultOrchestrator with
-      issuer; mpc; mpcPublicKey = testPubKeyHex; vaultAddress = sampleVaultAddress; vaultId = "test-vault"
+  requestCid <- submit (actAs requester <> readAs operator) do
+    exerciseCmd vaultCid RequestAuthorization with requester
 
-  proposalCid <- submit (actAs depositor <> readAs issuer) do
-    exerciseCmd orchCid RequestDepositAuth with
-      requester = depositor
+  -- requester (not operator) tries to approve
+  submitMustFail requester do
+    exerciseCmd vaultCid ApproveAuthorization with
+      requestCid; remainingUses = 1; approver = requester
 
-  submitMustFail depositor do
-    exerciseCmd orchCid ApproveDepositAuth with
-      proposalCid; remainingUses = 1
+-- requester cannot exercise Signer.Respond (controller is sigNetwork)
+testRespondWrongController : Script ()
+testRespondWrongController = do
+  (sigNetwork, operator, requester, signerCid, _vaultCid) <- setup
 
-testSignEvmTxWrongController : Script ()
-testSignEvmTxWrongController = do
-  issuer    <- allocateParty "Issuer"
-  depositor <- allocateParty "Depositor"
-  mpc       <- allocateParty "Mpc"
+  -- requester tries to exercise Respond (controller is sigNetwork)
+  submitMustFail requester do
+    exerciseCmd signerCid Respond with
+      operators = [operator]; requester; requestId = "aa"; signature = "00"
 
-  orchCid <- submit issuer do
-    createCmd VaultOrchestrator with
-      issuer; mpc; mpcPublicKey = testPubKeyHex; vaultAddress = sampleVaultAddress; vaultId = "test-vault"
-
-  submitMustFail depositor do
-    exerciseCmd orchCid SignEvmTx with
-      requester = depositor; requestId = "aa"; r = "00"; s = "00"; v = 0
-
-testProvideOutcomeSigWrongController : Script ()
-testProvideOutcomeSigWrongController = do
-  issuer    <- allocateParty "Issuer"
-  depositor <- allocateParty "Depositor"
-  mpc       <- allocateParty "Mpc"
-
-  orchCid <- submit issuer do
-    createCmd VaultOrchestrator with
-      issuer; mpc; mpcPublicKey = testPubKeyHex; vaultAddress = sampleVaultAddress; vaultId = "test-vault"
-
-  submitMustFail depositor do
-    exerciseCmd orchCid ProvideEvmOutcomeSig with
-      requester = depositor; requestId = "aa"
-      signature = testSignatureHex; mpcOutput = boolTrueMpcOutput
-
+-- RequestDeposit rejects auth card with operators that don't match the Vault's operators
 testAuthCardWrongIssuer : Script ()
 testAuthCardWrongIssuer = do
-  issuer    <- allocateParty "Issuer"
-  depositor <- allocateParty "Depositor"
-  mpc       <- allocateParty "Mpc"
-  rogue     <- allocateParty "Rogue"
+  (sigNetwork, operator, requester, signerCid, vaultCid) <- setup
+  rogue <- allocateParty "Rogue"
 
-  orchCid <- submit issuer do
-    createCmd VaultOrchestrator with
-      issuer; mpc; mpcPublicKey = testPubKeyHex; vaultAddress = sampleVaultAddress; vaultId = "test-vault"
-
+  -- Auth issued by rogue (not an operator)
   authCid <- submit rogue do
-    createCmd DepositAuthorization with
-      issuer = rogue; mpc; owner = depositor; remainingUses = 1
+    createCmd Authorization with
+      operators = [rogue]; owner = requester; sigNetwork = sigNetwork; remainingUses = 1
 
-  submitMustFail (actAs depositor <> readAs issuer) do
-    exerciseCmd orchCid RequestEvmDeposit with
-      requester = depositor; path = "test"; evmParams = sampleEvmParams
-      authCidText = ""; keyVersion = 1; algo = "ECDSA"; dest = "ethereum"; authCid
-      outputDeserializationSchema = erc20BoolSchema; respondSerializationSchema = erc20BoolSchema
+  submitMustFail (actAs requester <> readAs operator <> readAs sigNetwork) do
+    exerciseCmd vaultCid RequestDeposit with
+      requester; signerCid; path = "test"; evmTxParams = sampleEvmParams
+      authCid; nonceCidText = "test-nonce"
+      keyVersion = 1; algo = "ECDSA"; dest = "ethereum"; params = ""
+      outputDeserializationSchema = erc20BoolSchema
+      respondSerializationSchema = erc20BoolSchema
 
+-- RequestDeposit rejects auth card whose owner differs from the requester
 testAuthCardWrongOwner : Script ()
 testAuthCardWrongOwner = do
-  issuer    <- allocateParty "Issuer"
-  depositor <- allocateParty "Depositor"
+  (sigNetwork, operator, requester, signerCid, vaultCid) <- setup
   otherUser <- allocateParty "OtherUser"
-  mpc       <- allocateParty "Mpc"
 
-  orchCid <- submit issuer do
-    createCmd VaultOrchestrator with
-      issuer; mpc; mpcPublicKey = testPubKeyHex; vaultAddress = sampleVaultAddress; vaultId = "test-vault"
+  -- Auth is for otherUser, not requester
+  authCid <- submit operator do
+    createCmd Authorization with
+      operators = [operator]; owner = otherUser; sigNetwork = sigNetwork; remainingUses = 1
 
-  authCid <- submit issuer do
-    createCmd DepositAuthorization with
-      issuer; mpc; owner = otherUser; remainingUses = 1
+  submitMustFail (actAs requester <> readAs operator <> readAs sigNetwork) do
+    exerciseCmd vaultCid RequestDeposit with
+      requester; signerCid; path = "test"; evmTxParams = sampleEvmParams
+      authCid; nonceCidText = "test-nonce"
+      keyVersion = 1; algo = "ECDSA"; dest = "ethereum"; params = ""
+      outputDeserializationSchema = erc20BoolSchema
+      respondSerializationSchema = erc20BoolSchema
 
-  submitMustFail (actAs depositor <> readAs issuer) do
-    exerciseCmd orchCid RequestEvmDeposit with
-      requester = depositor; path = "test"; evmParams = sampleEvmParams
-      authCidText = ""; keyVersion = 1; algo = "ECDSA"; dest = "ethereum"; authCid
-      outputDeserializationSchema = erc20BoolSchema; respondSerializationSchema = erc20BoolSchema
-
+-- RequestDeposit rejects EVM call with function other than transfer(address,uint256)
 testWrongFunctionSignature : Script ()
 testWrongFunctionSignature = do
-  issuer    <- allocateParty "Issuer"
-  depositor <- allocateParty "Depositor"
-  mpc       <- allocateParty "Mpc"
-
-  orchCid <- submit issuer do
-    createCmd VaultOrchestrator with
-      issuer; mpc; mpcPublicKey = testPubKeyHex; vaultAddress = sampleVaultAddress; vaultId = "test-vault"
-
-  proposalCid <- submit (actAs depositor <> readAs issuer) do
-    exerciseCmd orchCid RequestDepositAuth with requester = depositor
-  authCid <- submit issuer do
-    exerciseCmd orchCid ApproveDepositAuth with proposalCid; remainingUses = 1
+  (sigNetwork, operator, requester, signerCid, vaultCid) <- setup
+  authCid <- getAuth operator requester vaultCid 1
 
   let badParams = sampleEvmParams with functionSignature = "approve(address,uint256)"
-  submitMustFail (actAs depositor <> readAs issuer) do
-    exerciseCmd orchCid RequestEvmDeposit with
-      requester = depositor; path = "test"; evmParams = badParams
-      authCidText = ""; keyVersion = 1; algo = "ECDSA"; dest = "ethereum"; authCid
-      outputDeserializationSchema = erc20BoolSchema; respondSerializationSchema = erc20BoolSchema
+  submitMustFail (actAs requester <> readAs operator <> readAs sigNetwork) do
+    exerciseCmd vaultCid RequestDeposit with
+      requester; signerCid; path = "test"; evmTxParams = badParams
+      authCid; nonceCidText = "test-nonce"
+      keyVersion = 1; algo = "ECDSA"; dest = "ethereum"; params = ""
+      outputDeserializationSchema = erc20BoolSchema
+      respondSerializationSchema = erc20BoolSchema
 
+-- RequestDeposit rejects transfer to address other than the vault address
 testWrongRecipient : Script ()
 testWrongRecipient = do
-  issuer    <- allocateParty "Issuer"
-  depositor <- allocateParty "Depositor"
-  mpc       <- allocateParty "Mpc"
-
-  orchCid <- submit issuer do
-    createCmd VaultOrchestrator with
-      issuer; mpc; mpcPublicKey = testPubKeyHex; vaultAddress = sampleVaultAddress; vaultId = "test-vault"
-
-  proposalCid <- submit (actAs depositor <> readAs issuer) do
-    exerciseCmd orchCid RequestDepositAuth with requester = depositor
-  authCid <- submit issuer do
-    exerciseCmd orchCid ApproveDepositAuth with proposalCid; remainingUses = 1
+  (sigNetwork, operator, requester, signerCid, vaultCid) <- setup
+  authCid <- getAuth operator requester vaultCid 1
 
   let badParams = sampleEvmParams with
         args = [ "0000000000000000000000001111111111111111111111111111111111111111"
                , "0000000000000000000000000000000000000000000000000000000005f5e100"
                ]
-  submitMustFail (actAs depositor <> readAs issuer) do
-    exerciseCmd orchCid RequestEvmDeposit with
-      requester = depositor; path = "test"; evmParams = badParams
-      authCidText = ""; keyVersion = 1; algo = "ECDSA"; dest = "ethereum"; authCid
-      outputDeserializationSchema = erc20BoolSchema; respondSerializationSchema = erc20BoolSchema
-
-testClaimRejectsMpcFailure : Script ()
-testClaimRejectsMpcFailure = do
-  issuer    <- allocateParty "Issuer"
-  depositor <- allocateParty "Depositor"
-  mpc       <- allocateParty "Mpc"
-
-  orchCid <- submit issuer do
-    createCmd VaultOrchestrator with
-      issuer; mpc; mpcPublicKey = testPubKeyHex; vaultAddress = sampleVaultAddress; vaultId = "test-vault"
-
-  dummyAuthCid <- submit issuer do
-    createCmd DepositAuthorization with
-      issuer; mpc; owner = depositor; remainingUses = 0
-
-  pendingCid <- submit issuer do
-    createCmd PendingEvmTx with
-      issuer; requester = depositor; mpc
-      requestId = "bb"; path = "test"; evmParams = sampleEvmParams; vaultId = "test-vault"
-      nonceCidText = ""; source = DepositSource dummyAuthCid; keyVersion = 1; algo = "ECDSA"; dest = "ethereum"
-      outputDeserializationSchema = erc20BoolSchema; respondSerializationSchema = erc20BoolSchema
-
-  ecdsaCid <- submit issuer do
-    createCmd EcdsaSignature with
-      issuer; requester = depositor; requestId = "bb"; r = "00"; s = "00"; v = 0
-
-  outcomeCid <- submit issuer do
-    createCmd EvmTxOutcomeSignature with
-      issuer; requester = depositor; requestId = "bb"
-      signature = testSignatureHex; mpcOutput = errorPrefixMpcOutput
-
-  submitMustFail (actAs depositor <> readAs issuer) do
-    exerciseCmd orchCid ClaimEvmDeposit with
-      requester = depositor; pendingCid; outcomeCid; ecdsaCid
-
-testClaimRejectsRequestIdMismatch : Script ()
-testClaimRejectsRequestIdMismatch = do
-  issuer    <- allocateParty "Issuer"
-  depositor <- allocateParty "Depositor"
-  mpc       <- allocateParty "Mpc"
-
-  orchCid <- submit issuer do
-    createCmd VaultOrchestrator with
-      issuer; mpc; mpcPublicKey = testPubKeyHex; vaultAddress = sampleVaultAddress; vaultId = "test-vault"
-
-  dummyAuthCid <- submit issuer do
-    createCmd DepositAuthorization with
-      issuer; mpc; owner = depositor; remainingUses = 0
-
-  pendingCid <- submit issuer do
-    createCmd PendingEvmTx with
-      issuer; requester = depositor; mpc
-      requestId = "aa"; path = "test"; evmParams = sampleEvmParams; vaultId = "test-vault"
-      nonceCidText = ""; source = DepositSource dummyAuthCid; keyVersion = 1; algo = "ECDSA"; dest = "ethereum"
-      outputDeserializationSchema = erc20BoolSchema; respondSerializationSchema = erc20BoolSchema
-
-  ecdsaCid <- submit issuer do
-    createCmd EcdsaSignature with
-      issuer; requester = depositor; requestId = "aa"; r = "00"; s = "00"; v = 0
-
-  outcomeCid <- submit issuer do
-    createCmd EvmTxOutcomeSignature with
-      issuer; requester = depositor; requestId = "bb"
-      signature = testSignatureHex; mpcOutput = boolTrueMpcOutput
-
-  submitMustFail (actAs depositor <> readAs issuer) do
-    exerciseCmd orchCid ClaimEvmDeposit with
-      requester = depositor; pendingCid; outcomeCid; ecdsaCid
+  submitMustFail (actAs requester <> readAs operator <> readAs sigNetwork) do
+    exerciseCmd vaultCid RequestDeposit with
+      requester; signerCid; path = "test"; evmTxParams = badParams
+      authCid; nonceCidText = "test-nonce"
+      keyVersion = 1; algo = "ECDSA"; dest = "ethereum"; params = ""
+      outputDeserializationSchema = erc20BoolSchema
+      respondSerializationSchema = erc20BoolSchema
 
 ------------------------------------------------------------------------
--- Withdrawal tests
+-- Withdrawal lifecycle
 ------------------------------------------------------------------------
 
+-- RequestWithdrawal archives holding, creates SignBidirectionalEvent + PendingWithdrawal with correct fields
 testWithdrawalLifecycle : Script ()
 testWithdrawalLifecycle = do
-  issuer     <- allocateParty "Issuer"
-  withdrawer <- allocateParty "Withdrawer"
-  mpc        <- allocateParty "Mpc"
+  (sigNetwork, operator, requester, signerCid, vaultCid) <- setup
 
-  orchCid <- submit issuer do
-    createCmd VaultOrchestrator with
-      issuer; mpc; mpcPublicKey = testPubKeyHex; vaultAddress = sampleVaultAddress; vaultId = "test-vault"
-
-  holdingCid <- submit issuer do
+  holdingCid <- submit operator do
     createCmd Erc20Holding with
-      issuer; owner = withdrawer; erc20Address = sampleErc20Address; amount = sampleHoldingAmount
+      operators = [operator]; owner = requester; sigNetwork = sigNetwork
+      erc20Address = sampleErc20Address; amount = sampleHoldingAmount
 
-  let holdingCidText = show holdingCid
+  (signEventCid, pendingCid) <- submit (actAs requester <> readAs operator <> readAs sigNetwork) do
+    exerciseCmd vaultCid RequestWithdrawal with
+      requester; signerCid; evmTxParams = sampleWithdrawalEvmParams
+      recipientAddress = sampleRecipientAddress; balanceCid = holdingCid
+      nonceCidText = "holding-nonce"
+      keyVersion = 1; algo = "ECDSA"; dest = "ethereum"; params = ""
+      outputDeserializationSchema = erc20BoolSchema
+      respondSerializationSchema = erc20BoolSchema
 
-  pendingCid <- submit (actAs withdrawer <> readAs issuer) do
-    exerciseCmd orchCid RequestEvmWithdrawal with
-      requester = withdrawer; evmParams = sampleWithdrawalEvmParams
-      recipientAddress = sampleRecipientAddress; balanceCidText = holdingCidText
-      keyVersion = 1; algo = "ECDSA"; dest = "ethereum"; balanceCid = holdingCid
-      outputDeserializationSchema = erc20BoolSchema; respondSerializationSchema = erc20BoolSchema
-
-  pending <- queryContractId withdrawer pendingCid
+  pending <- queryContractId requester pendingCid
   let pw = fromSome pending
-  assertMsg "path must be root" (pw.path == "root")
   assertMsg "requestId must be 32 bytes" (byteCount pw.requestId == 32)
-  assertMsg "evmParams must match" (pw.evmParams == sampleWithdrawalEvmParams)
-  assertMsg "requester must match" (pw.requester == withdrawer)
-  assertMsg "nonceCidText must match" (pw.nonceCidText == holdingCidText)
+  assertMsg "evmTxParams must match" (pw.evmTxParams == sampleWithdrawalEvmParams)
+  assertMsg "requester must match" (pw.requester == requester)
 
-  oldHolding <- queryContractId withdrawer holdingCid
+  -- Holding must be archived
+  oldHolding <- queryContractId requester holdingCid
   assertMsg "holding must be archived" (oldHolding == None)
 
+------------------------------------------------------------------------
+-- Withdrawal complete success returns None
+------------------------------------------------------------------------
+
+-- CompleteWithdrawal with bool(true) MPC output returns None (no refund)
 testWithdrawalCompleteSuccess : Script ()
 testWithdrawalCompleteSuccess = do
-  issuer     <- allocateParty "Issuer"
-  withdrawer <- allocateParty "Withdrawer"
-  mpc        <- allocateParty "Mpc"
+  (sigNetwork, operator, requester, _signerCid, vaultCid) <- setupWithKey claimTestPubKey
 
-  orchCid <- submit issuer do
-    createCmd VaultOrchestrator with
-      issuer; mpc; mpcPublicKey = claimTestPubKey; vaultAddress = sampleVaultAddress; vaultId = "test-vault"
+  pendingCid <- submit operator do
+    createCmd PendingWithdrawal with
+      operators = [operator]; requester; sigNetwork
+      requestId = claimTestRequestId; evmTxParams = sampleWithdrawalEvmParams
+      erc20Address = sampleErc20Address; amount = sampleHoldingAmount
 
-  dummyHoldingCid <- submit issuer do
-    createCmd Erc20Holding with
-      issuer; owner = withdrawer; erc20Address = sampleErc20Address; amount = sampleHoldingAmount
+  respondBidirectionalEventCid <- submit sigNetwork do
+    createCmd RespondBidirectionalEvent with
+      sigNetwork; operators = [operator]; requester
+      requestId = claimTestRequestId
+      responder = sigNetwork; serializedOutput = boolTrueMpcOutput
+      signature = claimTestSignature
 
-  pendingCid <- submit issuer do
-    createCmd PendingEvmTx with
-      issuer; requester = withdrawer; mpc; requestId = claimTestRequestId
-      path = "root"; evmParams = sampleWithdrawalEvmParams; vaultId = "test-vault"
-      nonceCidText = ""; source = WithdrawalSource dummyHoldingCid; keyVersion = 1; algo = "ECDSA"; dest = "ethereum"
-      outputDeserializationSchema = erc20BoolSchema; respondSerializationSchema = erc20BoolSchema
+  signatureRespondedEventCid <- submit sigNetwork do
+    createCmd SignatureRespondedEvent with
+      sigNetwork; operators = [operator]; requester
+      requestId = claimTestRequestId
+      responder = sigNetwork; signature = claimTestSignature
 
-  ecdsaCid <- submit issuer do
-    createCmd EcdsaSignature with
-      issuer; requester = withdrawer; requestId = claimTestRequestId; r = "00"; s = "00"; v = 0
-
-  outcomeCid <- submit issuer do
-    createCmd EvmTxOutcomeSignature with
-      issuer; requester = withdrawer; requestId = claimTestRequestId
-      signature = claimTestSignature; mpcOutput = boolTrueMpcOutput
-
-  result <- submit (actAs withdrawer <> readAs issuer) do
-    exerciseCmd orchCid CompleteEvmWithdrawal with
-      requester = withdrawer; pendingCid; outcomeCid; ecdsaCid
+  result <- submit (actAs requester <> readAs operator <> readAs sigNetwork) do
+    exerciseCmd vaultCid CompleteWithdrawal with
+      requester; pendingWithdrawalCid = pendingCid; respondBidirectionalEventCid; signatureRespondedEventCid
 
   assertMsg "success must return None" (isNone result)
 
+------------------------------------------------------------------------
+-- Withdrawal complete failure returns refund holding
+------------------------------------------------------------------------
+
+-- CompleteWithdrawal with error-prefix MPC output returns Some (refund holding with correct fields)
 testWithdrawalCompleteFailureRefund : Script ()
 testWithdrawalCompleteFailureRefund = do
-  issuer     <- allocateParty "Issuer"
-  withdrawer <- allocateParty "Withdrawer"
-  mpc        <- allocateParty "Mpc"
+  (sigNetwork, operator, requester, _signerCid, vaultCid) <- setupWithKey claimTestPubKey
 
-  orchCid <- submit issuer do
-    createCmd VaultOrchestrator with
-      issuer; mpc; mpcPublicKey = claimTestPubKey; vaultAddress = sampleVaultAddress; vaultId = "test-vault"
+  pendingCid <- submit operator do
+    createCmd PendingWithdrawal with
+      operators = [operator]; requester; sigNetwork
+      requestId = claimTestRequestId; evmTxParams = sampleWithdrawalEvmParams
+      erc20Address = sampleErc20Address; amount = sampleHoldingAmount
 
-  dummyHoldingCid <- submit issuer do
-    createCmd Erc20Holding with
-      issuer; owner = withdrawer; erc20Address = sampleErc20Address; amount = sampleHoldingAmount
+  respondBidirectionalEventCid <- submit sigNetwork do
+    createCmd RespondBidirectionalEvent with
+      sigNetwork; operators = [operator]; requester
+      requestId = claimTestRequestId
+      responder = sigNetwork; serializedOutput = errorPrefixMpcOutput
+      signature = refundTestSignature
 
-  pendingCid <- submit issuer do
-    createCmd PendingEvmTx with
-      issuer; requester = withdrawer; mpc; requestId = claimTestRequestId
-      path = "root"; evmParams = sampleWithdrawalEvmParams; vaultId = "test-vault"
-      nonceCidText = ""; source = WithdrawalSource dummyHoldingCid; keyVersion = 1; algo = "ECDSA"; dest = "ethereum"
-      outputDeserializationSchema = erc20BoolSchema; respondSerializationSchema = erc20BoolSchema
+  signatureRespondedEventCid <- submit sigNetwork do
+    createCmd SignatureRespondedEvent with
+      sigNetwork; operators = [operator]; requester
+      requestId = claimTestRequestId
+      responder = sigNetwork; signature = refundTestSignature
 
-  ecdsaCid <- submit issuer do
-    createCmd EcdsaSignature with
-      issuer; requester = withdrawer; requestId = claimTestRequestId; r = "00"; s = "00"; v = 0
-
-  outcomeCid <- submit issuer do
-    createCmd EvmTxOutcomeSignature with
-      issuer; requester = withdrawer; requestId = claimTestRequestId
-      signature = refundTestSignature; mpcOutput = errorPrefixMpcOutput
-
-  result <- submit (actAs withdrawer <> readAs issuer) do
-    exerciseCmd orchCid CompleteEvmWithdrawal with
-      requester = withdrawer; pendingCid; outcomeCid; ecdsaCid
+  result <- submit (actAs requester <> readAs operator <> readAs sigNetwork) do
+    exerciseCmd vaultCid CompleteWithdrawal with
+      requester; pendingWithdrawalCid = pendingCid; respondBidirectionalEventCid; signatureRespondedEventCid
 
   assertMsg "failure must return Some" (isSome result)
   let refundCid = fromSome result
-  refund <- queryContractId withdrawer refundCid
+  refund <- queryContractId requester refundCid
   let h = fromSome refund
-  assertMsg "refund owner" (h.owner == withdrawer)
-  assertMsg "refund issuer" (h.issuer == issuer)
+  assertMsg "refund owner" (h.owner == requester)
+  assertMsg "refund operators" (h.operators == [operator])
   assertMsg "refund erc20Address" (h.erc20Address == sampleErc20Address)
   assertMsg "refund amount" (h.amount == sampleHoldingAmount)
 
+------------------------------------------------------------------------
+-- Withdrawal validation negative tests
+------------------------------------------------------------------------
+
+-- RequestWithdrawal rejects when requester differs from holding owner
 testWithdrawalRejectsWrongOwner : Script ()
 testWithdrawalRejectsWrongOwner = do
-  issuer <- allocateParty "Issuer"
-  userA  <- allocateParty "UserA"
-  userB  <- allocateParty "UserB"
-  mpc    <- allocateParty "Mpc"
+  (sigNetwork, operator, requester, signerCid, vaultCid) <- setup
+  userB <- allocateParty "UserB"
 
-  orchCid <- submit issuer do
-    createCmd VaultOrchestrator with
-      issuer; mpc; mpcPublicKey = testPubKeyHex; vaultAddress = sampleVaultAddress; vaultId = "test-vault"
-
-  holdingCid <- submit issuer do
+  holdingCid <- submit operator do
     createCmd Erc20Holding with
-      issuer; owner = userA; erc20Address = sampleErc20Address; amount = sampleHoldingAmount
+      operators = [operator]; owner = requester; sigNetwork = sigNetwork
+      erc20Address = sampleErc20Address; amount = sampleHoldingAmount
 
-  submitMustFail (actAs userB <> readAs issuer) do
-    exerciseCmd orchCid RequestEvmWithdrawal with
-      requester = userB; evmParams = sampleWithdrawalEvmParams
-      recipientAddress = sampleRecipientAddress; balanceCidText = show holdingCid
-      keyVersion = 1; algo = "ECDSA"; dest = "ethereum"; balanceCid = holdingCid
-      outputDeserializationSchema = erc20BoolSchema; respondSerializationSchema = erc20BoolSchema
+  submitMustFail (actAs userB <> readAs operator <> readAs sigNetwork) do
+    exerciseCmd vaultCid RequestWithdrawal with
+      requester = userB; signerCid; evmTxParams = sampleWithdrawalEvmParams
+      recipientAddress = sampleRecipientAddress; balanceCid = holdingCid
+      nonceCidText = "holding-nonce"
+      keyVersion = 1; algo = "ECDSA"; dest = "ethereum"; params = ""
+      outputDeserializationSchema = erc20BoolSchema
+      respondSerializationSchema = erc20BoolSchema
 
+-- RequestWithdrawal rejects when evmTxParams.to differs from holding erc20Address
 testWithdrawalRejectsWrongErc20 : Script ()
 testWithdrawalRejectsWrongErc20 = do
-  issuer     <- allocateParty "Issuer"
-  withdrawer <- allocateParty "Withdrawer"
-  mpc        <- allocateParty "Mpc"
+  (sigNetwork, operator, requester, signerCid, vaultCid) <- setup
 
-  orchCid <- submit issuer do
-    createCmd VaultOrchestrator with
-      issuer; mpc; mpcPublicKey = testPubKeyHex; vaultAddress = sampleVaultAddress; vaultId = "test-vault"
-
-  holdingCid <- submit issuer do
+  holdingCid <- submit operator do
     createCmd Erc20Holding with
-      issuer; owner = withdrawer; erc20Address = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"; amount = sampleHoldingAmount
+      operators = [operator]; owner = requester; sigNetwork = sigNetwork
+      erc20Address = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      amount = sampleHoldingAmount
 
-  submitMustFail (actAs withdrawer <> readAs issuer) do
-    exerciseCmd orchCid RequestEvmWithdrawal with
-      requester = withdrawer; evmParams = sampleWithdrawalEvmParams
-      recipientAddress = sampleRecipientAddress; balanceCidText = show holdingCid
-      keyVersion = 1; algo = "ECDSA"; dest = "ethereum"; balanceCid = holdingCid
-      outputDeserializationSchema = erc20BoolSchema; respondSerializationSchema = erc20BoolSchema
+  submitMustFail (actAs requester <> readAs operator <> readAs sigNetwork) do
+    exerciseCmd vaultCid RequestWithdrawal with
+      requester; signerCid; evmTxParams = sampleWithdrawalEvmParams
+      recipientAddress = sampleRecipientAddress; balanceCid = holdingCid
+      nonceCidText = "holding-nonce"
+      keyVersion = 1; algo = "ECDSA"; dest = "ethereum"; params = ""
+      outputDeserializationSchema = erc20BoolSchema
+      respondSerializationSchema = erc20BoolSchema
 
+-- RequestWithdrawal rejects when withdrawal amount differs from holding amount
 testWithdrawalRejectsAmountMismatch : Script ()
 testWithdrawalRejectsAmountMismatch = do
-  issuer     <- allocateParty "Issuer"
-  withdrawer <- allocateParty "Withdrawer"
-  mpc        <- allocateParty "Mpc"
+  (sigNetwork, operator, requester, signerCid, vaultCid) <- setup
 
-  orchCid <- submit issuer do
-    createCmd VaultOrchestrator with
-      issuer; mpc; mpcPublicKey = testPubKeyHex; vaultAddress = sampleVaultAddress; vaultId = "test-vault"
-
-  holdingCid <- submit issuer do
+  holdingCid <- submit operator do
     createCmd Erc20Holding with
-      issuer; owner = withdrawer; erc20Address = sampleErc20Address
+      operators = [operator]; owner = requester; sigNetwork = sigNetwork
+      erc20Address = sampleErc20Address
       amount = "0000000000000000000000000000000000000000000000000000000000000001"
 
-  submitMustFail (actAs withdrawer <> readAs issuer) do
-    exerciseCmd orchCid RequestEvmWithdrawal with
-      requester = withdrawer; evmParams = sampleWithdrawalEvmParams
-      recipientAddress = sampleRecipientAddress; balanceCidText = show holdingCid
-      keyVersion = 1; algo = "ECDSA"; dest = "ethereum"; balanceCid = holdingCid
-      outputDeserializationSchema = erc20BoolSchema; respondSerializationSchema = erc20BoolSchema
+  submitMustFail (actAs requester <> readAs operator <> readAs sigNetwork) do
+    exerciseCmd vaultCid RequestWithdrawal with
+      requester; signerCid; evmTxParams = sampleWithdrawalEvmParams
+      recipientAddress = sampleRecipientAddress; balanceCid = holdingCid
+      nonceCidText = "holding-nonce"
+      keyVersion = 1; algo = "ECDSA"; dest = "ethereum"; params = ""
+      outputDeserializationSchema = erc20BoolSchema
+      respondSerializationSchema = erc20BoolSchema
 
+-- RequestWithdrawal rejects when transfer recipient differs from recipientAddress parameter
 testWithdrawalRejectsWrongRecipient : Script ()
 testWithdrawalRejectsWrongRecipient = do
-  issuer     <- allocateParty "Issuer"
-  withdrawer <- allocateParty "Withdrawer"
-  mpc        <- allocateParty "Mpc"
+  (sigNetwork, operator, requester, signerCid, vaultCid) <- setup
 
-  orchCid <- submit issuer do
-    createCmd VaultOrchestrator with
-      issuer; mpc; mpcPublicKey = testPubKeyHex; vaultAddress = sampleVaultAddress; vaultId = "test-vault"
-
-  holdingCid <- submit issuer do
+  holdingCid <- submit operator do
     createCmd Erc20Holding with
-      issuer; owner = withdrawer; erc20Address = sampleErc20Address; amount = sampleHoldingAmount
+      operators = [operator]; owner = requester; sigNetwork = sigNetwork
+      erc20Address = sampleErc20Address; amount = sampleHoldingAmount
 
-  submitMustFail (actAs withdrawer <> readAs issuer) do
-    exerciseCmd orchCid RequestEvmWithdrawal with
-      requester = withdrawer; evmParams = sampleWithdrawalEvmParams
+  submitMustFail (actAs requester <> readAs operator <> readAs sigNetwork) do
+    exerciseCmd vaultCid RequestWithdrawal with
+      requester; signerCid; evmTxParams = sampleWithdrawalEvmParams
       recipientAddress = "0000000000000000000000002222222222222222222222222222222222222222"
-      balanceCidText = show holdingCid
-      keyVersion = 1; algo = "ECDSA"; dest = "ethereum"; balanceCid = holdingCid
-      outputDeserializationSchema = erc20BoolSchema; respondSerializationSchema = erc20BoolSchema
+      balanceCid = holdingCid; nonceCidText = "holding-nonce"
+      keyVersion = 1; algo = "ECDSA"; dest = "ethereum"; params = ""
+      outputDeserializationSchema = erc20BoolSchema
+      respondSerializationSchema = erc20BoolSchema
 
+-- CompleteWithdrawal rejects when requester differs from PendingWithdrawal.requester
 testCompleteWithdrawalRejectsWrongRequester : Script ()
 testCompleteWithdrawalRejectsWrongRequester = do
-  issuer <- allocateParty "Issuer"
-  userA  <- allocateParty "UserA"
-  userB  <- allocateParty "UserB"
-  mpc    <- allocateParty "Mpc"
+  (sigNetwork, operator, requester, _signerCid, vaultCid) <- setupWithKey claimTestPubKey
+  userB <- allocateParty "UserB"
 
-  orchCid <- submit issuer do
-    createCmd VaultOrchestrator with
-      issuer; mpc; mpcPublicKey = testPubKeyHex; vaultAddress = sampleVaultAddress; vaultId = "test-vault"
+  pendingCid <- submit operator do
+    createCmd PendingWithdrawal with
+      operators = [operator]; requester; sigNetwork
+      requestId = claimTestRequestId; evmTxParams = sampleWithdrawalEvmParams
+      erc20Address = sampleErc20Address; amount = sampleHoldingAmount
 
-  dummyHoldingCid <- submit issuer do
+  respondBidirectionalEventCid <- submit sigNetwork do
+    createCmd RespondBidirectionalEvent with
+      sigNetwork; operators = [operator]; requester
+      requestId = claimTestRequestId
+      responder = sigNetwork; serializedOutput = boolTrueMpcOutput
+      signature = claimTestSignature
+
+  signatureRespondedEventCid <- submit sigNetwork do
+    createCmd SignatureRespondedEvent with
+      sigNetwork; operators = [operator]; requester
+      requestId = claimTestRequestId
+      responder = sigNetwork; signature = claimTestSignature
+
+  submitMustFail (actAs userB <> readAs operator <> readAs sigNetwork) do
+    exerciseCmd vaultCid CompleteWithdrawal with
+      requester = userB; pendingWithdrawalCid = pendingCid; respondBidirectionalEventCid; signatureRespondedEventCid
+
+------------------------------------------------------------------------
+-- Double-claim: second ClaimDeposit on archived PendingDeposit fails
+------------------------------------------------------------------------
+
+-- second ClaimDeposit on same PendingDeposit fails (contract archived after first claim)
+testPendingDepositDoubleClaimFails : Script ()
+testPendingDepositDoubleClaimFails = do
+  (sigNetwork, operator, requester, _signerCid, vaultCid) <- setupWithKey claimTestPubKey
+
+  pendingCid <- submit operator do
+    createCmd PendingDeposit with
+      operators = [operator]; requester; sigNetwork
+      requestId = claimTestRequestId; evmTxParams = sampleEvmParams
+
+  respondBidirectionalEventCid1 <- submit sigNetwork do
+    createCmd RespondBidirectionalEvent with
+      sigNetwork; operators = [operator]; requester
+      requestId = claimTestRequestId
+      responder = sigNetwork; serializedOutput = boolTrueMpcOutput
+      signature = claimTestSignature
+
+  signatureRespondedEventCid1 <- submit sigNetwork do
+    createCmd SignatureRespondedEvent with
+      sigNetwork; operators = [operator]; requester
+      requestId = claimTestRequestId
+      responder = sigNetwork; signature = claimTestSignature
+
+  -- First claim succeeds
+  _holdingCid <- submit (actAs requester <> readAs operator <> readAs sigNetwork) do
+    exerciseCmd vaultCid ClaimDeposit with
+      requester; pendingDepositCid = pendingCid; respondBidirectionalEventCid = respondBidirectionalEventCid1; signatureRespondedEventCid = signatureRespondedEventCid1
+
+  -- Fresh evidence for the second attempt (first pair was archived)
+  respondBidirectionalEventCid2 <- submit sigNetwork do
+    createCmd RespondBidirectionalEvent with
+      sigNetwork; operators = [operator]; requester
+      requestId = claimTestRequestId
+      responder = sigNetwork; serializedOutput = boolTrueMpcOutput
+      signature = claimTestSignature
+
+  signatureRespondedEventCid2 <- submit sigNetwork do
+    createCmd SignatureRespondedEvent with
+      sigNetwork; operators = [operator]; requester
+      requestId = claimTestRequestId
+      responder = sigNetwork; signature = claimTestSignature
+
+  -- Second claim must fail — pendingCid was archived
+  submitMustFail (actAs requester <> readAs operator <> readAs sigNetwork) do
+    exerciseCmd vaultCid ClaimDeposit with
+      requester; pendingDepositCid = pendingCid; respondBidirectionalEventCid = respondBidirectionalEventCid2; signatureRespondedEventCid = signatureRespondedEventCid2
+
+  pure ()
+
+------------------------------------------------------------------------
+-- Auth card with remainingUses=1 is fully consumed after one deposit
+------------------------------------------------------------------------
+
+-- RequestDeposit with remainingUses=1 fully consumes auth card (no replacement created)
+testAuthCardSingleUseFullyConsumed : Script ()
+testAuthCardSingleUseFullyConsumed = do
+  (sigNetwork, operator, requester, signerCid, vaultCid) <- setup
+  authCid <- getAuth operator requester vaultCid 1
+
+  _result <- submit (actAs requester <> readAs operator <> readAs sigNetwork) do
+    exerciseCmd vaultCid RequestDeposit with
+      requester; signerCid; path = partyToText requester; evmTxParams = sampleEvmParams
+      authCid; nonceCidText = "test-nonce"
+      keyVersion = 1; algo = "ECDSA"; dest = "ethereum"; params = ""
+      outputDeserializationSchema = erc20BoolSchema
+      respondSerializationSchema = erc20BoolSchema
+
+  -- No authorization should remain for this requester
+  auths <- queryFilter @Authorization operator (\a -> a.owner == requester)
+  assertMsg "auth card must be fully consumed" (null auths)
+
+------------------------------------------------------------------------
+-- RequestWithdrawal rejects wrong function signature
+------------------------------------------------------------------------
+
+-- RequestWithdrawal rejects EVM call with function other than transfer(address,uint256)
+testWithdrawalRejectsWrongFunctionSignature : Script ()
+testWithdrawalRejectsWrongFunctionSignature = do
+  (sigNetwork, operator, requester, signerCid, vaultCid) <- setup
+
+  holdingCid <- submit operator do
     createCmd Erc20Holding with
-      issuer; owner = userA; erc20Address = sampleErc20Address; amount = sampleHoldingAmount
+      operators = [operator]; owner = requester; sigNetwork = sigNetwork
+      erc20Address = sampleErc20Address; amount = sampleHoldingAmount
 
-  pendingCid <- submit issuer do
-    createCmd PendingEvmTx with
-      issuer; requester = userA; mpc; requestId = "bb"
-      path = "root"; evmParams = sampleWithdrawalEvmParams; vaultId = "test-vault"
-      nonceCidText = ""; source = WithdrawalSource dummyHoldingCid; keyVersion = 1; algo = "ECDSA"; dest = "ethereum"
-      outputDeserializationSchema = erc20BoolSchema; respondSerializationSchema = erc20BoolSchema
-
-  ecdsaCid <- submit issuer do
-    createCmd EcdsaSignature with
-      issuer; requester = userA; requestId = "bb"; r = "00"; s = "00"; v = 0
-
-  outcomeCid <- submit issuer do
-    createCmd EvmTxOutcomeSignature with
-      issuer; requester = userA; requestId = "bb"
-      signature = testSignatureHex; mpcOutput = boolTrueMpcOutput
-
-  submitMustFail (actAs userB <> readAs issuer) do
-    exerciseCmd orchCid CompleteEvmWithdrawal with
-      requester = userB; pendingCid; outcomeCid; ecdsaCid
+  let badParams = sampleWithdrawalEvmParams with functionSignature = "approve(address,uint256)"
+  submitMustFail (actAs requester <> readAs operator <> readAs sigNetwork) do
+    exerciseCmd vaultCid RequestWithdrawal with
+      requester; signerCid; evmTxParams = badParams
+      recipientAddress = sampleRecipientAddress; balanceCid = holdingCid
+      nonceCidText = "holding-nonce"
+      keyVersion = 1; algo = "ECDSA"; dest = "ethereum"; params = ""
+      outputDeserializationSchema = erc20BoolSchema
+      respondSerializationSchema = erc20BoolSchema
 
 ------------------------------------------------------------------------
--- ClaimEvmDeposit rejects bool(false) return value
+-- RequestWithdrawal rejects holding with mismatched operators
 ------------------------------------------------------------------------
 
-testClaimRejectsBoolFalse : Script ()
-testClaimRejectsBoolFalse = do
-  issuer    <- allocateParty "Issuer"
-  depositor <- allocateParty "Depositor"
-  mpc       <- allocateParty "Mpc"
+-- RequestWithdrawal rejects holding whose operators differ from Vault operators
+testWithdrawalRejectsHoldingOperatorsMismatch : Script ()
+testWithdrawalRejectsHoldingOperatorsMismatch = do
+  (sigNetwork, operator, requester, signerCid, vaultCid) <- setup
+  rogue <- allocateParty "Rogue"
 
-  orchCid <- submit issuer do
-    createCmd VaultOrchestrator with
-      issuer; mpc; mpcPublicKey = claimTestPubKey; vaultAddress = sampleVaultAddress; vaultId = "test-vault"
+  holdingCid <- submit rogue do
+    createCmd Erc20Holding with
+      operators = [rogue]; owner = requester; sigNetwork = sigNetwork
+      erc20Address = sampleErc20Address; amount = sampleHoldingAmount
 
-  dummyAuthCid <- submit issuer do
-    createCmd DepositAuthorization with
-      issuer; mpc; owner = depositor; remainingUses = 0
+  submitMustFail (actAs requester <> readAs operator <> readAs sigNetwork <> readAs rogue) do
+    exerciseCmd vaultCid RequestWithdrawal with
+      requester; signerCid; evmTxParams = sampleWithdrawalEvmParams
+      recipientAddress = sampleRecipientAddress; balanceCid = holdingCid
+      nonceCidText = "holding-nonce"
+      keyVersion = 1; algo = "ECDSA"; dest = "ethereum"; params = ""
+      outputDeserializationSchema = erc20BoolSchema
+      respondSerializationSchema = erc20BoolSchema
 
-  pendingCid <- submit issuer do
-    createCmd PendingEvmTx with
-      issuer; requester = depositor; mpc
-      requestId = claimTestRequestId; path = "test"; evmParams = sampleEvmParams; vaultId = "test-vault"
-      nonceCidText = ""; source = DepositSource dummyAuthCid; keyVersion = 1; algo = "ECDSA"; dest = "ethereum"
-      outputDeserializationSchema = erc20BoolSchema; respondSerializationSchema = erc20BoolSchema
+------------------------------------------------------------------------
+-- CompleteWithdrawal rejects requestId mismatch
+------------------------------------------------------------------------
 
-  ecdsaCid <- submit issuer do
-    createCmd EcdsaSignature with
-      issuer; requester = depositor
-      requestId = claimTestRequestId; r = "00"; s = "00"; v = 0
+-- CompleteWithdrawal rejects when outcome.requestId differs from pending.requestId
+testCompleteWithdrawalRejectsRequestIdMismatch : Script ()
+testCompleteWithdrawalRejectsRequestIdMismatch = do
+  (sigNetwork, operator, requester, _signerCid, vaultCid) <- setupWithKey claimTestPubKey
 
-  outcomeCid <- submit issuer do
-    createCmd EvmTxOutcomeSignature with
-      issuer; requester = depositor; requestId = claimTestRequestId
-      signature = boolFalseTestSignature; mpcOutput = boolFalseMpcOutput
+  pendingCid <- submit operator do
+    createCmd PendingWithdrawal with
+      operators = [operator]; requester; sigNetwork
+      requestId = "aa"; evmTxParams = sampleWithdrawalEvmParams
+      erc20Address = sampleErc20Address; amount = sampleHoldingAmount
 
-  submitMustFail (actAs depositor <> readAs issuer) do
-    exerciseCmd orchCid ClaimEvmDeposit with
-      requester = depositor; pendingCid; outcomeCid; ecdsaCid
+  respondBidirectionalEventCid <- submit sigNetwork do
+    createCmd RespondBidirectionalEvent with
+      sigNetwork; operators = [operator]; requester
+      requestId = "bb"
+      responder = sigNetwork; serializedOutput = boolTrueMpcOutput
+      signature = claimTestSignature
+
+  signatureRespondedEventCid <- submit sigNetwork do
+    createCmd SignatureRespondedEvent with
+      sigNetwork; operators = [operator]; requester
+      requestId = "bb"
+      responder = sigNetwork; signature = claimTestSignature
+
+  submitMustFail (actAs requester <> readAs operator <> readAs sigNetwork) do
+    exerciseCmd vaultCid CompleteWithdrawal with
+      requester; pendingWithdrawalCid = pendingCid; respondBidirectionalEventCid; signatureRespondedEventCid
+
+  pure ()
+
+------------------------------------------------------------------------
+-- CompleteWithdrawal with bool(false) MPC output returns refund
+------------------------------------------------------------------------
+
+-- CompleteWithdrawal with bool(false) MPC output returns Some (refund holding with correct fields)
+testCompleteWithdrawalBoolFalseRefunds : Script ()
+testCompleteWithdrawalBoolFalseRefunds = do
+  (sigNetwork, operator, requester, _signerCid, vaultCid) <- setupWithKey claimTestPubKey
+
+  pendingCid <- submit operator do
+    createCmd PendingWithdrawal with
+      operators = [operator]; requester; sigNetwork
+      requestId = claimTestRequestId; evmTxParams = sampleWithdrawalEvmParams
+      erc20Address = sampleErc20Address; amount = sampleHoldingAmount
+
+  respondBidirectionalEventCid <- submit sigNetwork do
+    createCmd RespondBidirectionalEvent with
+      sigNetwork; operators = [operator]; requester
+      requestId = claimTestRequestId
+      responder = sigNetwork; serializedOutput = boolFalseMpcOutput
+      signature = boolFalseTestSignature
+
+  signatureRespondedEventCid <- submit sigNetwork do
+    createCmd SignatureRespondedEvent with
+      sigNetwork; operators = [operator]; requester
+      requestId = claimTestRequestId
+      responder = sigNetwork; signature = boolFalseTestSignature
+
+  result <- submit (actAs requester <> readAs operator <> readAs sigNetwork) do
+    exerciseCmd vaultCid CompleteWithdrawal with
+      requester; pendingWithdrawalCid = pendingCid; respondBidirectionalEventCid; signatureRespondedEventCid
+
+  assertMsg "bool(false) must return Some (refund)" (isSome result)
+  let refundCid = fromSome result
+  refund <- queryContractId requester refundCid
+  let h = fromSome refund
+  assertMsg "refund owner" (h.owner == requester)
+  assertMsg "refund operators" (h.operators == [operator])
+  assertMsg "refund erc20Address" (h.erc20Address == sampleErc20Address)
+  assertMsg "refund amount" (h.amount == sampleHoldingAmount)

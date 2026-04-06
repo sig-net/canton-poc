@@ -427,8 +427,17 @@ export class CantonClient {
       params: { query: { stream_idle_timeout_ms: idleTimeoutMs } },
       body: {
         beginExclusive,
-        verbose: true,
-        filter: { filtersByParty },
+        // Use updateFormat (Canton 3.4+) — legacy filter/verbose removed in 3.5
+        verbose: true, // required by TS types for backwards compat, ignored when updateFormat is set
+        updateFormat: {
+          includeTransactions: {
+            transactionShape: "TRANSACTION_SHAPE_ACS_DELTA",
+            eventFormat: {
+              filtersByParty,
+              verbose: true,
+            },
+          },
+        },
       },
     });
     if (error) throw new Error(`getUpdates failed: ${JSON.stringify(error)}`);

@@ -73,7 +73,7 @@ These don't need the sandbox:
 
 ```bash
 dpm build --all
-for pkg in daml-abi daml-uint256 daml-evm-types daml-eip712 daml-vault; do
+for pkg in daml-abi daml-uint256 daml-evm-types daml-eip712 daml-signer daml-vault; do
   (cd daml-packages/$pkg && dpm test)
 done
 ```
@@ -123,6 +123,8 @@ pnpm test          # runs all tests including Sepolia e2e when env is set
 
 ## Design
 
+- [Auth design](proposals/canton-mpc-auth-design.md) — JWT-based auth for MPC nodes connecting to Canton (`jwt-es-256-crt` / `jwt-jwks`)
+- [CN Quickstart setup](../cn-quickstart/SETUP.md) — full local Canton Network environment (multi-participant, Keycloak, Splice)
 - [Deposit flow](proposals/E2E_DEPOSIT_PLAN_COMPACT.md) — end-to-end deposit lifecycle: auth cards, MPC signing, Sepolia submission, and Canton claim
 - [Withdrawal flow](proposals/E2E_WITHDRAWAL_PLAN_COMPACT.md) — end-to-end withdrawal lifecycle: holding burn, MPC signing, Sepolia submission, and refund-on-failure
 

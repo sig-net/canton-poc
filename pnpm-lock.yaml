@@ -81,8 +81,8 @@ importers:
         specifier: ^17.3.1
         version: 17.3.1
       signet.js:
-        specifier: 0.4.0
-        version: 0.4.0(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@4.3.6)
+        specifier: 0.4.1
+        version: 0.4.1(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@4.3.6)
       viem:
         specifier: ^2.46.3
         version: 2.47.6(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@4.3.6)
@@ -118,12 +118,15 @@ importers:
         specifier: ^0.17.0
         version: 0.17.0
       signet.js:
-        specifier: 0.4.0
-        version: 0.4.0(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@4.3.6)
+        specifier: 0.4.1
+        version: 0.4.1(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@4.3.6)
       ws:
         specifier: ^8.19.0
         version: 8.20.0(bufferutil@4.1.0)(utf-8-validate@6.0.6)
     devDependencies:
+      '@daml.js/daml-signer-0.0.1':
+        specifier: file:./generated/model/daml-signer-0.0.1
+        version: file:ts-packages/canton-sig/generated/model/daml-signer-0.0.1
       '@daml.js/daml-vault-0.0.1':
         specifier: file:./generated/model/daml-vault-0.0.1
         version: file:ts-packages/canton-sig/generated/model/daml-vault-0.0.1
@@ -236,6 +239,12 @@ packages:
 
   '@daml.js/daml-evm-types-0.0.1@file:ts-packages/canton-sig/generated/model/daml-evm-types-0.0.1':
     resolution: {directory: ts-packages/canton-sig/generated/model/daml-evm-types-0.0.1, type: directory}
+
+  '@daml.js/daml-prim-DA-Types-1.0.0@file:ts-packages/canton-sig/generated/model/daml-prim-DA-Types-1.0.0':
+    resolution: {directory: ts-packages/canton-sig/generated/model/daml-prim-DA-Types-1.0.0, type: directory}
+
+  '@daml.js/daml-signer-0.0.1@file:ts-packages/canton-sig/generated/model/daml-signer-0.0.1':
+    resolution: {directory: ts-packages/canton-sig/generated/model/daml-signer-0.0.1, type: directory}
 
   '@daml.js/daml-vault-0.0.1@file:ts-packages/canton-sig/generated/model/daml-vault-0.0.1':
     resolution: {directory: ts-packages/canton-sig/generated/model/daml-vault-0.0.1, type: directory}
@@ -1823,8 +1832,8 @@ packages:
   siginfo@2.0.0:
     resolution: {integrity: sha512-ybx0WO1/8bSBLEWXZvEd7gMW3Sn3JFlW3TvX1nREbDLRNQNaeNN8WK0meBwPdAaOI7TtRRRJn/Es1zhrrCHu7g==}
 
-  signet.js@0.4.0:
-    resolution: {integrity: sha512-lq1ea6tIme5nhj2z2uAUHDQ3NdpO+u66/JSffgEhYUcwIQGRyYWpaHTef5KZTS7lAStCZn8ck6qVu3vnl+ZNIA==}
+  signet.js@0.4.1:
+    resolution: {integrity: sha512-ghOVNGwFeW7TcW/fVmSkqacAJjL6kYVa9X9EVdFnL68Xe6dpmGaOzHekNB+8WiGYSt4kTKd1Gg42I/kfhd702Q==}
 
   smol-toml@1.6.1:
     resolution: {integrity: sha512-dWUG8F5sIIARXih1DTaQAX4SsiTXhInKf1buxdY9DIg4ZYPZK5nGM1VRIYmEbDbsHt7USo99xSLFu5Q1IqTmsg==}
@@ -2340,9 +2349,21 @@ snapshots:
     dependencies:
       '@mojotech/json-type-validation': 3.1.0
 
+  '@daml.js/daml-prim-DA-Types-1.0.0@file:ts-packages/canton-sig/generated/model/daml-prim-DA-Types-1.0.0':
+    dependencies:
+      '@mojotech/json-type-validation': 3.1.0
+
+  '@daml.js/daml-signer-0.0.1@file:ts-packages/canton-sig/generated/model/daml-signer-0.0.1':
+    dependencies:
+      '@daml.js/daml-evm-types-0.0.1': file:ts-packages/canton-sig/generated/model/daml-evm-types-0.0.1
+      '@daml.js/ghc-stdlib-DA-Internal-Template-1.0.0': file:ts-packages/canton-sig/generated/model/ghc-stdlib-DA-Internal-Template-1.0.0
+      '@mojotech/json-type-validation': 3.1.0
+
   '@daml.js/daml-vault-0.0.1@file:ts-packages/canton-sig/generated/model/daml-vault-0.0.1':
     dependencies:
       '@daml.js/daml-evm-types-0.0.1': file:ts-packages/canton-sig/generated/model/daml-evm-types-0.0.1
+      '@daml.js/daml-prim-DA-Types-1.0.0': file:ts-packages/canton-sig/generated/model/daml-prim-DA-Types-1.0.0
+      '@daml.js/daml-signer-0.0.1': file:ts-packages/canton-sig/generated/model/daml-signer-0.0.1
       '@daml.js/ghc-stdlib-DA-Internal-Template-1.0.0': file:ts-packages/canton-sig/generated/model/ghc-stdlib-DA-Internal-Template-1.0.0
       '@mojotech/json-type-validation': 3.1.0
 
@@ -3785,7 +3806,7 @@ snapshots:
 
   siginfo@2.0.0: {}
 
-  signet.js@0.4.0(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@4.3.6):
+  signet.js@0.4.1(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@4.3.6):
     dependencies:
       '@coral-xyz/anchor': 0.32.1(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)
       '@cosmjs/amino': 0.38.1

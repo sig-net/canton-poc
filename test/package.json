@@ -10,7 +10,7 @@
     "daml:test": "cd .. && dpm test",
     "daml:sandbox": "cd .. && dpm sandbox --json-api-port 7575 --dar daml-packages/daml-vault/.daml/dist/daml-vault-0.0.1.dar",
     "codegen:api": "curl -sf http://localhost:7575/docs/openapi -o openapi.yaml && pnpm exec openapi-typescript openapi.yaml -o ../ts-packages/canton-sig/generated/api/ledger-api.ts",
-    "codegen:daml": "cd .. && dpm codegen-js daml-packages/daml-vault/.daml/dist/daml-vault-0.0.1.dar -o ts-packages/canton-sig/generated/model -s daml.js",
+    "codegen:daml": "cd .. && dpm codegen-js daml-packages/daml-signer/.daml/dist/daml-signer-0.0.1.dar -o ts-packages/canton-sig/generated/model -s daml.js && dpm codegen-js daml-packages/daml-vault/.daml/dist/daml-vault-0.0.1.dar -o ts-packages/canton-sig/generated/model -s daml.js",
     "codegen": "pnpm run codegen:daml && pnpm run codegen:api",
     "clean": "rm -rf ../ts-packages/canton-sig/generated ../daml-packages/*/.daml",
     "generate": "pnpm run clean && pnpm run daml:build && pnpm run codegen && pnpm install"
@@ -25,7 +25,7 @@
     "@noble/curves": "^2.0.1",
     "canton-sig": "workspace:*",
     "dotenv": "^17.3.1",
-    "signet.js": "0.4.0",
+    "signet.js": "0.4.1",
     "viem": "^2.46.3",
     "zod": "^4.3.6"
   }

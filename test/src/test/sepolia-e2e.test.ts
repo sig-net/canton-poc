@@ -29,11 +29,11 @@ describeIf("sepolia e2e deposit lifecycle", () => {
       "0000000000000000000000000000000000000000000000000000000000000001",
     );
     expect(result.holdingArgs.owner).toBe(setup.requester);
-    expect(result.holdingArgs.issuer).toBe(setup.issuer);
+    expect(result.holdingArgs.operators).toEqual([setup.operator]);
     expect(result.holdingArgs.amount).toBe(result.amountPadded);
 
     const activeHoldings = await setup.canton.getActiveContracts(
-      [setup.issuer, setup.requester],
+      [setup.operator, setup.requester],
       ERC20_HOLDING,
     );
     expect(

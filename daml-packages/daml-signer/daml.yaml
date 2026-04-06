@@ -1,5 +1,5 @@
 sdk-version: 3.4.11
-name: daml-vault
+name: daml-signer
 version: 0.0.1
 source: daml
 dependencies:
@@ -7,9 +7,6 @@ dependencies:
   - daml-stdlib
   - daml-script
 data-dependencies:
-  - ../daml-abi/.daml/dist/daml-abi-0.0.1.dar
-  - ../daml-eip712/.daml/dist/daml-eip712-0.0.1.dar
   - ../daml-evm-types/.daml/dist/daml-evm-types-0.0.1.dar
-  - ../daml-signer/.daml/dist/daml-signer-0.0.1.dar
 build-options:
   - -Wno-crypto-text-is-alpha
