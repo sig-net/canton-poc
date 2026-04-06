@@ -866,8 +866,9 @@ The KDF uses `canton:global` as the source chain CAIP-2 ID (not
 ```
 
 The KDF always uses the SOURCE chain (where the request originates), not
-the destination chain. Canton requests use `canton:global`. This must
-match `Chain::Canton.caip2_chain_id()` in the Rust MPC node.
+the destination chain. Canton requests use `canton:global`. This is
+exported as `constants.KDF_CHAIN_IDS.CANTON` from `signet.js@0.4.1` and
+must match `Chain::Canton.caip2_chain_id()` in the Rust MPC node.
 
 ### Signature Format
 
@@ -919,6 +920,7 @@ requestId = eip712Hash(keccak256(
 ```
 
 Where:
+
 - `sender` = `predecessorId` = `vaultId <> computeOperatorsHash(map partyToText operators)`
 - `computeOperatorsHash` = `keccak256(concat(sort(map (keccak256 . toHex) operatorTexts)))`
 - `path` = pre-computed by the Vault: `partyToText requester <> "," <> userPath`
@@ -1041,7 +1043,7 @@ for (const op of claimedOperators) {
   if (!onLedgerSignatories.has(op)) {
     throw new Error(
       `Operator ${op} is in contract payload but not in ` +
-      `CreatedEvent.signatories — possible forgery`
+        `CreatedEvent.signatories — possible forgery`,
     );
   }
 }

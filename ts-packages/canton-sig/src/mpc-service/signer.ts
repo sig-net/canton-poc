@@ -3,15 +3,10 @@ import { DER } from "@noble/curves/abstract/weierstrass.js";
 import { keccak256, toBytes, toHex, numberToHex, hexToBigInt, type Hex } from "viem";
 import { computeResponseHash } from "../mpc/crypto.js";
 
-const EPSILON_DERIVATION_PREFIX = "sig.network v2.0.0 epsilon derivation";
+import { constants } from "signet.js";
 
-/**
- * Canton source chain ID for KDF derivation.
- * The KDF always uses the SOURCE chain (where the request originates),
- * not the destination chain. Canton requests use "canton:global".
- * This must match Chain::Canton.caip2_chain_id() in the Rust MPC node.
- */
-const KDF_CHAIN_ID = "canton:global";
+const EPSILON_DERIVATION_PREFIX = "sig.network v2.0.0 epsilon derivation";
+const KDF_CHAIN_ID = constants.KDF_CHAIN_IDS.CANTON;
 
 /** secp256k1 curve order (n). */
 const CURVE_ORDER = secp256k1.Point.Fn.ORDER;

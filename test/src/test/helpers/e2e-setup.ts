@@ -30,13 +30,11 @@ import {
   fundFromFaucet,
 } from "./sepolia-helpers.js";
 
-export const SIGNER_TEMPLATE = Signer.templateId;
+const SIGNER_TEMPLATE = Signer.templateId;
 export const VAULT_TEMPLATE = Vault.templateId;
 export const SIGNATURE_RESPONDED = SignatureRespondedEvent.templateId;
 export const RESPOND_BIDIRECTIONAL = RespondBidirectionalEvent.templateId;
 export const ERC20_HOLDING = Erc20Holding.templateId;
-export const PENDING_DEPOSIT = PendingDeposit.templateId;
-export const PENDING_WITHDRAWAL = PendingWithdrawal.templateId;
 
 /**
  * Compute the operators hash matching Daml's computeOperatorsHash.
@@ -56,13 +54,7 @@ export const KEY_VERSION = 1;
 export const ALGO = "ECDSA";
 export const DEST = "ethereum";
 
-export type {
-  PendingDeposit,
-  PendingWithdrawal,
-  SignatureRespondedEvent,
-  RespondBidirectionalEvent,
-  Erc20Holding,
-};
+export type { PendingWithdrawal, SignatureRespondedEvent, RespondBidirectionalEvent, Erc20Holding };
 
 export function tryLoadEnv() {
   try {
@@ -123,11 +115,7 @@ export async function setupVault(
   const operatorsHash = computeOperatorsHash([operator]);
   const predecessorId = `${env.VAULT_ID}${operatorsHash}`;
 
-  const vaultAddress = deriveDepositAddress(
-    env.MPC_ROOT_PUBLIC_KEY,
-    predecessorId,
-    "root",
-  );
+  const vaultAddress = deriveDepositAddress(env.MPC_ROOT_PUBLIC_KEY, predecessorId, "root");
   const vaultAddressPadded = vaultAddress.slice(2).padStart(64, "0");
 
   // Create Signer contract (signatory: sigNetwork)
@@ -153,11 +141,7 @@ export async function setupVault(
   });
   const vaultEvent = findCreated(vaultResult.transaction.events, "Vault");
   const vaultCid = vaultEvent.contractId;
-  const vaultDisclosure = await canton.getDisclosedContract(
-    [operator],
-    VAULT_TEMPLATE,
-    vaultCid,
-  );
+  const vaultDisclosure = await canton.getDisclosedContract([operator], VAULT_TEMPLATE, vaultCid);
 
   const mpcServer = new MpcServer({
     canton,
@@ -370,7 +354,8 @@ export async function executeDepositFlow(
     "RespondBidirectionalEvent (deposit)",
   );
   const respondBidirectionalEventCid = respondBidirectionalEvent.contractId;
-  const respondBidirectionalArgs = respondBidirectionalEvent.createArgument as RespondBidirectionalEvent;
+  const respondBidirectionalArgs =
+    respondBidirectionalEvent.createArgument as RespondBidirectionalEvent;
   console.log(`${logPrefix} RespondBidirectionalEvent observed`);
 
   // ── Claim deposit ──

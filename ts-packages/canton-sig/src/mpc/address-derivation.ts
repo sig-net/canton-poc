@@ -1,15 +1,9 @@
 import { type Hex } from "viem";
 import { publicKeyToAddress } from "viem/accounts";
-import { utils } from "signet.js";
+import { utils, constants } from "signet.js";
 
 const { deriveChildPublicKey } = utils.cryptography;
-
-/**
- * Canton source chain ID for KDF derivation.
- * The KDF always uses the SOURCE chain (where the request originates).
- * Must match Chain::Canton.caip2_chain_id() in the Rust MPC node.
- */
-const KDF_CHAIN_ID = "canton:global";
+const KDF_CHAIN_ID = constants.KDF_CHAIN_IDS.CANTON;
 
 export const KEY_VERSION = 1;
 
