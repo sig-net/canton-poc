@@ -113,11 +113,22 @@ export function createLedgerStream(opts: LedgerStreamOptions): StreamHandle {
       hasConnectedOnce = true;
       reconnectAttempt = 0;
 
+      // Use updateFormat (Canton 3.4+) instead of deprecated filter/verbose
+      // (removed from gRPC proto, will be removed from JSON API in 3.5).
+      // ACS_DELTA shows non-transient ArchivedEvents — required for nonce
+      // verification (sigNetwork must be observer on Authorization/Erc20Holding).
       ws!.send(
         JSON.stringify({
           beginExclusive: currentOffset,
-          verbose: true,
-          filter: { filtersByParty: buildFilter() },
+          updateFormat: {
+            includeTransactions: {
+              transactionShape: "TRANSACTION_SHAPE_ACS_DELTA",
+              eventFormat: {
+                filtersByParty: buildFilter(),
+                verbose: true,
+              },
+            },
+          },
         }),
       );
 

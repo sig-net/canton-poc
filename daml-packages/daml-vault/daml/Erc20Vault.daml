@@ -23,20 +23,24 @@ import Signer (Signer, SignRequest(..), SignBidirectionalEvent,
 
 template AuthorizationRequest
   with
-    operators : [Party]
-    owner     : Party
+    operators  : [Party]
+    owner      : Party
+    sigNetwork : Party   -- observer: MPC needs visibility for nonce verification
   where
     signatory operators
-    observer owner
+    observer owner, sigNetwork
 
 template Authorization
   with
     operators     : [Party]
     owner         : Party
+    sigNetwork    : Party  -- observer: MPC verifies this contract's archive as nonce in
+                           -- the signing request (nonceCidText must match an archived
+                           -- Authorization or Erc20Holding in the same transaction)
     remainingUses : Int
   where
     signatory operators
-    observer owner
+    observer owner, sigNetwork
     ensure not (null operators) && remainingUses > 0
 
 -- ---------------------------------------------------------------------------
@@ -47,11 +51,13 @@ template Erc20Holding
   with
     operators    : [Party]
     owner        : Party
+    sigNetwork   : Party  -- observer: MPC verifies this contract's archive as nonce
+                          -- for withdrawal signing requests
     erc20Address : BytesHex
     amount       : BytesHex
   where
     signatory operators
-    observer owner
+    observer owner, sigNetwork
 
 -- ---------------------------------------------------------------------------
 -- Pending anchors (single-use via archive)
@@ -146,7 +152,7 @@ template Vault
       controller requester
       do
         create AuthorizationRequest with
-          operators
+          operators; sigNetwork
           owner = requester
 
     nonconsuming choice ApproveAuthorization : ContractId Authorization
@@ -161,7 +167,7 @@ template Vault
         assertMsg "Operators mismatch" (sort request.operators == sort operators)
         archive requestCid
         create Authorization with
-          operators
+          operators; sigNetwork
           owner = request.owner
           remainingUses
 
@@ -255,7 +261,7 @@ template Vault
 
         let amount = (pending.evmTxParams).args !! 1
         create Erc20Holding with
-          operators
+          operators; sigNetwork
           owner = requester
           erc20Address = (pending.evmTxParams).to
           amount
@@ -356,7 +362,7 @@ template Vault
           then pure None
           else do
             refundCid <- create Erc20Holding with
-              operators
+              operators; sigNetwork
               owner = requester
               erc20Address = pending.erc20Address
               amount = pending.amount

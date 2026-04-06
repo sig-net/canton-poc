@@ -221,8 +221,13 @@ describe("ledger visibility + permission model", () => {
       "AuthorizationRequest",
     ).contractId;
 
-    // AuthorizationRequest: signatory=operators, observer=owner(requester)
-    await assertVisibility(AUTH_REQUEST_TEMPLATE, requestCid, [operator, requester], [sigNetwork]);
+    // AuthorizationRequest: signatory=operators, observer=owner(requester)+sigNetwork
+    await assertVisibility(
+      AUTH_REQUEST_TEMPLATE,
+      requestCid,
+      [operator, requester, sigNetwork],
+      [],
+    );
 
     // -- Step 2: ApproveAuthorization (controller=approver, must be operator)
     const approveResult = await canton.exerciseChoice(
@@ -235,8 +240,8 @@ describe("ledger visibility + permission model", () => {
     );
     const authCid = findCreated(approveResult.transaction.events, "Authorization").contractId;
 
-    // Authorization: signatory=operators, observer=owner
-    await assertVisibility(AUTH_TEMPLATE, authCid, [operator, requester], [sigNetwork]);
+    // Authorization: signatory=operators, observer=owner+sigNetwork
+    await assertVisibility(AUTH_TEMPLATE, authCid, [operator, requester, sigNetwork], []);
 
     // -- Step 3: RequestDeposit (controller=requester)
     const evmTxParams = buildSampleEvmParams(vaultAddress);
@@ -392,8 +397,13 @@ describe("ledger visibility + permission model", () => {
     expect(holdingArgs.owner).toBe(requester);
     expect(holdingArgs.operators).toEqual([operator]);
 
-    // Erc20Holding: signatory=operators, observer=owner(requester)
-    await assertVisibility(ERC20_HOLDING, holding.contractId, [operator, requester], [sigNetwork]);
+    // Erc20Holding: signatory=operators, observer=owner(requester)+sigNetwork
+    await assertVisibility(
+      ERC20_HOLDING,
+      holding.contractId,
+      [operator, requester, sigNetwork],
+      [],
+    );
 
     // Evidence contracts must be archived after claim
     const remainingPending = await canton.getActiveContracts([operator], PENDING_DEPOSIT_TEMPLATE);

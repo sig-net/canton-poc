@@ -19,7 +19,6 @@ import {
   VAULT_TEMPLATE,
   SIGNATURE_RESPONDED,
   RESPOND_BIDIRECTIONAL,
-  ERC20_HOLDING,
   SEPOLIA_CHAIN_ID,
   GAS_LIMIT,
   KEY_VERSION,
@@ -186,7 +185,7 @@ describeIf("sepolia e2e withdrawal lifecycle", () => {
     console.log("[wdl-e2e] RespondBidirectionalEvent observed");
 
     // ── User completes withdrawal on Canton ──
-    await setup.canton.exerciseChoice(
+    const completeResult = await setup.canton.exerciseChoice(
       setup.userId,
       [setup.requester],
       VAULT_TEMPLATE,
@@ -203,15 +202,14 @@ describeIf("sepolia e2e withdrawal lifecycle", () => {
     );
 
     // CompleteWithdrawal succeeded (no throw).
-    // On success (serializedOutput==ABI-encoded true): returns None — no refund Erc20Holding created.
-    const holdings = await setup.canton.getActiveContracts(
-      [setup.operator, setup.requester],
-      ERC20_HOLDING,
+    // On success (serializedOutput==ABI-encoded true): returns None — no NEW Erc20Holding created.
+    // Check that the CompleteWithdrawal transaction itself did not produce a holding
+    // (other holdings from unrelated deposits may still be active on the ledger).
+    const completeEvents = completeResult.transaction.events ?? [];
+    const refundHolding = completeEvents.find(
+      (e) => "CreatedEvent" in e && e.CreatedEvent.templateId.includes("Erc20Holding"),
     );
-    const refund = holdings.find(
-      (c) => (c.createArgument as Erc20Holding).owner === setup.requester,
-    );
-    expect(refund).toBeUndefined();
+    expect(refundHolding).toBeUndefined();
 
     // Verify recipient balance increased on Sepolia
     const balanceAfter = await checkErc20Balance(

@@ -233,12 +233,12 @@ testClaimRequesterMismatchFails = do
 -- Authorization with remainingUses=0 is rejected by ensure clause
 testAuthCardNoRemainingUsesFails : Script ()
 testAuthCardNoRemainingUsesFails = do
-  (_sigNetwork, operator, requester, _signerCid, _vaultCid) <- setup
+  (sigNetwork, operator, requester, _signerCid, _vaultCid) <- setup
 
   -- Authorization has ensure remainingUses > 0, so createCmd with 0 must fail
   submitMustFail operator do
     createCmd Authorization with
-      operators = [operator]; owner = requester; remainingUses = 0
+      operators = [operator]; owner = requester; sigNetwork = sigNetwork; remainingUses = 0
 
   pure ()
 
@@ -378,7 +378,7 @@ testAuthCardWrongIssuer = do
   -- Auth issued by rogue (not an operator)
   authCid <- submit rogue do
     createCmd Authorization with
-      operators = [rogue]; owner = requester; remainingUses = 1
+      operators = [rogue]; owner = requester; sigNetwork = sigNetwork; remainingUses = 1
 
   submitMustFail (actAs requester <> readAs operator <> readAs sigNetwork) do
     exerciseCmd vaultCid RequestDeposit with
@@ -397,7 +397,7 @@ testAuthCardWrongOwner = do
   -- Auth is for otherUser, not requester
   authCid <- submit operator do
     createCmd Authorization with
-      operators = [operator]; owner = otherUser; remainingUses = 1
+      operators = [operator]; owner = otherUser; sigNetwork = sigNetwork; remainingUses = 1
 
   submitMustFail (actAs requester <> readAs operator <> readAs sigNetwork) do
     exerciseCmd vaultCid RequestDeposit with
@@ -451,7 +451,7 @@ testWithdrawalLifecycle = do
 
   holdingCid <- submit operator do
     createCmd Erc20Holding with
-      operators = [operator]; owner = requester
+      operators = [operator]; owner = requester; sigNetwork = sigNetwork
       erc20Address = sampleErc20Address; amount = sampleHoldingAmount
 
   (signEventCid, pendingCid) <- submit (actAs requester <> readAs operator <> readAs sigNetwork) do
@@ -560,7 +560,7 @@ testWithdrawalRejectsWrongOwner = do
 
   holdingCid <- submit operator do
     createCmd Erc20Holding with
-      operators = [operator]; owner = requester
+      operators = [operator]; owner = requester; sigNetwork = sigNetwork
       erc20Address = sampleErc20Address; amount = sampleHoldingAmount
 
   submitMustFail (actAs userB <> readAs operator <> readAs sigNetwork) do
@@ -579,7 +579,7 @@ testWithdrawalRejectsWrongErc20 = do
 
   holdingCid <- submit operator do
     createCmd Erc20Holding with
-      operators = [operator]; owner = requester
+      operators = [operator]; owner = requester; sigNetwork = sigNetwork
       erc20Address = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
       amount = sampleHoldingAmount
 
@@ -599,7 +599,7 @@ testWithdrawalRejectsAmountMismatch = do
 
   holdingCid <- submit operator do
     createCmd Erc20Holding with
-      operators = [operator]; owner = requester
+      operators = [operator]; owner = requester; sigNetwork = sigNetwork
       erc20Address = sampleErc20Address
       amount = "0000000000000000000000000000000000000000000000000000000000000001"
 
@@ -619,7 +619,7 @@ testWithdrawalRejectsWrongRecipient = do
 
   holdingCid <- submit operator do
     createCmd Erc20Holding with
-      operators = [operator]; owner = requester
+      operators = [operator]; owner = requester; sigNetwork = sigNetwork
       erc20Address = sampleErc20Address; amount = sampleHoldingAmount
 
   submitMustFail (actAs requester <> readAs operator <> readAs sigNetwork) do
@@ -746,7 +746,7 @@ testWithdrawalRejectsWrongFunctionSignature = do
 
   holdingCid <- submit operator do
     createCmd Erc20Holding with
-      operators = [operator]; owner = requester
+      operators = [operator]; owner = requester; sigNetwork = sigNetwork
       erc20Address = sampleErc20Address; amount = sampleHoldingAmount
 
   let badParams = sampleWithdrawalEvmParams with functionSignature = "approve(address,uint256)"
@@ -771,7 +771,7 @@ testWithdrawalRejectsHoldingOperatorsMismatch = do
 
   holdingCid <- submit rogue do
     createCmd Erc20Holding with
-      operators = [rogue]; owner = requester
+      operators = [rogue]; owner = requester; sigNetwork = sigNetwork
       erc20Address = sampleErc20Address; amount = sampleHoldingAmount
 
   submitMustFail (actAs requester <> readAs operator <> readAs sigNetwork <> readAs rogue) do

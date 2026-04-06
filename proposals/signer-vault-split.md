@@ -88,8 +88,13 @@ stripping operators from the signed payload to weaken the multi-sig.
 | `requester`  | End user (depositor/holder)        | —      |
 
 `sigNetwork` is both the MPC party identity AND the Signer operator.
-No separate `mpc` party. A vault can have one or more operator parties
-(e.g., `[dex1, dex2, dex3]`). All operators must agree at Vault
+No separate `mpc` party. `sigNetwork` is also an observer on
+`Authorization`, `AuthorizationRequest`, and `Erc20Holding` — this
+gives the MPC visibility into the auth card and holding lifecycle,
+which is required for nonce verification (the MPC must see the
+`ArchivedEvent` for the nonce contract in the same transaction as
+the `SignBidirectionalEvent`). A vault can have one or more operator
+parties (e.g., `[dex1, dex2, dex3]`). All operators must agree at Vault
 creation time via `VaultProposal`.
 
 ## Contract Overview
@@ -1077,6 +1082,63 @@ consumed contract and preventing replay.
 - **No other contract type is accepted** as a nonce. The MPC rejects
   `nonceCidText` values that don't correspond to an archived
   `Authorization` or `Erc20Holding`.
+
+#### Option A: Domain contract as nonce (current implementation)
+
+The current approach reuses existing domain contracts (`Authorization`,
+`Erc20Holding`) as nonces. This ties the nonce to a meaningful business
+event (auth approval, holding burn) and avoids creating extra contracts.
+The trade-off is that `sigNetwork` must be added as observer on those
+templates so the MPC can see their archive events for verification, and
+the `ALLOWED_NONCE_TEMPLATES` set must be updated if new nonce-eligible
+templates are added.
+
+#### Option B: Dedicated `SigningNonce` template
+
+An alternative is a purpose-built nonce contract with no business logic:
+
+```daml
+template SigningNonce
+  with
+    operators  : [Party]
+    requester  : Party
+    sigNetwork : Party
+  where
+    signatory operators
+    observer requester, sigNetwork
+```
+
+The Vault's `RequestDeposit`/`RequestWithdrawal` choices would create
+and immediately archive a `SigningNonce` in the same transaction. The
+user passes the `SigningNonce` contract ID as `nonceCidText`. The MPC
+checks that the `ArchivedEvent` is a `SigningNonce` — one template to
+verify, no coupling to domain contracts.
+
+Advantages:
+
+- **Decoupled from domain contracts** — `Authorization` and
+  `Erc20Holding` don't need `sigNetwork` as observer. Their templates
+  stay minimal and upgrade-safe.
+- **Single allowed template** — the MPC checks for exactly one template
+  type (`SigningNonce`), not a growing set. No maintenance when new
+  domain contracts are added.
+- **Non-transient** — unlike `SignRequest` (which is created and consumed
+  in the same transaction), the `SigningNonce` is created in the Vault
+  choice body before the `archive` call, making it non-transient and
+  visible in `ACS_DELTA` mode.
+- **sigNetwork is already an observer** — no changes needed to other
+  templates.
+
+Trade-off: an extra contract creation + archive per signing request
+(minimal cost, no on-chain state left behind since it's archived in
+the same transaction). The `SigningNonce` IS transient (created and
+archived atomically), so it would require `LEDGER_EFFECTS` mode or
+a separate verification endpoint. To avoid this, the Vault could
+create the nonce in a prior step (e.g., during `ApproveAuthorization`)
+so it exists before the signing transaction.
+
+This is a future option if the domain-contract coupling in Option A
+becomes a maintenance burden.
 
 #### Why Daml can't enforce this on-chain
 
