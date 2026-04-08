@@ -218,7 +218,7 @@ testSigningOrderIndependence = do
     Left _ -> abort "Expected Right (Vault), got Left (proposal)"
 
 ------------------------------------------------------------------------
--- Full lifecycle: VaultProposal → Vault → auth → deposit
+-- Full lifecycle: VaultProposal → Vault → nonce → deposit
 -- Proves the Vault created via proposal is fully functional.
 ------------------------------------------------------------------------
 
@@ -254,20 +254,16 @@ testProposalToDepositLifecycle = do
   let v = fromSome vault
   assertMsg "vault operators" (v.operators == [op1, op2])
 
-  -- Step 4: Request + approve authorization
-  requestCid <- submit (actAs requester <> readAs op1 <> readAs op2) do
-    exerciseCmd vaultCid RequestAuthorization with requester
-
-  authCid <- submit op1 do
-    exerciseCmd vaultCid ApproveAuthorization with
-      requestCid; remainingUses = 1; approver = op1
+  -- Step 4: Issue a nonce via the Signer (controller: requester)
+  nonceCid <- submit (actAs requester <> readAs sigNetwork) do
+    exerciseCmd signerCid IssueNonce with requester
 
   -- Step 5: RequestDeposit through the proposal-created vault
-  (signEventCid, pendingCid) <- submit (actAs requester <> readAs op1 <> readAs op2 <> readAs sigNetwork) do
+  (signEventCid, pendingCid, _newNonceCid) <- submit (actAs requester <> readAs op1 <> readAs op2 <> readAs sigNetwork) do
     exerciseCmd vaultCid RequestDeposit with
       requester; signerCid; path = partyToText requester
-      evmTxParams = sampleEvmParams; authCid
-      nonceCidText = "lifecycle-nonce"
+      evmTxParams = sampleEvmParams
+      nonceCid; nonceCidText = "lifecycle-nonce"
       keyVersion = 1; algo = "ECDSA"; dest = "ethereum"; params = ""
       outputDeserializationSchema = erc20BoolSchema
       respondSerializationSchema = erc20BoolSchema
@@ -279,45 +275,3 @@ testProposalToDepositLifecycle = do
 
   signEvent <- queryContractId requester signEventCid
   assertMsg "sign event must exist" (isSome signEvent)
-
-------------------------------------------------------------------------
--- Any vault operator can approve authorization (not just the first one)
-------------------------------------------------------------------------
-
--- op2 (second operator) approves the auth request, proving any operator works
-testAnyOperatorCanApprove : Script ()
-testAnyOperatorCanApprove = do
-  sigNetwork <- allocateParty "SigNetwork"
-  op1        <- allocateParty "Op1"
-  op2        <- allocateParty "Op2"
-  requester  <- allocateParty "Requester"
-
-  -- Create vault with 2 operators via proposal
-  proposalCid <- submit op1 do
-    createCmd VaultProposal with
-      allOperators = [op1, op2]; alreadySigned = [op1]; sigNetwork
-      evmVaultAddress = sampleVaultAddress
-      evmMpcPublicKey = testPubKeyHex
-      vaultId = "any-approver-vault"
-
-  result <- submit op2 do
-    exerciseCmd proposalCid SignVault with signer = op2
-
-  vaultCid <- case result of
-    Right cid -> pure cid
-    Left _    -> abort "Expected Right (Vault)"
-
-  -- Requester requests authorization
-  requestCid <- submit (actAs requester <> readAs op1 <> readAs op2) do
-    exerciseCmd vaultCid RequestAuthorization with requester
-
-  -- op2 (not op1) approves — proves any operator in the list can approve
-  authCid <- submit op2 do
-    exerciseCmd vaultCid ApproveAuthorization with
-      requestCid; remainingUses = 3; approver = op2
-
-  auth <- queryContractId op2 authCid
-  let a = fromSome auth
-  assertMsg "auth operators" (a.operators == [op1, op2])
-  assertMsg "auth owner" (a.owner == requester)
-  assertMsg "auth remainingUses" (a.remainingUses == 3)

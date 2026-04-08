@@ -15,8 +15,8 @@ The current `VaultOrchestrator` conflates two responsibilities:
 
 1. **Signing coordination** — MPC key derivation, request IDs, signature
    lifecycle, outcome verification
-2. **Vault operations** — deposit auth cards, ERC20 holdings, sweep
-   validation, refund logic
+2. **Vault operations** — ERC20 deposits, holdings, sweep validation,
+   refund logic
 
 Problems:
 
@@ -88,12 +88,10 @@ stripping operators from the signed payload to weaken the multi-sig.
 | `requester`  | End user (depositor/holder)        | —      |
 
 `sigNetwork` is both the MPC party identity AND the Signer operator.
-No separate `mpc` party. `sigNetwork` is also an observer on
-`Authorization`, `AuthorizationRequest`, and `Erc20Holding` — this
-gives the MPC visibility into the auth card and holding lifecycle,
-which is required for nonce verification (the MPC must see the
-`ArchivedEvent` for the nonce contract in the same transaction as
-the `SignBidirectionalEvent`). A vault can have one or more operator
+No separate `mpc` party. `sigNetwork` is the sole signatory on
+`SigningNonce` — the MPC sees the nonce archive in the same
+transaction as the `SignBidirectionalEvent` without needing observer
+rights on domain contracts. A vault can have one or more operator
 parties (e.g., `[dex1, dex2, dex3]`). All operators must agree at Vault
 creation time via `VaultProposal`.
 
@@ -107,6 +105,9 @@ Names follow the Solana/Hydration MPC convention. See
 ```
 Signer (singleton)                    ← sigNetwork deploys, shares blob off-chain
   │
+  ├── IssueNonce choice              ← requester self-serves replay-prevention nonces
+  │     controller: requester (flexible)
+  │
   ├── SignBidirectional choice        ← requester exercises (via Vault), consumes SignRequest,
   │     controller: requester (flexible)    creates SignBidirectionalEvent
   │
@@ -116,7 +117,9 @@ Signer (singleton)                    ← sigNetwork deploys, shares blob off-ch
   └── RespondBidirectional choice     ← sigNetwork exercises after chain confirmation,
         controller: sigNetwork           creates RespondBidirectionalEvent
 
+SigningNonce                          ← replay-prevention nonce (signatory: sigNetwork)
 SignRequest (transient)               ← created, then consumed via Signer.SignBidirectional → Execute
+                                         SignBidirectional archives SigningNonce, Execute creates event
 SignBidirectionalEvent                ← what MPC watches (signatory: operators, requester)
 SignatureRespondedEvent               ← ECDSA signature evidence (signatory: sigNetwork)
 RespondBidirectionalEvent             ← outcome signature evidence (signatory: sigNetwork)
@@ -127,16 +130,14 @@ RespondBidirectionalEvent             ← outcome signature evidence (signatory:
 ```
 Vault (singleton)                     ← operators deploy via VaultProposal
   │
-  ├── RequestAuthorization            ← requester requests auth card
-  ├── ApproveAuthorization            ← operator approves, creates Authorization
-  ├── RequestDeposit                  ← requester consumes auth, atomic create + exercise
+  ├── RequestDeposit                  ← requester deposits, atomic create + exercise
   │                                      SignRequest → Signer.SignBidirectional
   │                                      → SignBidirectionalEvent
   ├── ClaimDeposit                    ← requester verifies MPC sig → Erc20Holding
   ├── RequestWithdrawal               ← requester burns holding, same atomic flow
   └── CompleteWithdrawal              ← requester verifies MPC sig → refund or finalize
 
-Authorization, Erc20Holding (domain contracts)
+Erc20Holding (domain contract)
 ```
 
 ## Signer Contracts
@@ -155,17 +156,32 @@ template Signer
   where
     signatory sigNetwork
 
-    nonconsuming choice SignBidirectional : ContractId SignBidirectionalEvent
+    nonconsuming choice IssueNonce : ContractId SigningNonce
+      with
+        requester : Party
+      controller requester
+      do
+        create SigningNonce with sigNetwork; requester
+
+    nonconsuming choice SignBidirectional
+      : (ContractId SignBidirectionalEvent, ContractId SigningNonce)
       with
         signRequestCid : ContractId SignRequest
+        nonceCid       : ContractId SigningNonce  -- consumed and rotated
         requester      : Party          -- flexible controller
       controller requester
       do
-        -- Delegate to SignRequest.Execute to get operators authority.
-        -- This body has sigNetwork + requester, but needs operators + requester
-        -- to create SignBidirectionalEvent. The Execute choice on SignRequest
-        -- provides operators authority (SignRequest signatory).
-        exercise signRequestCid Execute
+        -- Validate nonce was issued by this Signer's sigNetwork for this requester
+        nonce <- fetch nonceCid
+        assertMsg "Nonce sigNetwork mismatch" (nonce.sigNetwork == sigNetwork)
+        assertMsg "Nonce requester mismatch" (nonce.requester == requester)
+        -- Archive old nonce
+        archive nonceCid
+        -- Delegate to SignRequest.Execute to get operators authority
+        eventCid <- exercise signRequestCid Execute
+        -- Issue fresh nonce for the next request (atomic rotation)
+        newNonceCid <- create SigningNonce with sigNetwork; requester
+        pure (eventCid, newNonceCid)
 
     nonconsuming choice Respond : ContractId SignatureRespondedEvent
       with
@@ -193,6 +209,33 @@ template Signer
           responder = sigNetwork; serializedOutput; signature
 ```
 
+### `SigningNonce`
+
+Replay-prevention nonce with atomic rotation. The requester issues the
+first nonce via `Signer.IssueNonce`, and each `SignBidirectional` call
+archives the old nonce and creates a fresh one — so the requester
+always has a nonce ready for the next request without an extra
+transaction. The `Consume_SigningNonce` choice lets the requester
+discard unused nonces.
+
+The nonce is pure infrastructure — no domain semantics. Authorization
+(auth cards, approval flows, etc.) is a Vault-layer concern that
+integrators implement independently.
+
+```daml
+template SigningNonce
+  with
+    sigNetwork : Party
+    requester  : Party
+  where
+    signatory sigNetwork
+    observer requester
+
+    choice Consume_SigningNonce : ()
+      controller requester
+      do pure ()
+```
+
 ### `SignRequest` (transient)
 
 Created in the Vault's `RequestDeposit` choice body, then consumed by
@@ -218,7 +261,7 @@ template SignRequest
     algo                       : Text
     dest                       : Text
     params                     : Text
-    nonceCidText               : Text   -- consumed contract ID (uniqueness nonce)
+    nonceCidText               : Text   -- text representation for requestId hash
     outputDeserializationSchema : Text
     respondSerializationSchema  : Text
   where
@@ -431,9 +474,10 @@ template PendingWithdrawal
 
 ### `RequestDeposit`
 
-Validates the auth card, atomically creates `SignBidirectionalEvent`
-(via Signer) AND `PendingDeposit` (on Vault). The user calls one
-choice — everything chains internally.
+Atomically creates `SignBidirectionalEvent` (via Signer, which archives
+the `SigningNonce`) AND `PendingDeposit` (on Vault). The user calls one
+choice — everything chains internally. Authorization (auth cards, etc.)
+is the integrator's concern and is not enforced at this layer.
 
 ```daml
     nonconsuming choice RequestDeposit
@@ -443,9 +487,8 @@ choice — everything chains internally.
         signerCid    : ContractId Signer   -- disclosed contract
         path         : Text
         evmTxParams  : EvmTransactionParams
-        authCid      : ContractId Authorization
-        nonceCidText : Text    -- user provides contract ID string
-                               -- (show doesn't work on-chain; MPC verifies off-chain)
+        nonceCid     : ContractId SigningNonce  -- Signer-layer nonce
+        nonceCidText : Text    -- text representation (MPC verifies off-chain)
         keyVersion   : Int
         algo       : Text
         dest       : Text
@@ -454,14 +497,6 @@ choice — everything chains internally.
         respondSerializationSchema  : Text
       controller requester
       do
-        auth <- fetch authCid
-        assertMsg "Auth operators mismatch" (sort auth.operators == sort operators)
-        assertMsg "Auth owner mismatch" (auth.owner == requester)
-        assertMsg "No remaining uses" (auth.remainingUses > 0)
-        archive authCid
-        when (auth.remainingUses > 1) do
-          void $ create auth with remainingUses = auth.remainingUses - 1
-
         let recipientArg = case evmTxParams.args of
               recipient :: _ -> recipient
               [] -> ""
@@ -484,9 +519,10 @@ choice — everything chains internally.
           outputDeserializationSchema; respondSerializationSchema
 
         -- Step 2: Exercise Signer.SignBidirectional (needs requester authority)
-        -- Signer internally delegates to SignRequest.Execute
+        -- Signer archives the nonce (sigNetwork authority), then delegates
+        -- to SignRequest.Execute which creates SignBidirectionalEvent
         signEventCid <- exercise signerCid SignBidirectional with
-          signRequestCid = signReqCid; requester
+          signRequestCid = signReqCid; nonceCid; requester
 
         -- Compute requestId for the pending anchor
         let requestId = computeRequestId
@@ -559,7 +595,8 @@ Archives the `Erc20Holding` (optimistic debit), same atomic flow as
         evmTxParams      : EvmTransactionParams
         recipientAddress : BytesHex
         balanceCid       : ContractId Erc20Holding
-        nonceCidText     : Text    -- user provides balance contract ID string
+        nonceCid         : ContractId SigningNonce  -- Signer-layer nonce
+        nonceCidText     : Text    -- text representation (MPC verifies off-chain)
         keyVersion       : Int
         algo             : Text
         dest             : Text
@@ -600,7 +637,7 @@ Archives the `Erc20Holding` (optimistic debit), same atomic flow as
           outputDeserializationSchema; respondSerializationSchema
 
         signEventCid <- exercise signerCid SignBidirectional with
-          signRequestCid = signReqCid; requester
+          signRequestCid = signReqCid; nonceCid; requester
 
         let requestId = computeRequestId
               predecessorId evmTxParams caip2Id keyVersion
@@ -659,68 +696,13 @@ Consumes `PendingWithdrawal`. On failure, refunds the holding.
             pure (Some refundCid)
 ```
 
-### Auth Contracts
+### `Erc20Holding`
 
-`Authorization` and `Erc20Holding` are domain-specific.
-
-```daml
-template AuthorizationRequest
-  with
-    operators : [Party]
-    owner     : Party
-  where
-    signatory operators
-    observer owner
-
-template Authorization
-  with
-    operators     : [Party]
-    owner         : Party
-    remainingUses : Int
-  where
-    signatory operators
-    observer owner
-    ensure not (null operators) && remainingUses > 0
-```
-
-The `RequestAuthorization` and `ApproveAuthorization` choices on the Vault:
-
-```daml
-    -- Auth card management — two-step flow:
-    -- 1. User requests (creates AuthorizationRequest)
-    -- 2. Any operator triggers approval (creates Authorization)
-    -- Both are Vault choices → body has all operators' authority (Daml rule:
-    -- "consequences of exercise are authorized by signatories + actors").
-    -- Individual operator approval is enforced at the Canton PROTOCOL level:
-    -- each signatory's participant must independently confirm the transaction
-    -- (signatory confirmation policy). No propose/accept pattern needed.
-    nonconsuming choice RequestAuthorization : ContractId AuthorizationRequest
-      with
-        requester : Party
-      controller requester
-      do
-        create AuthorizationRequest with
-          operators
-          owner = requester
-
-    nonconsuming choice ApproveAuthorization : ContractId Authorization
-      with
-        requestCid    : ContractId AuthorizationRequest
-        remainingUses : Int
-        approver      : Party
-      controller approver
-      do
-        assertMsg "Not an operator" (approver `elem` operators)
-        request <- fetch requestCid
-        assertMsg "Operators mismatch" (sort request.operators == sort operators)
-        archive requestCid
-        create Authorization with
-          operators
-          owner = request.owner
-          remainingUses
-```
-
-`Erc20Holding` tracks on-ledger ERC20 balances per user:
+Tracks on-ledger ERC20 balances per user. `sigNetwork` is NOT an
+observer — nonce verification uses `SigningNonce` (Signer layer), so
+domain contracts stay decoupled from MPC infrastructure. Authorization
+(auth cards, approval flows, etc.) is the integrator's concern — the
+base Vault does not enforce any authorization pattern.
 
 ```daml
 template Erc20Holding
@@ -749,45 +731,45 @@ See `requestId` Computation above for the full formula.
 ```
  Sender                Vault (Operators)       Signer (SigNetwork)     MPC (sigNetwork)         Sepolia
  |                     |                       |                       |                         |
- | 1. RequestAuthorization                     |                       |                         |
- |-------------------->|                       |                       |                         |
- |                     | Authorization pending |                       |                         |
+ | 1. IssueNonce       |                       |                       |                         |
+ |--------------------------------------------►| requester creates     |                         |
+ |                     |                       |   SigningNonce         |                         |
+ |<--------------------------------------------|   (via disclosed Signer)                        |
  |                     |                       |                       |                         |
- | 2. ApproveAuthorization (operators)         |                       |                         |
- |                     | Authorization created |                       |                         |
- |                     |                       |                       |                         |
- | 3. ERC20 transfer to deposit address        |                       |                         |
+ | 2. ERC20 transfer to deposit address        |                       |                         |
  |------------------------------------------------------------------------------ transfer ------>|
  |                     |                       |                       |                         |
- | 4. RequestDeposit   |                       |                       |                         |
+ | 3. RequestDeposit(nonceCid, ...)            |                       |                         |
  |-------------------->|                       |                       |                         |
- |                     | validates auth card   |                       |                         |
  |                     | create + exercise:    |                       |                         |
  |                     | SignRequest ──────────► SignBidirectional      |                         |
- |                     |                       | → SignBidirectionalEvent                        |
- |                     | + PendingDeposit      |   (signatory: operators, requester)               |
+ |                     |                       | → Execute:            |                         |
+ |                     |                       |   archives SigningNonce                         |
+ |                     |                       |   creates SignBidirectionalEvent                 |
+ |                     | + PendingDeposit      |   (signatory: operators, requester)              |
  |                     |   (vault anchor)      |                       |                         |
  |                     |                       |                       |                         |
- |                     |                       |                       | 5. observes event       |
+ |                     |                       |                       | 6. observes event       |
+ |                     |                       |                       |    verifies nonce       |
  |                     |                       |                       |    derives child key    |
  |                     |                       |                       |    threshold sign       |
  |                     |                       |                       |                         |
- |                     |                       | 6. Respond            |                         |
+ |                     |                       | 7. Respond            |                         |
  |                     |                       |<- SignatureResponded -|                         |
  |                     |                       |                       |                         |
- | 7. observes SignatureRespondedEvent         |                       |                         |
+ | 8. observes SignatureRespondedEvent         |                       |                         |
  |<--------------------------------------------|                       |                         |
  |    reconstructSignedTx, eth_sendRawTransaction                      |                         |
  |------------------------------------------------------------------------------ sweep tx ------>|
  |                     |                       |                       |                         |
- |                     |                       |                       | 8. polls Sepolia        |
+ |                     |                       |                       | 9. polls Sepolia        |
  |                     |                       |                       |    re-simulates call    |
  |                     |                       |                       |                         |
- |                     |                       | 9. RespondBidirectional                         |
+ |                     |                       | 10. RespondBidirectional                        |
  |                     |                       |<- RespondBidirectional-|  (signs over operators) |
  |                     |                       |   Event               |                         |
  |                     |                       |                       |                         |
- | 10. ClaimDeposit    |                       |                       |                         |
+ | 11. ClaimDeposit    |                       |                       |                         |
  |-------------------->|                       |                       |                         |
  |                     | archives PendingDeposit (single-use)          |                         |
  |                     | verifies MPC sig      |                       |                         |
@@ -802,13 +784,20 @@ See `requestId` Computation above for the full formula.
 ```
  Sender                Vault (Operators)       Signer (SigNetwork)     MPC (sigNetwork)         Sepolia
  |                     |                       |                       |                         |
- | 1. RequestWithdrawal|                       |                       |                         |
+ | 0. IssueNonce       |                       |                       |                         |
+ |                     |                       | sigNetwork creates    |                         |
+ |                     |                       |   SigningNonce         |                         |
+ |<--------------------------------------------|                       |                         |
+ |                     |                       |                       |                         |
+ | 1. RequestWithdrawal(nonceCid, ...)         |                       |                         |
  |-------------------->|                       |                       |                         |
  |                     | validates + archives  |                       |                         |
  |                     |   Erc20Holding        |                       |                         |
  |                     | create + exercise:    |                       |                         |
  |                     | SignRequest ──────────► SignBidirectional      |                         |
- |                     |                       | → SignBidirectionalEvent                        |
+ |                     |                       | → Execute:            |                         |
+ |                     |                       |   archives SigningNonce                         |
+ |                     |                       |   creates SignBidirectionalEvent                 |
  |                     | + PendingWithdrawal   |                       |                         |
  |                     |                       |                       |                         |
  |                     |                       |                       | 2. threshold sign       |
@@ -851,15 +840,18 @@ of deposits, withdrawals, or ERC20 concepts.
 ### New Flow (matches Solana/Hydration pattern)
 
 1. Watch `SignBidirectionalEvent` via WebSocket stream
-2. Read `operators`, `requester`, `path`, `keyVersion` from event payload
-3. Derive child key using `derive_epsilon_canton()`
-4. Threshold sign the EVM tx hash
-5. Exercise `Signer.Respond` → creates `SignatureRespondedEvent`
-6. Watch EVM for execution confirmation
-7. Exercise `Signer.RespondBidirectional` → creates `RespondBidirectionalEvent`
+2. Validate transaction metadata (signatories, witness parties)
+3. Verify `nonceCidText` matches an archived `SigningNonce` in same tx
+4. Read `operators`, `requester`, `path`, `keyVersion` from event payload
+5. Derive child key using `derive_epsilon_canton()`
+6. Threshold sign the EVM tx hash
+7. Exercise `Signer.Respond` → creates `SignatureRespondedEvent`
+8. Watch EVM for execution confirmation
+9. Exercise `Signer.RespondBidirectional` → creates `RespondBidirectionalEvent`
 
-The MPC never sees `SignRequest` (transient). It only sees
-`SignBidirectionalEvent` — same as on Solana/Hydration.
+The MPC never sees `SignRequest` (transient) or domain contracts
+(`Erc20Holding`). It only sees `SignBidirectionalEvent` and
+`SigningNonce` — both Signer-layer contracts.
 
 ### KDF Chain ID
 
@@ -933,7 +925,7 @@ Where:
 Both the Daml and Rust/TypeScript implementations must produce identical
 hashes.
 
-## Authorization Flow (Daml)
+## Authority Delegation Flow (Daml)
 
 ### Atomic create + exercise delegation
 
@@ -1059,116 +1051,74 @@ malicious participant could also forge the metadata. But combined with
 multi-participant deployment (where metadata is populated from the
 actual confirmation protocol), it closes the gap.
 
-### Nonce Contract: `nonceCidText` and MPC Verification
+### Nonce: `SigningNonce` and MPC Verification
 
-`nonceCidText` is a user-provided string passed through the Vault's
-`RequestDeposit`/`RequestWithdrawal` choices into
-`SignBidirectionalEvent`. It must be the contract ID of a consumed
-domain contract — specifically an `Authorization` or `Erc20Holding`.
-This field serves as a uniqueness nonce: it is hashed into `requestId`
-via `computeRequestId`, binding each MPC signing request to a specific
-consumed contract and preventing replay.
+Replay prevention uses a dedicated `SigningNonce` contract issued by
+`sigNetwork` via `Signer.IssueNonce`. The nonce is pure Signer-layer
+infrastructure — no domain semantics, no coupling to vault-specific
+templates.
 
-#### Nonce rules
+#### Design rationale
 
-- **Deposits and other vault operations** require an `Authorization`
-  contract as the nonce. The operator must approve an auth card before
-  the user can request a signing operation. This enforces the
-  two-step authorization flow (request → approve → use).
-- **Withdrawals** use the `Erc20Holding` being burned as the nonce.
-  This means a user can always withdraw their own holdings without
-  needing a separate auth card — the holding itself is the
-  authorization.
-- **No other contract type is accepted** as a nonce. The MPC rejects
-  `nonceCidText` values that don't correspond to an archived
-  `Authorization` or `Erc20Holding`.
+Previous iterations used domain contracts (`Authorization`,
+`Erc20Holding`) as nonces. This coupled the Signer to vault-specific
+templates: `sigNetwork` needed observer rights on domain contracts,
+and the MPC maintained an `ALLOWED_NONCE_TEMPLATES` set that grew
+per vault type. By moving the nonce to the Signer layer:
 
-#### Option A: Domain contract as nonce (current implementation)
+- **Domain contracts stay clean** — `Authorization` and `Erc20Holding`
+  don't need `sigNetwork` as observer. Their templates are purely
+  vault-level, upgrade-safe, and integrator-controlled.
+- **Authorization is the integrator's concern** — different vault
+  types can implement their own auth patterns (auth cards, multi-sig
+  approvals, rate limits, or nothing at all) without touching the
+  signing infrastructure.
+- **One nonce template for all operations** — deposits, withdrawals,
+  and any future vault type all use the same `SigningNonce`. The MPC
+  checks exactly one template type.
 
-The current approach reuses existing domain contracts (`Authorization`,
-`Erc20Holding`) as nonces. This ties the nonce to a meaningful business
-event (auth approval, holding burn) and avoids creating extra contracts.
-The trade-off is that `sigNetwork` must be added as observer on those
-templates so the MPC can see their archive events for verification, and
-the `ALLOWED_NONCE_TEMPLATES` set must be updated if new nonce-eligible
-templates are added.
+#### Lifecycle
 
-#### Option B: Dedicated `SigningNonce` template
+1. **Issuance** — The `requester` exercises `Signer.IssueNonce` on
+   the disclosed Signer contract. Creates a `SigningNonce` (signatory:
+   `sigNetwork`, observer: `requester`). This is a separate
+   transaction — the nonce is non-transient. Self-service: the
+   requester can issue nonces any time without waiting for sigNetwork.
+2. **Consumption + rotation** — The user passes `nonceCid` and
+   `nonceCidText` to the Vault choice. `Signer.SignBidirectional`
+   validates the nonce (sigNetwork + requester match), archives it,
+   delegates to `SignRequest.Execute` to create `SignBidirectionalEvent`,
+   then creates a fresh `SigningNonce` — all atomically. The Vault
+   returns the new nonce CID alongside the event and pending anchor,
+   so the requester always has a nonce ready for the next request.
+3. **MPC verification** — The MPC sees `ArchivedEvent(SigningNonce)` +
+   `CreatedEvent(SignBidirectionalEvent)` in the same transaction.
+   It verifies that `nonceCidText` matches the archived contract ID
+   and that the template is `SigningNonce`.
 
-An alternative is a purpose-built nonce contract with no business logic:
-
-```daml
-template SigningNonce
-  with
-    operators  : [Party]
-    requester  : Party
-    sigNetwork : Party
-  where
-    signatory operators
-    observer requester, sigNetwork
-```
-
-The Vault's `RequestDeposit`/`RequestWithdrawal` choices would create
-and immediately archive a `SigningNonce` in the same transaction. The
-user passes the `SigningNonce` contract ID as `nonceCidText`. The MPC
-checks that the `ArchivedEvent` is a `SigningNonce` — one template to
-verify, no coupling to domain contracts.
-
-Advantages:
-
-- **Decoupled from domain contracts** — `Authorization` and
-  `Erc20Holding` don't need `sigNetwork` as observer. Their templates
-  stay minimal and upgrade-safe.
-- **Single allowed template** — the MPC checks for exactly one template
-  type (`SigningNonce`), not a growing set. No maintenance when new
-  domain contracts are added.
-- **Non-transient** — unlike `SignRequest` (which is created and consumed
-  in the same transaction), the `SigningNonce` is created in the Vault
-  choice body before the `archive` call, making it non-transient and
-  visible in `ACS_DELTA` mode.
-- **sigNetwork is already an observer** — no changes needed to other
-  templates.
-
-Trade-off: an extra contract creation + archive per signing request
-(minimal cost, no on-chain state left behind since it's archived in
-the same transaction). The `SigningNonce` IS transient (created and
-archived atomically), so it would require `LEDGER_EFFECTS` mode or
-a separate verification endpoint. To avoid this, the Vault could
-create the nonce in a prior step (e.g., during `ApproveAuthorization`)
-so it exists before the signing transaction.
-
-This is a future option if the domain-contract coupling in Option A
-becomes a maintenance burden.
-
-#### Why Daml can't enforce this on-chain
+#### Why Daml can't enforce the nonceCidText binding on-chain
 
 Daml cannot convert `ContractId` to `Text` on-chain — `show` on
 `ContractId` throws a runtime error in Daml 3.x, and
-`contractIdToText` returns `None` in ledger code. The Vault therefore
-accepts `nonceCidText` as a plain `Text` parameter without verifying
-it matches the actual `authCid` (deposit) or `balanceCid` (withdrawal).
-Both the Vault and the MPC derive `requestId` from the same
-user-provided value — if the user provides a fake nonce, the hashes
-still match.
-
-The actual single-use guarantee comes from the Vault archiving the auth
-card / holding in the same transaction. Daml enforces that archived
-contracts cannot be reused. But the binding between `nonceCidText` and
-the archived contract is not verifiable on-chain.
+`contractIdToText` returns `None` in ledger code. The user provides
+both `nonceCid` (the actual `ContractId SigningNonce`, used for
+on-chain archive) and `nonceCidText` (the text representation, hashed
+into `requestId`). On-chain, the archive is deterministic (the contract
+referenced by `nonceCid` gets consumed). Off-chain, the MPC verifies
+the text matches the archived contract's ID.
 
 #### MPC-side enforcement
 
 The Canton `/v2/updates` WebSocket stream returns full transactions
 containing both `CreatedEvent` and `ArchivedEvent` entries (in
 `ACS_DELTA` mode, non-transient archives are visible). The MPC
-verifies two properties of `nonceCidText`:
+verifies:
 
 1. **Contract was archived in the same transaction** — `nonceCidText`
    must match the `contractId` of an `ArchivedEvent` in the same
    transaction that created the `SignBidirectionalEvent`.
-2. **Contract is a known domain type** — the `ArchivedEvent.templateId`
-   must be `Authorization` or `Erc20Holding`. Any other template type
-   is rejected.
+2. **Contract is a `SigningNonce`** — the `ArchivedEvent.templateId`
+   must be `SigningNonce`. One template, no growing set.
 
 ```typescript
 const archivedEvents = txEvents.filter((e) => "ArchivedEvent" in e).map((e) => e.ArchivedEvent);
@@ -1177,36 +1127,24 @@ const nonceEvent = archivedEvents.find((a) => a.contractId === nonceCidText);
 if (!nonceEvent) {
   throw new Error("nonceCidText does not match any ArchivedEvent");
 }
-if (!ALLOWED_NONCE_TEMPLATES.has(templateSuffix(nonceEvent.templateId))) {
-  throw new Error("nonceCidText is not an Authorization or Erc20Holding");
+if (templateSuffix(nonceEvent.templateId) !== "SigningNonce") {
+  throw new Error("nonceCidText is not a SigningNonce");
 }
 ```
 
-This requires passing the full transaction event list (not just the
-`CreatedEvent`) from the MPC server's stream callback to
-`signAndEnqueue`. During catch-up (reconnection via
-`getActiveContracts`), the transaction context is unavailable — the
-catch-up path trusts the ledger state, which is acceptable because
-catch-up only processes contracts that survived the confirmation
-protocol.
+During catch-up (reconnection via `getActiveContracts`), the
+transaction context is unavailable — the catch-up path trusts the
+ledger state, which is acceptable because catch-up only processes
+contracts that survived the confirmation protocol.
 
-#### Why `SignRequest` cannot be used as the nonce
+#### Self-service nonce issuance
 
-`SignRequest` is a transient contract — created and consumed in the
-same atomic transaction. Three blockers prevent using it as the nonce:
-
-1. **`show` on `ContractId` doesn't work on-chain** — Daml 3.x
-   throws a runtime error, so the Vault can't compute
-   `show signReqCid` to pass as `nonceCidText`.
-2. **Chicken-and-egg** — `nonceCidText` is a field of `SignRequest`
-   itself, needed at creation time. The `signReqCid` isn't assigned
-   until after creation.
-3. **Transient contracts are invisible in `ACS_DELTA`** — Canton's
-   default stream shape filters out contracts that are created and
-   consumed in the same transaction. The MPC would never see the
-   `SignRequest` archive. Switching to `LEDGER_EFFECTS` would show
-   it, but adds complexity for no security benefit since the auth
-   card / holding archive already provides the uniqueness guarantee.
+`IssueNonce` is controlled by `requester` (flexible controller on the
+disclosed Signer). Any party with the Signer blob can self-serve nonces
+without waiting for SigNetwork. The nonce does not authorize anything
+(authorization is a Vault-layer concern); it only prevents replay. The
+Signer's `sigNetwork` signatory flows into the `SigningNonce` via the
+choice body authority.
 
 ### Why Canton Cannot Provide Light Client Proofs
 
@@ -1326,6 +1264,14 @@ the participant, it enforces its own rules.
    This enables independent versioning, deployment, and reuse of the
    Signer layer across multiple vault implementations.
 
+2. **Signer-layer nonce** — Replay prevention uses `SigningNonce`
+   (signatory: `sigNetwork`), issued via `Signer.IssueNonce` and
+   archived in `Signer.SignBidirectional` (which has `sigNetwork`
+   authority). This decouples the nonce from domain contracts —
+   `Authorization` and `Erc20Holding` don't need `sigNetwork` as
+   observer, and the MPC checks exactly one template type.
+   Authorization is the integrator's concern, not the Signer's.
+
 ## Open Questions
 
 1. **Multiple Signers** — Should the Vault support switching between
@@ -1340,3 +1286,49 @@ the participant, it enforces its own rules.
    `EvmTransactionParams` (can't RLP-encode on-chain). The MPC indexer
    must RLP-encode client-side before hashing. This is a Canton-specific
    divergence from Solana's raw `serialized_transaction` bytes.
+
+## Future Improvements
+
+### Vault-Level Authorization (Requester Allowlisting)
+
+The current Vault has no authorization gate — any `requester` party can
+call `RequestDeposit` / `RequestWithdrawal` on any Vault they can see,
+and issue unlimited `SigningNonce`s. The old `DepositAuthorization` with
+a remaining-use counter was removed during the signer/vault split and
+not replaced.
+
+This is not a DDoS concern — Canton handles spam prevention at the
+infrastructure level:
+
+- **Permissioned network**: only onboarded participants can transact
+- **Sequencer traffic management**: per-member byte budgets
+  (`max_base_traffic_amount`, `enforce_rate_limiting`), Canton Coin burn
+  for extra traffic
+- **Participant command throttling**: 200 cmd/s default, enabled since
+  Canton 2.4.0 (`maxRate`, `maxDirtyRequests`)
+- **Ledger API auth**: JWT + mTLS on the JSON Ledger API
+
+On-chain rate limiting is not an idiomatic Canton pattern — no
+documented examples exist. Canton positions DDoS defense entirely at the
+infrastructure and protocol layers, not the smart contract level.
+
+However, **authorization** (who may use a Vault) is a business logic
+concern the Vault should own. Proposed approach:
+
+1. **`AuthorizedRequester` template** — signed by `operators`, granting a
+   specific party permission to interact with a specific Vault. Passed as
+   a `ContractId` argument to `RequestDeposit` / `RequestWithdrawal`,
+   which fetches it, asserts the requester matches, and proceeds.
+   Optionally include a usage quota or expiry.
+
+2. **MPC service rate limiting** — throttle signing ceremonies per-party
+   in the TS MPC service (queue + backpressure). The MPC ceremony is the
+   expensive operation; gating it off-chain is simpler and more
+   responsive than on-chain counters.
+
+3. **JWT auth on the Ledger API** — configure token-based access so only
+   authenticated clients can reach the Canton API at all.
+
+Per-party rate limits do not exist at the Canton protocol level — limits
+apply per participant node. If per-party throttling is needed beyond
+authorization, it belongs in the MPC service middleware.

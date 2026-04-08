@@ -3,22 +3,9 @@ module TestRequestId where
 import DA.Crypto.Text (byteCount)
 import Daml.Script
 
-import Eip712 (domainSeparator, hashText, hashBytesList)
-import RequestId (evmParamsTypeHash, requestTypeHash, responseTypeHash, hashEvmParams, computeRequestId, computeResponseHash, computeOperatorsHash)
+import Eip712 (hashText, hashBytesList)
+import RequestId (hashEvmParams, computeRequestId, computeResponseHash, computeOperatorsHash)
 import TestFixtures (sampleEvmParams)
-
-------------------------------------------------------------------------
--- EIP-712 type hashes
-------------------------------------------------------------------------
-
-testTypeHashes : Script ()
-testTypeHashes = do
-  assertMsg "evmParamsTypeHash is 32 bytes" (byteCount evmParamsTypeHash == 32)
-  assertMsg "requestTypeHash is 32 bytes" (byteCount requestTypeHash == 32)
-  assertMsg "responseTypeHash is 32 bytes" (byteCount responseTypeHash == 32)
-  assertMsg "evmParams vs request" (evmParamsTypeHash /= requestTypeHash)
-  assertMsg "evmParams vs response" (evmParamsTypeHash /= responseTypeHash)
-  assertMsg "request vs response" (requestTypeHash /= responseTypeHash)
 
 ------------------------------------------------------------------------
 -- hashText
@@ -133,16 +120,13 @@ testDomainSeparation = do
   assertMsg "requestId != responseHash" (requestId /= responseHash)
 
 ------------------------------------------------------------------------
--- Cross-language vectors (oracle: viem hashTypedData)
+-- Cross-language vectors (oracle: TS keccak256(concat(encoded fields)))
 ------------------------------------------------------------------------
 
 testCrossLanguageVectors : Script ()
 testCrossLanguageVectors = do
-  assertMsg "domainSeparator matches TS"
-    (domainSeparator == "6399709c8eafb86e7ba1529eaf5519bf2667716e3c694e7868b652b7245ca80f")
-
   assertMsg "hashEvmParams matches TS"
-    (hashEvmParams sampleEvmParams == "d0764d6b66fc548fadceced13b66ed3b6c3737c020d116fb80d0dce85568613f")
+    (hashEvmParams sampleEvmParams == "9a91834fc1dbd1ed8047d515958fa2cdc44d4784eb6ceaa3b27e9760d516ba1f")
 
   let predecessorId = "test-vault" <> computeOperatorsHash ["Operator1::1220aa", "Operator2::1220bb"]
   let caip2Id = "eip155:11155111"
@@ -150,28 +134,28 @@ testCrossLanguageVectors = do
 
   let rid1 = computeRequestId predecessorId sampleEvmParams caip2Id 1 path "ECDSA" "ethereum" "" ""
   assertMsg "requestId(kv=1) matches TS"
-    (rid1 == "48084e4dab73dd6a34eb557e790ea350d37ec13a4b30b5d5bd967baf9b75d67d")
+    (rid1 == "cc528f72d497d96d87287c2d5ba247ee777bf591d12e21c8843e4fc533d0509d")
 
   let rid256 = computeRequestId predecessorId sampleEvmParams caip2Id 256 path "ECDSA" "ethereum" "" ""
   assertMsg "requestId(kv=256) matches TS"
-    (rid256 == "297f14c8d4cde50276af6a473a090b88637be47e5a569e41d055c32ede3b0221")
+    (rid256 == "03692d9f0b1a1d7cc91ca2b0a3a83e749d57dcd071ed3ba2c8018cc2ea323f67")
 
   let knownId = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   assertMsg "computeResponseHash(knownId, 01) matches TS"
     (computeResponseHash knownId "01"
-      == "5773f12bd1f9c7a760461812f7a3fc96a2f5a0f041258dfa8feb43f7f8b3ebe2")
+      == "e4f5b08c4c816896be4b121dad39b8910c8a0875ef14f1a1275a037416fea55d")
 
   assertMsg "computeResponseHash(knownId, empty) matches TS"
     (computeResponseHash knownId ""
-      == "af2ff87730133736cd5ad11131445277ced38a0762eaa9e62320a1ffc49de8da")
+      == "411ab826623d7ba0be7b366112614d65632617e47325d33ec2cbfbf89186f775")
 
   let rid0 = computeRequestId predecessorId sampleEvmParams caip2Id 0 path "ECDSA" "ethereum" "" ""
   assertMsg "requestId(kv=0) matches TS"
-    (rid0 == "983e89dfc51870788b6f74086fcb0d0187d9b869671df079ef2bb3988a01a5b6")
+    (rid0 == "e8abf9d872967e7261eb383588e1c895c1e7021101fd46d2002588104a36f95a")
 
   let emptyArgsParams = sampleEvmParams with args = []
   assertMsg "hashEvmParams(emptyArgs) matches TS"
-    (hashEvmParams emptyArgsParams == "6e2af85ef5f8770dc382c8fa9a1cdbb4560c6e18a4d14ec9d266af538f2a37bc")
+    (hashEvmParams emptyArgsParams == "4ec7535f4daabb4f6d1c4f573817c5263ef84fb7272c715f54dccbcc31d43318")
   let ridEmpty = computeRequestId predecessorId emptyArgsParams caip2Id 1 path "ECDSA" "ethereum" "" ""
   assertMsg "requestId(emptyArgs) matches TS"
-    (ridEmpty == "82ec5e0131c464782bba715199a630fc56a89d973f22eed4f1babee5242c06b0")
+    (ridEmpty == "1e6aa19b276751d852b5c60b3922f0183ff4e9696711a99d0070b065001d480e")

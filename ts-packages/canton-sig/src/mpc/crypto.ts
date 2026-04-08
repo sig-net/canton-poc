@@ -1,4 +1,4 @@
-import { hashTypedData, toHex, toBytes, type Hex } from "viem";
+import { keccak256, toHex, toBytes, pad, concat, type Hex } from "viem";
 import { secp256k1 } from "@noble/curves/secp256k1.js";
 
 export interface EvmTransactionParams {
@@ -14,64 +14,49 @@ export interface EvmTransactionParams {
 }
 
 // ---------------------------------------------------------------------------
-// EIP-712 type definitions and domain
+// Encoding helpers — mirror Daml's Eip712.daml primitives
 // ---------------------------------------------------------------------------
 
-export const eip712Types = {
-  EvmTransactionParams: [
-    { name: "to", type: "address" },
-    { name: "functionSignature", type: "string" },
-    { name: "args", type: "bytes[]" },
-    { name: "value", type: "uint256" },
-    { name: "nonce", type: "uint256" },
-    { name: "gasLimit", type: "uint256" },
-    { name: "maxFeePerGas", type: "uint256" },
-    { name: "maxPriorityFee", type: "uint256" },
-    { name: "chainId", type: "uint256" },
-  ],
-  CantonMpcSignRequest: [
-    { name: "sender", type: "string" },
-    { name: "evmParams", type: "EvmTransactionParams" },
-    { name: "caip2Id", type: "string" },
-    { name: "keyVersion", type: "uint32" },
-    { name: "path", type: "string" },
-    { name: "algo", type: "string" },
-    { name: "dest", type: "string" },
-    { name: "params", type: "string" },
-    { name: "nonceCidText", type: "string" },
-  ],
-  CantonMpcResponse: [
-    { name: "requestId", type: "bytes32" },
-    { name: "mpcOutput", type: "bytes" },
-  ],
-} as const;
+/** keccak256(utf8(text)) — mirrors Daml's hashText */
+function hashText(text: string): Hex {
+  if (text === "") return keccak256("0x");
+  return keccak256(toHex(text));
+}
 
-export const eip712Domain = {
-  name: "CantonMpc",
-  version: "1",
-} as const;
+/** Left-pad hex to 32 bytes — mirrors Daml's padLeft */
+function padLeft32(hex: Hex): Hex {
+  return pad(hex, { size: 32 });
+}
+
+/** keccak256(concat(map keccak256 xs)) — mirrors Daml's hashBytesList */
+function hashBytesList(items: Hex[]): Hex {
+  if (items.length === 0) return keccak256("0x");
+  const hashes = items.map((item) => keccak256(item));
+  return keccak256(concat(hashes));
+}
 
 // ---------------------------------------------------------------------------
-// EIP-712 typed data hashing (viem)
+// Flat keccak256(concat(encoded fields)) — mirrors Daml's RequestId.daml
 // ---------------------------------------------------------------------------
 
-function toEvmParamsMessage(p: EvmTransactionParams) {
-  const to: Hex = `0x${p.to}`;
-  return {
-    to,
-    functionSignature: p.functionSignature,
-    args: p.args.map((a): Hex => `0x${a}`),
-    value: BigInt(`0x${p.value}`),
-    nonce: BigInt(`0x${p.nonce}`),
-    gasLimit: BigInt(`0x${p.gasLimit}`),
-    maxFeePerGas: BigInt(`0x${p.maxFeePerGas}`),
-    maxPriorityFee: BigInt(`0x${p.maxPriorityFee}`),
-    chainId: BigInt(`0x${p.chainId}`),
-  };
+function hashEvmParams(p: EvmTransactionParams): Hex {
+  return keccak256(
+    concat([
+      padLeft32(`0x${p.to}`),
+      hashText(p.functionSignature),
+      hashBytesList(p.args.map((a): Hex => `0x${a}`)),
+      padLeft32(`0x${p.value}`),
+      padLeft32(`0x${p.nonce}`),
+      padLeft32(`0x${p.gasLimit}`),
+      padLeft32(`0x${p.maxFeePerGas}`),
+      padLeft32(`0x${p.maxPriorityFee}`),
+      padLeft32(`0x${p.chainId}`),
+    ]),
+  );
 }
 
 /**
- * Compute request_id using EIP-712 typed data hashing.
+ * Compute request_id using flat keccak256(concat(encoded fields)).
  * Mirrors Daml's computeRequestId in RequestId.daml.
  */
 export function computeRequestId(
@@ -85,38 +70,29 @@ export function computeRequestId(
   params: string,
   nonceCidText: string,
 ): Hex {
-  return hashTypedData({
-    domain: eip712Domain,
-    types: eip712Types,
-    primaryType: "CantonMpcSignRequest",
-    message: {
-      sender,
-      evmParams: toEvmParamsMessage(evmParams),
-      caip2Id,
-      keyVersion,
-      path,
-      algo,
-      dest,
-      params,
-      nonceCidText,
-    },
-  });
+  return keccak256(
+    concat([
+      hashText(sender),
+      hashEvmParams(evmParams),
+      hashText(caip2Id),
+      padLeft32(toHex(keyVersion)),
+      hashText(path),
+      hashText(algo),
+      hashText(dest),
+      hashText(params),
+      hashText(nonceCidText),
+    ]),
+  );
 }
 
 /**
- * Compute response_hash using EIP-712 typed data hashing.
- * Mirrors Daml's computeResponseHash in Crypto.daml.
+ * Compute response_hash using flat keccak256(requestId || keccak256(mpcOutput)).
+ * Mirrors Daml's computeResponseHash in RequestId.daml.
  */
 export function computeResponseHash(requestId: string, mpcOutput: string): Hex {
-  return hashTypedData({
-    domain: eip712Domain,
-    types: eip712Types,
-    primaryType: "CantonMpcResponse",
-    message: {
-      requestId: `0x${requestId}` as const,
-      mpcOutput: `0x${mpcOutput}` as const,
-    },
-  });
+  const requestIdBytes: Hex = `0x${requestId}`;
+  const outputHash = mpcOutput === "" ? keccak256("0x") : keccak256(`0x${mpcOutput}`);
+  return keccak256(concat([requestIdBytes, outputHash]));
 }
 
 // ---------------------------------------------------------------------------

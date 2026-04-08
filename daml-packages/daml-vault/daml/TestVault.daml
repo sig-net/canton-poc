@@ -1,7 +1,6 @@
 module TestVault where
 
 import DA.Optional (fromSome, isSome, isNone)
-import DA.List (head)
 import DA.Crypto.Text (byteCount)
 import Daml.Script
 
@@ -41,13 +40,11 @@ setupWithKey pubKey = do
 
   pure (sigNetwork, operator, requester, signerCid, vaultCid)
 
--- Obtain an Authorization with `n` remaining uses
-getAuth : Party -> Party -> ContractId Vault -> Int -> Script (ContractId Authorization)
-getAuth operator requester vaultCid n = do
-  requestCid <- submit (actAs requester <> readAs operator) do
-    exerciseCmd vaultCid RequestAuthorization with requester
-  submit operator do
-    exerciseCmd vaultCid ApproveAuthorization with requestCid; remainingUses = n; approver = operator
+-- Issue a SigningNonce via the Signer (controller: requester)
+issueNonce : Party -> Party -> ContractId Signer -> Script (ContractId SigningNonce)
+issueNonce sigNetwork requester signerCid =
+  submit (actAs requester <> readAs sigNetwork) do
+    exerciseCmd signerCid IssueNonce with requester
 
 ------------------------------------------------------------------------
 -- Deposit lifecycle
@@ -57,13 +54,13 @@ getAuth operator requester vaultCid n = do
 testDepositLifecycle : Script ()
 testDepositLifecycle = do
   (sigNetwork, operator, requester, signerCid, vaultCid) <- setup
-  authCid <- getAuth operator requester vaultCid 3
+  nonceCid <- issueNonce sigNetwork requester signerCid
 
   let depositPath = partyToText requester
-  (signEventCid, pendingCid) <- submit (actAs requester <> readAs operator <> readAs sigNetwork) do
+  (signEventCid, pendingCid, _newNonceCid) <- submit (actAs requester <> readAs operator <> readAs sigNetwork) do
     exerciseCmd vaultCid RequestDeposit with
       requester; signerCid; path = depositPath; evmTxParams = sampleEvmParams
-      authCid; nonceCidText = "test-nonce"
+      nonceCid; nonceCidText = "test-nonce"
       keyVersion = 1; algo = "ECDSA"; dest = "ethereum"; params = ""
       outputDeserializationSchema = erc20BoolSchema
       respondSerializationSchema = erc20BoolSchema
@@ -76,74 +73,6 @@ testDepositLifecycle = do
   -- SignBidirectionalEvent must exist
   signEvent <- queryContractId requester signEventCid
   assertMsg "sign event must exist" (isSome signEvent)
-
-------------------------------------------------------------------------
--- RequestAuthorization creates proposal
-------------------------------------------------------------------------
-
--- RequestAuthorization creates AuthorizationRequest with correct operators and owner
-testRequestAuthorization : Script ()
-testRequestAuthorization = do
-  (sigNetwork, operator, requester, _signerCid, vaultCid) <- setup
-
-  requestCid <- submit (actAs requester <> readAs operator) do
-    exerciseCmd vaultCid RequestAuthorization with requester
-
-  request <- queryContractId operator requestCid
-  let p = fromSome request
-  assertMsg "request operators" (p.operators == [operator])
-  assertMsg "request owner"  (p.owner  == requester)
-
-------------------------------------------------------------------------
--- ApproveAuthorization creates Authorization
-------------------------------------------------------------------------
-
--- ApproveAuthorization creates Authorization with correct operators, owner, and remainingUses
-testApproveAuthorization : Script ()
-testApproveAuthorization = do
-  (sigNetwork, operator, requester, _signerCid, vaultCid) <- setup
-
-  requestCid <- submit (actAs requester <> readAs operator) do
-    exerciseCmd vaultCid RequestAuthorization with requester
-
-  authCid <- submit operator do
-    exerciseCmd vaultCid ApproveAuthorization with
-      requestCid; remainingUses = 5; approver = operator
-
-  auth <- queryContractId operator authCid
-  let a = fromSome auth
-  assertMsg "auth operators" (a.operators == [operator])
-  assertMsg "auth owner"  (a.owner  == requester)
-  assertMsg "auth remainingUses" (a.remainingUses == 5)
-
-------------------------------------------------------------------------
--- RequestDeposit validates and decrements auth card
-------------------------------------------------------------------------
-
--- RequestDeposit archives original auth card and creates decremented one (remainingUses 2 → 1)
-testRequestDepositBurnsAuthCard : Script ()
-testRequestDepositBurnsAuthCard = do
-  (sigNetwork, operator, requester, signerCid, vaultCid) <- setup
-  authCid <- getAuth operator requester vaultCid 2
-
-  let depositPath = partyToText requester
-  _result <- submit (actAs requester <> readAs operator <> readAs sigNetwork) do
-    exerciseCmd vaultCid RequestDeposit with
-      requester; signerCid; path = depositPath; evmTxParams = sampleEvmParams
-      authCid; nonceCidText = "test-nonce"
-      keyVersion = 1; algo = "ECDSA"; dest = "ethereum"; params = ""
-      outputDeserializationSchema = erc20BoolSchema
-      respondSerializationSchema = erc20BoolSchema
-
-  -- Original auth card must be archived
-  oldAuth <- queryContractId operator authCid
-  assertMsg "original auth card must be archived" (oldAuth == None)
-
-  -- Decremented auth card must exist
-  auths <- queryFilter @Authorization operator (\a -> a.owner == requester)
-  assertMsg "decremented auth card must exist" (length auths == 1)
-  let (_, decremented) = head auths
-  assertMsg "decremented remainingUses" (decremented.remainingUses == 1)
 
 ------------------------------------------------------------------------
 -- Happy-path ClaimDeposit produces Erc20Holding
@@ -223,22 +152,6 @@ testClaimRequesterMismatchFails = do
   submitMustFail (actAs wrongUser <> readAs operator <> readAs sigNetwork) do
     exerciseCmd vaultCid ClaimDeposit with
       requester = wrongUser; pendingDepositCid = pendingCid; respondBidirectionalEventCid; signatureRespondedEventCid
-
-  pure ()
-
-------------------------------------------------------------------------
--- Auth card with 0 remaining uses is rejected (ensure fails)
-------------------------------------------------------------------------
-
--- Authorization with remainingUses=0 is rejected by ensure clause
-testAuthCardNoRemainingUsesFails : Script ()
-testAuthCardNoRemainingUsesFails = do
-  (sigNetwork, operator, requester, _signerCid, _vaultCid) <- setup
-
-  -- Authorization has ensure remainingUses > 0, so createCmd with 0 must fail
-  submitMustFail operator do
-    createCmd Authorization with
-      operators = [operator]; owner = requester; sigNetwork = sigNetwork; remainingUses = 0
 
   pure ()
 
@@ -346,19 +259,6 @@ testClaimRejectsBoolFalse = do
 -- Controller / validation negative tests
 ------------------------------------------------------------------------
 
--- requester cannot exercise ApproveAuthorization (controller is operator/approver)
-testApproveAuthorizationWrongController : Script ()
-testApproveAuthorizationWrongController = do
-  (_sigNetwork, operator, requester, _signerCid, vaultCid) <- setup
-
-  requestCid <- submit (actAs requester <> readAs operator) do
-    exerciseCmd vaultCid RequestAuthorization with requester
-
-  -- requester (not operator) tries to approve
-  submitMustFail requester do
-    exerciseCmd vaultCid ApproveAuthorization with
-      requestCid; remainingUses = 1; approver = requester
-
 -- requester cannot exercise Signer.Respond (controller is sigNetwork)
 testRespondWrongController : Script ()
 testRespondWrongController = do
@@ -369,55 +269,17 @@ testRespondWrongController = do
     exerciseCmd signerCid Respond with
       operators = [operator]; requester; requestId = "aa"; signature = "00"
 
--- RequestDeposit rejects auth card with operators that don't match the Vault's operators
-testAuthCardWrongIssuer : Script ()
-testAuthCardWrongIssuer = do
-  (sigNetwork, operator, requester, signerCid, vaultCid) <- setup
-  rogue <- allocateParty "Rogue"
-
-  -- Auth issued by rogue (not an operator)
-  authCid <- submit rogue do
-    createCmd Authorization with
-      operators = [rogue]; owner = requester; sigNetwork = sigNetwork; remainingUses = 1
-
-  submitMustFail (actAs requester <> readAs operator <> readAs sigNetwork) do
-    exerciseCmd vaultCid RequestDeposit with
-      requester; signerCid; path = "test"; evmTxParams = sampleEvmParams
-      authCid; nonceCidText = "test-nonce"
-      keyVersion = 1; algo = "ECDSA"; dest = "ethereum"; params = ""
-      outputDeserializationSchema = erc20BoolSchema
-      respondSerializationSchema = erc20BoolSchema
-
--- RequestDeposit rejects auth card whose owner differs from the requester
-testAuthCardWrongOwner : Script ()
-testAuthCardWrongOwner = do
-  (sigNetwork, operator, requester, signerCid, vaultCid) <- setup
-  otherUser <- allocateParty "OtherUser"
-
-  -- Auth is for otherUser, not requester
-  authCid <- submit operator do
-    createCmd Authorization with
-      operators = [operator]; owner = otherUser; sigNetwork = sigNetwork; remainingUses = 1
-
-  submitMustFail (actAs requester <> readAs operator <> readAs sigNetwork) do
-    exerciseCmd vaultCid RequestDeposit with
-      requester; signerCid; path = "test"; evmTxParams = sampleEvmParams
-      authCid; nonceCidText = "test-nonce"
-      keyVersion = 1; algo = "ECDSA"; dest = "ethereum"; params = ""
-      outputDeserializationSchema = erc20BoolSchema
-      respondSerializationSchema = erc20BoolSchema
-
 -- RequestDeposit rejects EVM call with function other than transfer(address,uint256)
 testWrongFunctionSignature : Script ()
 testWrongFunctionSignature = do
   (sigNetwork, operator, requester, signerCid, vaultCid) <- setup
-  authCid <- getAuth operator requester vaultCid 1
+  nonceCid <- issueNonce sigNetwork requester signerCid
 
   let badParams = sampleEvmParams with functionSignature = "approve(address,uint256)"
   submitMustFail (actAs requester <> readAs operator <> readAs sigNetwork) do
     exerciseCmd vaultCid RequestDeposit with
       requester; signerCid; path = "test"; evmTxParams = badParams
-      authCid; nonceCidText = "test-nonce"
+      nonceCid; nonceCidText = "test-nonce"
       keyVersion = 1; algo = "ECDSA"; dest = "ethereum"; params = ""
       outputDeserializationSchema = erc20BoolSchema
       respondSerializationSchema = erc20BoolSchema
@@ -426,7 +288,7 @@ testWrongFunctionSignature = do
 testWrongRecipient : Script ()
 testWrongRecipient = do
   (sigNetwork, operator, requester, signerCid, vaultCid) <- setup
-  authCid <- getAuth operator requester vaultCid 1
+  nonceCid <- issueNonce sigNetwork requester signerCid
 
   let badParams = sampleEvmParams with
         args = [ "0000000000000000000000001111111111111111111111111111111111111111"
@@ -435,7 +297,7 @@ testWrongRecipient = do
   submitMustFail (actAs requester <> readAs operator <> readAs sigNetwork) do
     exerciseCmd vaultCid RequestDeposit with
       requester; signerCid; path = "test"; evmTxParams = badParams
-      authCid; nonceCidText = "test-nonce"
+      nonceCid; nonceCidText = "test-nonce"
       keyVersion = 1; algo = "ECDSA"; dest = "ethereum"; params = ""
       outputDeserializationSchema = erc20BoolSchema
       respondSerializationSchema = erc20BoolSchema
@@ -448,17 +310,18 @@ testWrongRecipient = do
 testWithdrawalLifecycle : Script ()
 testWithdrawalLifecycle = do
   (sigNetwork, operator, requester, signerCid, vaultCid) <- setup
+  nonceCid <- issueNonce sigNetwork requester signerCid
 
   holdingCid <- submit operator do
     createCmd Erc20Holding with
-      operators = [operator]; owner = requester; sigNetwork = sigNetwork
+      operators = [operator]; owner = requester
       erc20Address = sampleErc20Address; amount = sampleHoldingAmount
 
-  (signEventCid, pendingCid) <- submit (actAs requester <> readAs operator <> readAs sigNetwork) do
+  (signEventCid, pendingCid, _newNonceCid) <- submit (actAs requester <> readAs operator <> readAs sigNetwork) do
     exerciseCmd vaultCid RequestWithdrawal with
       requester; signerCid; evmTxParams = sampleWithdrawalEvmParams
       recipientAddress = sampleRecipientAddress; balanceCid = holdingCid
-      nonceCidText = "holding-nonce"
+      nonceCid; nonceCidText = "holding-nonce"
       keyVersion = 1; algo = "ECDSA"; dest = "ethereum"; params = ""
       outputDeserializationSchema = erc20BoolSchema
       respondSerializationSchema = erc20BoolSchema
@@ -557,17 +420,18 @@ testWithdrawalRejectsWrongOwner : Script ()
 testWithdrawalRejectsWrongOwner = do
   (sigNetwork, operator, requester, signerCid, vaultCid) <- setup
   userB <- allocateParty "UserB"
+  nonceCid <- issueNonce sigNetwork userB signerCid
 
   holdingCid <- submit operator do
     createCmd Erc20Holding with
-      operators = [operator]; owner = requester; sigNetwork = sigNetwork
+      operators = [operator]; owner = requester
       erc20Address = sampleErc20Address; amount = sampleHoldingAmount
 
   submitMustFail (actAs userB <> readAs operator <> readAs sigNetwork) do
     exerciseCmd vaultCid RequestWithdrawal with
       requester = userB; signerCid; evmTxParams = sampleWithdrawalEvmParams
       recipientAddress = sampleRecipientAddress; balanceCid = holdingCid
-      nonceCidText = "holding-nonce"
+      nonceCid; nonceCidText = "holding-nonce"
       keyVersion = 1; algo = "ECDSA"; dest = "ethereum"; params = ""
       outputDeserializationSchema = erc20BoolSchema
       respondSerializationSchema = erc20BoolSchema
@@ -576,10 +440,11 @@ testWithdrawalRejectsWrongOwner = do
 testWithdrawalRejectsWrongErc20 : Script ()
 testWithdrawalRejectsWrongErc20 = do
   (sigNetwork, operator, requester, signerCid, vaultCid) <- setup
+  nonceCid <- issueNonce sigNetwork requester signerCid
 
   holdingCid <- submit operator do
     createCmd Erc20Holding with
-      operators = [operator]; owner = requester; sigNetwork = sigNetwork
+      operators = [operator]; owner = requester
       erc20Address = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
       amount = sampleHoldingAmount
 
@@ -587,7 +452,7 @@ testWithdrawalRejectsWrongErc20 = do
     exerciseCmd vaultCid RequestWithdrawal with
       requester; signerCid; evmTxParams = sampleWithdrawalEvmParams
       recipientAddress = sampleRecipientAddress; balanceCid = holdingCid
-      nonceCidText = "holding-nonce"
+      nonceCid; nonceCidText = "holding-nonce"
       keyVersion = 1; algo = "ECDSA"; dest = "ethereum"; params = ""
       outputDeserializationSchema = erc20BoolSchema
       respondSerializationSchema = erc20BoolSchema
@@ -596,10 +461,11 @@ testWithdrawalRejectsWrongErc20 = do
 testWithdrawalRejectsAmountMismatch : Script ()
 testWithdrawalRejectsAmountMismatch = do
   (sigNetwork, operator, requester, signerCid, vaultCid) <- setup
+  nonceCid <- issueNonce sigNetwork requester signerCid
 
   holdingCid <- submit operator do
     createCmd Erc20Holding with
-      operators = [operator]; owner = requester; sigNetwork = sigNetwork
+      operators = [operator]; owner = requester
       erc20Address = sampleErc20Address
       amount = "0000000000000000000000000000000000000000000000000000000000000001"
 
@@ -607,7 +473,7 @@ testWithdrawalRejectsAmountMismatch = do
     exerciseCmd vaultCid RequestWithdrawal with
       requester; signerCid; evmTxParams = sampleWithdrawalEvmParams
       recipientAddress = sampleRecipientAddress; balanceCid = holdingCid
-      nonceCidText = "holding-nonce"
+      nonceCid; nonceCidText = "holding-nonce"
       keyVersion = 1; algo = "ECDSA"; dest = "ethereum"; params = ""
       outputDeserializationSchema = erc20BoolSchema
       respondSerializationSchema = erc20BoolSchema
@@ -616,17 +482,18 @@ testWithdrawalRejectsAmountMismatch = do
 testWithdrawalRejectsWrongRecipient : Script ()
 testWithdrawalRejectsWrongRecipient = do
   (sigNetwork, operator, requester, signerCid, vaultCid) <- setup
+  nonceCid <- issueNonce sigNetwork requester signerCid
 
   holdingCid <- submit operator do
     createCmd Erc20Holding with
-      operators = [operator]; owner = requester; sigNetwork = sigNetwork
+      operators = [operator]; owner = requester
       erc20Address = sampleErc20Address; amount = sampleHoldingAmount
 
   submitMustFail (actAs requester <> readAs operator <> readAs sigNetwork) do
     exerciseCmd vaultCid RequestWithdrawal with
       requester; signerCid; evmTxParams = sampleWithdrawalEvmParams
       recipientAddress = "0000000000000000000000002222222222222222222222222222222222222222"
-      balanceCid = holdingCid; nonceCidText = "holding-nonce"
+      balanceCid = holdingCid; nonceCid; nonceCidText = "holding-nonce"
       keyVersion = 1; algo = "ECDSA"; dest = "ethereum"; params = ""
       outputDeserializationSchema = erc20BoolSchema
       respondSerializationSchema = erc20BoolSchema
@@ -714,28 +581,6 @@ testPendingDepositDoubleClaimFails = do
   pure ()
 
 ------------------------------------------------------------------------
--- Auth card with remainingUses=1 is fully consumed after one deposit
-------------------------------------------------------------------------
-
--- RequestDeposit with remainingUses=1 fully consumes auth card (no replacement created)
-testAuthCardSingleUseFullyConsumed : Script ()
-testAuthCardSingleUseFullyConsumed = do
-  (sigNetwork, operator, requester, signerCid, vaultCid) <- setup
-  authCid <- getAuth operator requester vaultCid 1
-
-  _result <- submit (actAs requester <> readAs operator <> readAs sigNetwork) do
-    exerciseCmd vaultCid RequestDeposit with
-      requester; signerCid; path = partyToText requester; evmTxParams = sampleEvmParams
-      authCid; nonceCidText = "test-nonce"
-      keyVersion = 1; algo = "ECDSA"; dest = "ethereum"; params = ""
-      outputDeserializationSchema = erc20BoolSchema
-      respondSerializationSchema = erc20BoolSchema
-
-  -- No authorization should remain for this requester
-  auths <- queryFilter @Authorization operator (\a -> a.owner == requester)
-  assertMsg "auth card must be fully consumed" (null auths)
-
-------------------------------------------------------------------------
 -- RequestWithdrawal rejects wrong function signature
 ------------------------------------------------------------------------
 
@@ -743,10 +588,11 @@ testAuthCardSingleUseFullyConsumed = do
 testWithdrawalRejectsWrongFunctionSignature : Script ()
 testWithdrawalRejectsWrongFunctionSignature = do
   (sigNetwork, operator, requester, signerCid, vaultCid) <- setup
+  nonceCid <- issueNonce sigNetwork requester signerCid
 
   holdingCid <- submit operator do
     createCmd Erc20Holding with
-      operators = [operator]; owner = requester; sigNetwork = sigNetwork
+      operators = [operator]; owner = requester
       erc20Address = sampleErc20Address; amount = sampleHoldingAmount
 
   let badParams = sampleWithdrawalEvmParams with functionSignature = "approve(address,uint256)"
@@ -754,7 +600,7 @@ testWithdrawalRejectsWrongFunctionSignature = do
     exerciseCmd vaultCid RequestWithdrawal with
       requester; signerCid; evmTxParams = badParams
       recipientAddress = sampleRecipientAddress; balanceCid = holdingCid
-      nonceCidText = "holding-nonce"
+      nonceCid; nonceCidText = "holding-nonce"
       keyVersion = 1; algo = "ECDSA"; dest = "ethereum"; params = ""
       outputDeserializationSchema = erc20BoolSchema
       respondSerializationSchema = erc20BoolSchema
@@ -768,17 +614,18 @@ testWithdrawalRejectsHoldingOperatorsMismatch : Script ()
 testWithdrawalRejectsHoldingOperatorsMismatch = do
   (sigNetwork, operator, requester, signerCid, vaultCid) <- setup
   rogue <- allocateParty "Rogue"
+  nonceCid <- issueNonce sigNetwork requester signerCid
 
   holdingCid <- submit rogue do
     createCmd Erc20Holding with
-      operators = [rogue]; owner = requester; sigNetwork = sigNetwork
+      operators = [rogue]; owner = requester
       erc20Address = sampleErc20Address; amount = sampleHoldingAmount
 
   submitMustFail (actAs requester <> readAs operator <> readAs sigNetwork <> readAs rogue) do
     exerciseCmd vaultCid RequestWithdrawal with
       requester; signerCid; evmTxParams = sampleWithdrawalEvmParams
       recipientAddress = sampleRecipientAddress; balanceCid = holdingCid
-      nonceCidText = "holding-nonce"
+      nonceCid; nonceCidText = "holding-nonce"
       keyVersion = 1; algo = "ECDSA"; dest = "ethereum"; params = ""
       outputDeserializationSchema = erc20BoolSchema
       respondSerializationSchema = erc20BoolSchema

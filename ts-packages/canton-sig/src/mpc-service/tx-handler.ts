@@ -25,8 +25,11 @@ import {
 } from "../infra/canton-client.js";
 import { computeRequestId } from "../mpc/crypto.js";
 import { chainIdHexToCaip2 } from "../mpc/address-derivation.js";
-import { type SignBidirectionalEvent, Signer } from "@daml.js/daml-signer-0.0.1/lib/Signer/module";
-import { Authorization, Erc20Holding } from "@daml.js/daml-vault-0.0.1/lib/Erc20Vault/module";
+import {
+  type SignBidirectionalEvent,
+  Signer,
+  SigningNonce,
+} from "@daml.js/daml-signer-0.0.1/lib/Signer/module";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -40,22 +43,7 @@ function templateSuffix(templateId: string): string {
   return parts.slice(-2).join(":");
 }
 
-/**
- * Allowed nonce contract templates.
- *
- * The nonceCidText must be the contract ID of an archived Authorization or
- * Erc20Holding — no other contract type is accepted. This enforces:
- *
- * - Deposits (and any future vault operation): require an Authorization card
- *   as the nonce, meaning an operator must approve before the user can request
- *   a signing operation (two-step auth flow).
- * - Withdrawals: use the Erc20Holding being burned as the nonce, so a user
- *   can always withdraw their own holdings without a separate auth card.
- */
-const ALLOWED_NONCE_TEMPLATES = new Set([
-  templateSuffix(Authorization.templateId),
-  templateSuffix(Erc20Holding.templateId),
-]);
+const SIGNING_NONCE_SUFFIX = templateSuffix(SigningNonce.templateId);
 
 export interface MpcServiceConfig {
   canton: CantonClient;
@@ -199,10 +187,11 @@ export async function signAndEnqueue(
     throw new Error(`Requester ${requester} is not in CreatedEvent.signatories — possible forgery`);
   }
 
-  // 4. Verify nonceCidText corresponds to an archived Authorization or Erc20Holding
-  //    in the same transaction. This ensures: (a) the nonce contract was actually
-  //    consumed (replay prevention), and (b) it's a known domain contract — not an
-  //    arbitrary string or a different contract type.
+  // 4. Verify nonceCidText corresponds to an archived SigningNonce in the same
+  //    transaction. SigningNonce is a Signer-layer nonce (signatory: sigNetwork),
+  //    archived by Signer.SignBidirectional. This ensures: (a) the nonce was
+  //    actually consumed (replay prevention), and (b) it's a SigningNonce — not
+  //    an arbitrary string or a different contract type.
   //    During catch-up (no txEvents), we skip this check — catch-up trusts the ledger.
   if (txEvents) {
     const archivedEvents = txEvents
@@ -219,11 +208,9 @@ export async function signAndEnqueue(
       );
     }
 
-    const suffix = templateSuffix(nonceEvent.templateId);
-    if (!ALLOWED_NONCE_TEMPLATES.has(suffix)) {
+    if (templateSuffix(nonceEvent.templateId) !== SIGNING_NONCE_SUFFIX) {
       throw new Error(
-        `nonceCidText ${nonceCidText} was archived but its template ${suffix} is not ` +
-          `Authorization or Erc20Holding — unexpected nonce contract type`,
+        `nonceCidText ${nonceCidText} was archived but its template is not SigningNonce`,
       );
     }
   }

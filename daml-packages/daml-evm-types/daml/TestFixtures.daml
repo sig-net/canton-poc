@@ -22,18 +22,18 @@ claimTestPubKey = "3056301006072a8648ce3d020106052b8104000a03420004bb50e2d89a4ed
 
 -- DER signature over computeResponseHash(claimTestRequestId, boolTrueMpcOutput)
 claimTestSignature : Text
-claimTestSignature = "3044022064423d719ec8cb650853cf3d5a638b6528626c4b626491d87244859b83611267022014a7292eca0c860f11b7f47f4f36368a1694138169b79ff0b980d24e412ec8e7"
+claimTestSignature = "304402206746cf175d67deaf459dec41456060f814e6b82d54a1bc91285179c2532121b2022007fd8775f1f3225da085e5182b1a327a0e17046539b5eee6e4eb67cae6355fad"
 
 claimTestRequestId : Text
 claimTestRequestId = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
 -- DER signature over computeResponseHash(claimTestRequestId, errorPrefixMpcOutput) — refund case
 refundTestSignature : Text
-refundTestSignature = "304402206abf772269c28730214bb99477f7aa384ecf24e590bd647d6dab95314b8b120d02203cafe98ab81583a580c9468421b91d123df22549f3396f788ca551e613e0c58b"
+refundTestSignature = "3045022100e514e9d188df1ed311baed7bda03243b5321084e7b50148988ae1b68233a59dd02207c6d154e46879d1bf04337251cffe7ce2f6398a604a82a809e8c5edf86494468"
 
 -- DER signature over computeResponseHash(claimTestRequestId, boolFalseMpcOutput) — transfer returned false
 boolFalseTestSignature : Text
-boolFalseTestSignature = "30440220262bb64019ff50e7df7185e1f3b005ca33869d2d4441d9d105b443d385bc259c02201759e93390e3288087978a4d35723b8c2deaaf100c8acab5330641b7fb064c18"
+boolFalseTestSignature = "304402203f0caa50c73e18a9788e093a349773bbd7951c6fc17547a776c041866489ded902200d67880f3b1ba2b34c244a75e828c9272cbb66c0591399a9ea4f42afa5f08a1f"
 
 -- ---------------------------------------------------------------------------
 -- ABI-encoded mpcOutput constants

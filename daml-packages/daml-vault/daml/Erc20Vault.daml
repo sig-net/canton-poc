@@ -1,7 +1,6 @@
 module Erc20Vault where
 
-import DA.Action (when, void)
-import DA.List ((!!) , head, sort, unique)
+import DA.List ((!!) , sort, unique)
 import DA.Crypto.Text (BytesHex, PublicKeyHex, secp256k1WithEcdsaOnly)
 
 import EvmTypes (EvmTransactionParams)
@@ -10,38 +9,8 @@ import RequestId (computeRequestId, computeResponseHash, computeOperatorsHash)
 import Abi (hasErrorPrefix, abiDecodeBool)
 import Signer (Signer, SignRequest(..), SignBidirectionalEvent,
                SignatureRespondedEvent(..), RespondBidirectionalEvent(..),
-               SignBidirectional(..),
+               SignBidirectional(..), SigningNonce,
                Consume_SignatureResponded(..), Consume_RespondBidirectional(..))
-
--- ---------------------------------------------------------------------------
--- Auth contracts
--- ---------------------------------------------------------------------------
-
--- User requests authorization → creates AuthorizationRequest (signatory: operators via Vault)
--- Operator approves → creates Authorization (signatory: operators via Vault)
--- Both happen via Vault choices, so all operators' authority flows automatically.
-
-template AuthorizationRequest
-  with
-    operators  : [Party]
-    owner      : Party
-    sigNetwork : Party   -- observer: MPC needs visibility for nonce verification
-  where
-    signatory operators
-    observer owner, sigNetwork
-
-template Authorization
-  with
-    operators     : [Party]
-    owner         : Party
-    sigNetwork    : Party  -- observer: MPC verifies this contract's archive as nonce in
-                           -- the signing request (nonceCidText must match an archived
-                           -- Authorization or Erc20Holding in the same transaction)
-    remainingUses : Int
-  where
-    signatory operators
-    observer owner, sigNetwork
-    ensure not (null operators) && remainingUses > 0
 
 -- ---------------------------------------------------------------------------
 -- Holdings
@@ -51,13 +20,11 @@ template Erc20Holding
   with
     operators    : [Party]
     owner        : Party
-    sigNetwork   : Party  -- observer: MPC verifies this contract's archive as nonce
-                          -- for withdrawal signing requests
     erc20Address : BytesHex
     amount       : BytesHex
   where
     signatory operators
-    observer owner, sigNetwork
+    observer owner
 
 -- ---------------------------------------------------------------------------
 -- Pending anchors (single-use via archive)
@@ -66,7 +33,7 @@ template Erc20Holding
 template PendingDeposit
   with
     operators   : [Party]
-    requester      : Party
+    requester   : Party
     sigNetwork  : Party
     requestId   : BytesHex
     evmTxParams : EvmTransactionParams
@@ -78,7 +45,7 @@ template PendingDeposit
 template PendingWithdrawal
   with
     operators    : [Party]
-    requester       : Party
+    requester    : Party
     sigNetwork   : Party
     requestId    : BytesHex
     evmTxParams  : EvmTransactionParams
@@ -138,48 +105,15 @@ template Vault
     observer sigNetwork
     ensure not (null operators) && unique operators
 
-    -- Auth card management — two-step flow:
-    -- 1. User requests (creates AuthorizationRequest)
-    -- 2. Any operator triggers approval (creates Authorization)
-    -- Both are Vault choices → body has all operators' authority (Daml rule:
-    -- "consequences of exercise are authorized by signatories + actors").
-    -- Individual operator approval is enforced at the Canton PROTOCOL level:
-    -- each signatory's participant must independently confirm the transaction
-    -- (signatory confirmation policy). No propose/accept pattern needed.
-    nonconsuming choice RequestAuthorization : ContractId AuthorizationRequest
-      with
-        requester : Party
-      controller requester
-      do
-        create AuthorizationRequest with
-          operators; sigNetwork
-          owner = requester
-
-    nonconsuming choice ApproveAuthorization : ContractId Authorization
-      with
-        requestCid    : ContractId AuthorizationRequest
-        remainingUses : Int
-        approver      : Party
-      controller approver
-      do
-        assertMsg "Not an operator" (approver `elem` operators)
-        request <- fetch requestCid
-        assertMsg "Operators mismatch" (sort request.operators == sort operators)
-        archive requestCid
-        create Authorization with
-          operators; sigNetwork
-          owner = request.owner
-          remainingUses
-
     -- Deposit flow
     nonconsuming choice RequestDeposit
-      : (ContractId SignBidirectionalEvent, ContractId PendingDeposit)
+      : (ContractId SignBidirectionalEvent, ContractId PendingDeposit, ContractId SigningNonce)
       with
-        requester       : Party
+        requester    : Party
         signerCid    : ContractId Signer
         path         : Text
         evmTxParams  : EvmTransactionParams
-        authCid      : ContractId Authorization
+        nonceCid     : ContractId SigningNonce
         nonceCidText : Text
         keyVersion   : Int
         algo         : Text
@@ -189,14 +123,6 @@ template Vault
         respondSerializationSchema  : Text
       controller requester
       do
-        auth <- fetch authCid
-        assertMsg "Auth operators mismatch" (sort auth.operators == sort operators)
-        assertMsg "Auth owner mismatch" (auth.owner == requester)
-        assertMsg "No remaining uses" (auth.remainingUses > 0)
-        archive authCid
-        when (auth.remainingUses > 1) do
-          void $ create auth with remainingUses = auth.remainingUses - 1
-
         let recipientArg = case evmTxParams.args of
               recipient :: _ -> recipient
               [] -> ""
@@ -217,8 +143,8 @@ template Vault
           nonceCidText
           outputDeserializationSchema; respondSerializationSchema
 
-        signEventCid <- exercise signerCid SignBidirectional with
-          signRequestCid = signReqCid; requester
+        (signEventCid, newNonceCid) <- exercise signerCid SignBidirectional with
+          signRequestCid = signReqCid; nonceCid; requester
 
         let requestId = computeRequestId
               predecessorId evmTxParams caip2Id keyVersion
@@ -227,7 +153,7 @@ template Vault
         pendingCid <- create PendingDeposit with
           operators; requester; sigNetwork; requestId; evmTxParams
 
-        pure (signEventCid, pendingCid)
+        pure (signEventCid, pendingCid, newNonceCid)
 
     nonconsuming choice ClaimDeposit : ContractId Erc20Holding
       with
@@ -261,20 +187,21 @@ template Vault
 
         let amount = (pending.evmTxParams).args !! 1
         create Erc20Holding with
-          operators; sigNetwork
+          operators
           owner = requester
           erc20Address = (pending.evmTxParams).to
           amount
 
     -- Withdrawal flow
     nonconsuming choice RequestWithdrawal
-      : (ContractId SignBidirectionalEvent, ContractId PendingWithdrawal)
+      : (ContractId SignBidirectionalEvent, ContractId PendingWithdrawal, ContractId SigningNonce)
       with
-        requester           : Party
+        requester        : Party
         signerCid        : ContractId Signer
         evmTxParams      : EvmTransactionParams
         recipientAddress : BytesHex
         balanceCid       : ContractId Erc20Holding
+        nonceCid         : ContractId SigningNonce
         nonceCidText     : Text
         keyVersion       : Int
         algo             : Text
@@ -315,8 +242,8 @@ template Vault
           nonceCidText
           outputDeserializationSchema; respondSerializationSchema
 
-        signEventCid <- exercise signerCid SignBidirectional with
-          signRequestCid = signReqCid; requester
+        (signEventCid, newNonceCid) <- exercise signerCid SignBidirectional with
+          signRequestCid = signReqCid; nonceCid; requester
 
         let requestId = computeRequestId
               predecessorId evmTxParams caip2Id keyVersion
@@ -327,7 +254,7 @@ template Vault
           erc20Address = holding.erc20Address
           amount = holding.amount
 
-        pure (signEventCid, pendingCid)
+        pure (signEventCid, pendingCid, newNonceCid)
 
     nonconsuming choice CompleteWithdrawal : Optional (ContractId Erc20Holding)
       with
@@ -362,7 +289,7 @@ template Vault
           then pure None
           else do
             refundCid <- create Erc20Holding with
-              operators; sigNetwork
+              operators
               owner = requester
               erc20Address = pending.erc20Address
               amount = pending.amount

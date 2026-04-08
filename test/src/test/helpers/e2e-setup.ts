@@ -222,7 +222,6 @@ export async function executeDepositFlow(
 ): Promise<DepositResult> {
   const {
     canton,
-    operator,
     requester,
     sigNetwork,
     signerCid,
@@ -267,31 +266,19 @@ export async function executeDepositFlow(
     chainId: toCantonHex(BigInt(SEPOLIA_CHAIN_ID), 32),
   };
 
-  // ── Auth card flow ──
-  console.log(`${logPrefix} RequestAuthorization`);
-  const requestResult = await canton.exerciseChoice(
+  // ── Issue nonce (controller: requester) ──
+  console.log(`${logPrefix} IssueNonce`);
+  const nonceResult = await canton.exerciseChoice(
     userId,
     [requester],
-    VAULT_TEMPLATE,
-    vaultCid,
-    "RequestAuthorization",
+    SIGNER_TEMPLATE,
+    signerCid,
+    "IssueNonce",
     { requester },
     undefined,
-    [vaultDisclosure],
+    [signerDisclosure],
   );
-  const requestCid = firstCreated(requestResult.transaction.events).contractId;
-
-  console.log(`${logPrefix} ApproveAuthorization`);
-  const approveResult = await canton.exerciseChoice(
-    userId,
-    [operator],
-    VAULT_TEMPLATE,
-    vaultCid,
-    "ApproveAuthorization",
-    { requestCid, remainingUses: 1, approver: operator },
-  );
-  const authEvent = findCreated(approveResult.transaction.events, "Authorization");
-  const authCid = authEvent.contractId;
+  const nonceCid = firstCreated(nonceResult.transaction.events).contractId;
 
   // ── Request deposit ──
   console.log(`${logPrefix} RequestDeposit`);
@@ -306,8 +293,8 @@ export async function executeDepositFlow(
       signerCid,
       path: requesterPath,
       evmTxParams,
-      authCid,
-      nonceCidText: authCid,
+      nonceCid,
+      nonceCidText: nonceCid,
       keyVersion: KEY_VERSION,
       algo: ALGO,
       dest: DEST,
@@ -335,7 +322,7 @@ export async function executeDepositFlow(
     ALGO,
     DEST,
     "",
-    authCid,
+    nonceCid,
   );
   if (tsRequestId.slice(2) !== requestId) {
     throw new Error(

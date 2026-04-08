@@ -4,11 +4,13 @@ import { privateKeyToAddress, privateKeyToAccount } from "viem/accounts";
 import { sepolia } from "viem/chains";
 import {
   findCreated,
+  firstCreated,
   chainIdHexToCaip2,
   computeRequestId,
   reconstructSignedTx,
   submitRawTransaction,
   deriveChildPrivateKey,
+  Signer,
 } from "canton-sig";
 import {
   tryLoadEnv,
@@ -98,6 +100,19 @@ describeIf("sepolia e2e withdrawal lifecycle", () => {
     );
     console.log(`[wdl-e2e] Recipient ERC20 balance before: ${balanceBefore}`);
 
+    // ── Issue nonce for withdrawal ──
+    const nonceResult = await setup.canton.exerciseChoice(
+      setup.userId,
+      [setup.requester],
+      Signer.templateId,
+      setup.signerCid,
+      "IssueNonce",
+      { requester: setup.requester },
+      undefined,
+      [setup.signerDisclosure],
+    );
+    const nonceCid = firstCreated(nonceResult.transaction.events).contractId;
+
     // ── Request withdrawal ──
     console.log("[wdl-e2e] User → Canton: RequestWithdrawal");
     const wdlResult = await setup.canton.exerciseChoice(
@@ -111,7 +126,8 @@ describeIf("sepolia e2e withdrawal lifecycle", () => {
         signerCid: setup.signerCid,
         evmTxParams,
         recipientAddress: recipientPadded,
-        nonceCidText: holdingCid,
+        nonceCid,
+        nonceCidText: nonceCid,
         keyVersion: KEY_VERSION,
         algo: ALGO,
         dest: DEST,
@@ -138,7 +154,7 @@ describeIf("sepolia e2e withdrawal lifecycle", () => {
       ALGO,
       DEST,
       "",
-      holdingCid,
+      nonceCid,
     );
     expect(tsRequestId.slice(2)).toBe(requestId);
     console.log(`[wdl-e2e] PendingWithdrawal created (requestId=${requestId})`);
@@ -263,6 +279,19 @@ describeIf("sepolia e2e withdrawal lifecycle", () => {
       `0x${recipientAddress}`,
     );
 
+    // ── Issue nonce for withdrawal ──
+    const nonceResult = await setup.canton.exerciseChoice(
+      setup.userId,
+      [setup.requester],
+      Signer.templateId,
+      setup.signerCid,
+      "IssueNonce",
+      { requester: setup.requester },
+      undefined,
+      [setup.signerDisclosure],
+    );
+    const nonceCid = firstCreated(nonceResult.transaction.events).contractId;
+
     // ── Request withdrawal ──
     console.log("[wdl-nonce] User → Canton: RequestWithdrawal");
     const wdlResult = await setup.canton.exerciseChoice(
@@ -276,7 +305,8 @@ describeIf("sepolia e2e withdrawal lifecycle", () => {
         signerCid: setup.signerCid,
         evmTxParams,
         recipientAddress: recipientPadded,
-        nonceCidText: errorHoldingCid,
+        nonceCid,
+        nonceCidText: nonceCid,
         keyVersion: KEY_VERSION,
         algo: ALGO,
         dest: DEST,

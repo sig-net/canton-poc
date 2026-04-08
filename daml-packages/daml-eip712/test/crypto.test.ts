@@ -1,12 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { hashTypedData, hashDomain } from "viem";
-import {
-  computeRequestId,
-  computeResponseHash,
-  eip712Types,
-  eip712Domain,
-  type EvmTransactionParams,
-} from "canton-sig";
+import { computeRequestId, computeResponseHash, type EvmTransactionParams } from "canton-sig";
 
 const sampleEvmParams: EvmTransactionParams = {
   to: "a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
@@ -30,36 +23,15 @@ const PATH = "m/44/60/0/0";
 
 // ---------------------------------------------------------------------------
 // Cross-language vectors (must match Daml TestRequestId.daml)
-// The requestId vectors changed when the EIP-712 type was renamed from
-// CantonMpcDepositRequest to CantonMpcSignRequest (with added `params` field).
-// Response hash vectors are unchanged.
+// Uses flat keccak256(concat(encoded fields)) — no EIP-712 domain/type hashes.
 // ---------------------------------------------------------------------------
 const VECTORS = {
-  domainSeparator: "0x6399709c8eafb86e7ba1529eaf5519bf2667716e3c694e7868b652b7245ca80f",
-  requestIdKv1: "0xf92d628e4b03f27cd3c8dd54615937c121bab2d6eaceee0fa52739a32b634b13",
-  responseHash01: "0x5773f12bd1f9c7a760461812f7a3fc96a2f5a0f041258dfa8feb43f7f8b3ebe2",
-  responseHashEmpty: "0xaf2ff87730133736cd5ad11131445277ced38a0762eaa9e62320a1ffc49de8da",
+  requestIdKv1: "0xab592010331a78defa4ba5f84daf1bb95b0f2572da0cc3e16f9f52b7e98d702d",
+  responseHash01: "0xe4f5b08c4c816896be4b121dad39b8910c8a0875ef14f1a1275a037416fea55d",
+  responseHashEmpty: "0x411ab826623d7ba0be7b366112614d65632617e47325d33ec2cbfbf89186f775",
 };
 
 const KNOWN_REQUEST_ID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-
-// ---------------------------------------------------------------------------
-// Domain separator
-// ---------------------------------------------------------------------------
-describe("eip712Domain", () => {
-  it("domain separator matches Daml golden vector", () => {
-    const domainSep = hashDomain({
-      domain: eip712Domain,
-      types: {
-        EIP712Domain: [
-          { name: "name", type: "string" },
-          { name: "version", type: "string" },
-        ],
-      },
-    });
-    expect(domainSep).toBe(VECTORS.domainSeparator);
-  });
-});
 
 // ---------------------------------------------------------------------------
 // computeRequestId
@@ -209,47 +181,6 @@ describe("computeRequestId", () => {
       "",
     );
     expect(a).not.toBe(b);
-  });
-
-  it("matches viem hashTypedData directly", () => {
-    const manual = computeRequestId(
-      SENDER,
-      sampleEvmParams,
-      CAIP2_ID,
-      1,
-      PATH,
-      "ECDSA",
-      "ethereum",
-      "",
-      "",
-    );
-    const viem = hashTypedData({
-      domain: eip712Domain,
-      types: eip712Types,
-      primaryType: "CantonMpcSignRequest",
-      message: {
-        sender: SENDER,
-        evmParams: {
-          to: `0x${sampleEvmParams.to}`,
-          functionSignature: sampleEvmParams.functionSignature,
-          args: sampleEvmParams.args.map((a): `0x${string}` => `0x${a}`),
-          value: BigInt(`0x${sampleEvmParams.value}`),
-          nonce: BigInt(`0x${sampleEvmParams.nonce}`),
-          gasLimit: BigInt(`0x${sampleEvmParams.gasLimit}`),
-          maxFeePerGas: BigInt(`0x${sampleEvmParams.maxFeePerGas}`),
-          maxPriorityFee: BigInt(`0x${sampleEvmParams.maxPriorityFee}`),
-          chainId: BigInt(`0x${sampleEvmParams.chainId}`),
-        },
-        caip2Id: CAIP2_ID,
-        keyVersion: 1,
-        path: PATH,
-        algo: "ECDSA",
-        dest: "ethereum",
-        params: "",
-        nonceCidText: "",
-      },
-    });
-    expect(manual).toBe(viem);
   });
 });
 

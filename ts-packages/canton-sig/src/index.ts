@@ -28,7 +28,6 @@ export {
   derivePublicKey,
 } from "./mpc/crypto.js";
 export type { EvmTransactionParams } from "./mpc/crypto.js";
-export { eip712Types, eip712Domain } from "./mpc/crypto.js";
 export { deriveDepositAddress, chainIdHexToCaip2, KEY_VERSION } from "./mpc/address-derivation.js";
 
 // EVM transaction building
@@ -44,6 +43,7 @@ export type { CantonEvmParams } from "./evm/tx-builder.js";
 // Daml template types (re-exported for consumer convenience)
 export {
   Signer,
+  SigningNonce,
   SignBidirectionalEvent,
   SignatureRespondedEvent,
   RespondBidirectionalEvent,
@@ -53,8 +53,6 @@ export {
 export {
   Vault,
   VaultProposal,
-  Authorization,
-  AuthorizationRequest,
   Erc20Holding,
   PendingDeposit,
   PendingWithdrawal,

@@ -6,6 +6,22 @@ import DA.Crypto.Text (BytesHex, SignatureHex)
 import EvmTypes (EvmTransactionParams)
 
 -- ---------------------------------------------------------------------------
+-- SigningNonce — replay-prevention nonce (Signer-layer infrastructure)
+-- ---------------------------------------------------------------------------
+
+template SigningNonce
+  with
+    sigNetwork : Party
+    requester  : Party
+  where
+    signatory sigNetwork
+    observer requester
+
+    choice Consume_SigningNonce : ()
+      controller requester
+      do pure ()
+
+-- ---------------------------------------------------------------------------
 -- Signer singleton — MPC infrastructure
 -- ---------------------------------------------------------------------------
 
@@ -15,13 +31,28 @@ template Signer
   where
     signatory sigNetwork
 
-    nonconsuming choice SignBidirectional : ContractId SignBidirectionalEvent
+    nonconsuming choice IssueNonce : ContractId SigningNonce
       with
-        signRequestCid : ContractId SignRequest
-        requester         : Party
+        requester : Party
       controller requester
       do
-        exercise signRequestCid Execute
+        create SigningNonce with sigNetwork; requester
+
+    nonconsuming choice SignBidirectional
+      : (ContractId SignBidirectionalEvent, ContractId SigningNonce)
+      with
+        signRequestCid : ContractId SignRequest
+        nonceCid       : ContractId SigningNonce
+        requester      : Party
+      controller requester
+      do
+        nonce <- fetch nonceCid
+        assertMsg "Nonce sigNetwork mismatch" (nonce.sigNetwork == sigNetwork)
+        assertMsg "Nonce requester mismatch" (nonce.requester == requester)
+        archive nonceCid
+        eventCid <- exercise signRequestCid Execute
+        newNonceCid <- create SigningNonce with sigNetwork; requester
+        pure (eventCid, newNonceCid)
 
     nonconsuming choice Respond : ContractId SignatureRespondedEvent
       with
@@ -65,10 +96,10 @@ template SignRequest
     algo                       : Text
     dest                       : Text
     params                     : Text
-    nonceCidText               : Text   -- contract ID of consumed Authorization (deposits) or
-                                        -- Erc20Holding (withdrawals); hashed into requestId for
-                                        -- replay prevention. MPC verifies this matches an archived
-                                        -- contract of the correct template in the same transaction.
+    nonceCidText               : Text   -- text representation of the consumed SigningNonce contract
+                                        -- ID; hashed into requestId for replay prevention. MPC
+                                        -- verifies this matches an archived SigningNonce in the
+                                        -- same transaction.
     outputDeserializationSchema : Text
     respondSerializationSchema  : Text
   where
