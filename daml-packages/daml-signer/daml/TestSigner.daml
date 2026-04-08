@@ -3,7 +3,7 @@ module TestSigner where
 import DA.Optional (fromSome, isSome)
 import Daml.Script
 
-import Signer (Signer(..), SigningNonce(..), IssueNonce(..), SignBidirectional(..), Respond(..), RespondBidirectional(..), SignRequest(..), Consume_SignBidirectional(..), Consume_SignatureResponded(..), Consume_RespondBidirectional(..))
+import Signer (Signer(..), SigningNonce(..), IssueNonce(..), SignBidirectional(..), Respond(..), RespondBidirectional(..), SignRequest(..), Consume_SignBidirectional(..), Consume_SignatureResponded(..), Consume_RespondBidirectional(..), Consume_SigningNonce(..))
 import TestFixtures (sampleEvmParams, erc20BoolSchema)
 
 ------------------------------------------------------------------------
@@ -123,13 +123,21 @@ testSignBidirectionalHappyPath = do
       signRequestCid = signReqCid; nonceCid; requester
 
   evt <- queryContractId requester evtCid
-  assertMsg "event must exist" (isSome evt)
   let e = fromSome evt
-  assertMsg "operators"  (e.operators  == [operator])
-  assertMsg "requester"  (e.requester  == requester)
-  assertMsg "sigNetwork" (e.sigNetwork == sigNetwork)
-  assertMsg "sender"     (e.sender     == "test-sender")
-  assertMsg "evmTxParams" (e.evmTxParams == sampleEvmParams)
+  assertMsg "operators"                  (e.operators                  == [operator])
+  assertMsg "requester"                  (e.requester                  == requester)
+  assertMsg "sigNetwork"                 (e.sigNetwork                 == sigNetwork)
+  assertMsg "sender"                     (e.sender                     == "test-sender")
+  assertMsg "evmTxParams"                (e.evmTxParams                == sampleEvmParams)
+  assertMsg "caip2Id"                    (e.caip2Id                    == "eip155:11155111")
+  assertMsg "keyVersion"                 (e.keyVersion                 == 1)
+  assertMsg "path"                       (e.path                       == "test-path")
+  assertMsg "algo"                       (e.algo                       == "ECDSA")
+  assertMsg "dest"                       (e.dest                       == "ethereum")
+  assertMsg "params"                     (e.params                     == "")
+  assertMsg "nonceCidText"               (e.nonceCidText               == "test-nonce")
+  assertMsg "outputDeserializationSchema" (e.outputDeserializationSchema == erc20BoolSchema)
+  assertMsg "respondSerializationSchema"  (e.respondSerializationSchema  == erc20BoolSchema)
 
 -- rogue party cannot exercise SignBidirectional (controller is requester on SignRequest.Execute)
 testSignBidirectionalWrongRequesterFails : Script ()
@@ -237,7 +245,8 @@ testConsumeSignBidirectionalByRogueFails = do
     exerciseCmd signerCid SignBidirectional with
       signRequestCid = signReqCid; nonceCid; requester
 
-  submitMustFail rogue do
+  -- rogue has visibility (readAs operator + requester) but fails on assertMsg authorization
+  submitMustFail (actAs rogue <> readAs operator <> readAs requester) do
     exerciseCmd evtCid Consume_SignBidirectional with actor = rogue
 
 -- SignatureRespondedEvent: signatory sigNetwork; observer operators, requester
@@ -272,7 +281,7 @@ testConsumeSignatureRespondedByRequester = do
 
   pure ()
 
--- rogue party cannot archive SignatureRespondedEvent (no visibility + not authorized)
+-- rogue party cannot archive SignatureRespondedEvent (has visibility but not authorized)
 testConsumeSignatureRespondedByRogueFails : Script ()
 testConsumeSignatureRespondedByRogueFails = do
   (sigNetwork, operator, requester, signerCid) <- setup
@@ -283,7 +292,8 @@ testConsumeSignatureRespondedByRogueFails = do
       operators = [operator]; requester
       requestId = "aa"; signature = "bb"
 
-  submitMustFail rogue do
+  -- rogue has visibility (readAs sigNetwork) but fails on assertMsg authorization
+  submitMustFail (actAs rogue <> readAs sigNetwork) do
     exerciseCmd evtCid Consume_SignatureResponded with actor = rogue
 
 -- RespondBidirectionalEvent: signatory sigNetwork; observer operators, requester
@@ -318,7 +328,7 @@ testConsumeRespondBidirectionalByOperator = do
 
   pure ()
 
--- rogue party cannot archive RespondBidirectionalEvent (no visibility + not authorized)
+-- rogue party cannot archive RespondBidirectionalEvent (has visibility but not authorized)
 testConsumeRespondBidirectionalByRogueFails : Script ()
 testConsumeRespondBidirectionalByRogueFails = do
   (sigNetwork, operator, requester, signerCid) <- setup
@@ -329,7 +339,8 @@ testConsumeRespondBidirectionalByRogueFails = do
       operators = [operator]; requester
       requestId = "aa"; serializedOutput = "cc"; signature = "dd"
 
-  submitMustFail rogue do
+  -- rogue has visibility (readAs sigNetwork) but fails on assertMsg authorization
+  submitMustFail (actAs rogue <> readAs sigNetwork) do
     exerciseCmd evtCid Consume_RespondBidirectional with actor = rogue
 
 ------------------------------------------------------------------------
@@ -395,3 +406,69 @@ testReuseArchivedNonceFails = do
   submitMustFail (actAs requester <> readAs operator <> readAs sigNetwork) do
     exerciseCmd signerCid SignBidirectional with
       signRequestCid = signReqCid2; nonceCid; requester
+
+------------------------------------------------------------------------
+-- Cross-signer nonce forgery
+------------------------------------------------------------------------
+
+-- Nonce issued on signerA cannot be used with signerB (sigNetwork mismatch)
+testSignBidirectionalWrongSignerNonceFails : Script ()
+testSignBidirectionalWrongSignerNonceFails = do
+  sigNetworkA <- allocateParty "SigNetworkA"
+  sigNetworkB <- allocateParty "SigNetworkB"
+  operator    <- allocateParty "Operator"
+  requester   <- allocateParty "Requester"
+
+  signerCidA <- submit sigNetworkA do createCmd Signer with sigNetwork = sigNetworkA
+  signerCidB <- submit sigNetworkB do createCmd Signer with sigNetwork = sigNetworkB
+
+  -- Issue nonce on signerA
+  nonceCidA <- submit (actAs requester <> readAs sigNetworkA) do
+    exerciseCmd signerCidA IssueNonce with requester
+
+  -- Create a SignRequest targeting sigNetworkB
+  signReqCid <- submit operator do
+    createCmd SignRequest with
+      operators = [operator]; requester; sigNetwork = sigNetworkB
+      sender = "test-sender"
+      evmTxParams = sampleEvmParams
+      caip2Id = "eip155:11155111"
+      keyVersion = 1
+      path = "test-path"
+      algo = "ECDSA"
+      dest = "ethereum"
+      params = ""
+      nonceCidText = "test-nonce"
+      outputDeserializationSchema = erc20BoolSchema
+      respondSerializationSchema = erc20BoolSchema
+
+  -- Attempt SignBidirectional on signerB with nonce from signerA -> fails on "Nonce sigNetwork mismatch"
+  submitMustFail (actAs requester <> readAs operator <> readAs sigNetworkA <> readAs sigNetworkB) do
+    exerciseCmd signerCidB SignBidirectional with
+      signRequestCid = signReqCid; nonceCid = nonceCidA; requester
+
+------------------------------------------------------------------------
+-- Consume_SigningNonce
+------------------------------------------------------------------------
+
+-- requester can exercise Consume_SigningNonce (controller is requester)
+testConsumeSigningNonceByRequester : Script ()
+testConsumeSigningNonceByRequester = do
+  (sigNetwork, _operator, requester, signerCid) <- setup
+  nonceCid <- issueNonce sigNetwork requester signerCid
+
+  submit requester do
+    exerciseCmd nonceCid Consume_SigningNonce
+
+  -- Nonce must be archived after consumption
+  nonce <- queryContractId requester nonceCid
+  assertMsg "nonce must be archived" (not (isSome nonce))
+
+-- sigNetwork cannot exercise Consume_SigningNonce (controller is requester, not sigNetwork)
+testConsumeSigningNonceBySigNetworkFails : Script ()
+testConsumeSigningNonceBySigNetworkFails = do
+  (sigNetwork, _operator, requester, signerCid) <- setup
+  nonceCid <- issueNonce sigNetwork requester signerCid
+
+  submitMustFail sigNetwork do
+    exerciseCmd nonceCid Consume_SigningNonce

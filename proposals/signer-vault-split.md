@@ -61,6 +61,21 @@ distributed trust. All operators must agree at Vault creation time (via
 `VaultProposal`), but subsequent operations (deposits, withdrawals) inherit
 their combined authority automatically through nonconsuming choices.
 
+#### Why `[Party]`, not `Party | [Party]`
+
+Daml has no union types. A template field must be a single concrete type.
+Daml does support sum types (variants) — e.g.,
+`data Operators = Single Party | Multiple [Party]` — but using a variant
+for signatories would require pattern-matching at every use site, and the
+`signatory` keyword expects `Party` or `[Party]`, not a custom sum type.
+
+The idiomatic Daml pattern (documented in the official
+[Multi-Party Agreement Pattern](https://docs.daml.com/daml/patterns/multiparty-agreement.html))
+is `operators : [Party]` with `signatory operators`. A single operator
+is represented as `[operator]`. The `ensure` clause enforces
+`not (null operators) && unique operators`, guaranteeing at least one
+operator with no duplicates.
+
 ### Malicious Participant: API-Layer Attack
 
 The multi-signatory model protects the **ledger** but not the **API**.
@@ -70,14 +85,6 @@ unauthorized transactions. This is the same attack vector as a malicious
 Ethereum RPC endpoint. Canton has no light client protocol to prove
 contract inclusion. See **MPC Trust Boundary: Malicious Participant
 Attack** below for the full analysis and mitigation options.
-
-### MPC Outcome Signing Over All Operators
-
-The MPC must sign its outcome over **all** operator parties — not just a
-single DEX identifier. The `computeRequestId` hash includes a
-deterministic encoding of all operators, and the `computeResponseHash`
-binds the MPC signature to the same set. This prevents an attacker from
-stripping operators from the signed payload to weaken the multi-sig.
 
 ## Parties
 
@@ -218,9 +225,7 @@ always has a nonce ready for the next request without an extra
 transaction. The `Consume_SigningNonce` choice lets the requester
 discard unused nonces.
 
-The nonce is pure infrastructure — no domain semantics. Authorization
-(auth cards, approval flows, etc.) is a Vault-layer concern that
-integrators implement independently.
+The nonce is pure infrastructure — no domain semantics.
 
 ```daml
 template SigningNonce
@@ -476,12 +481,11 @@ template PendingWithdrawal
 
 Atomically creates `SignBidirectionalEvent` (via Signer, which archives
 the `SigningNonce`) AND `PendingDeposit` (on Vault). The user calls one
-choice — everything chains internally. Authorization (auth cards, etc.)
-is the integrator's concern and is not enforced at this layer.
+choice — everything chains internally.
 
 ```daml
     nonconsuming choice RequestDeposit
-      : (ContractId SignBidirectionalEvent, ContractId PendingDeposit)
+      : (ContractId SignBidirectionalEvent, ContractId PendingDeposit, ContractId SigningNonce)
       with
         requester    : Party
         signerCid    : ContractId Signer   -- disclosed contract
@@ -521,7 +525,7 @@ is the integrator's concern and is not enforced at this layer.
         -- Step 2: Exercise Signer.SignBidirectional (needs requester authority)
         -- Signer archives the nonce (sigNetwork authority), then delegates
         -- to SignRequest.Execute which creates SignBidirectionalEvent
-        signEventCid <- exercise signerCid SignBidirectional with
+        (signEventCid, newNonceCid) <- exercise signerCid SignBidirectional with
           signRequestCid = signReqCid; nonceCid; requester
 
         -- Compute requestId for the pending anchor
@@ -533,7 +537,7 @@ is the integrator's concern and is not enforced at this layer.
         pendingCid <- create PendingDeposit with
           operators; requester; sigNetwork; requestId; evmTxParams
 
-        pure (signEventCid, pendingCid)
+        pure (signEventCid, pendingCid, newNonceCid)
 ```
 
 ### `ClaimDeposit`
@@ -544,10 +548,10 @@ signature, creates `Erc20Holding`.
 ```daml
     nonconsuming choice ClaimDeposit : ContractId Erc20Holding
       with
-        requester         : Party
-        pendingDepositCid : ContractId PendingDeposit
-        outcomeCid        : ContractId RespondBidirectionalEvent
-        sigCid            : ContractId SignatureRespondedEvent
+        requester                    : Party
+        pendingDepositCid            : ContractId PendingDeposit
+        respondBidirectionalEventCid : ContractId RespondBidirectionalEvent
+        signatureRespondedEventCid   : ContractId SignatureRespondedEvent
       controller requester
       do
         pending <- fetch pendingDepositCid
@@ -556,7 +560,7 @@ signature, creates `Erc20Holding`.
         assertMsg "Sender mismatch" (pending.requester == requester)
         assertMsg "Operators mismatch" (sort pending.operators == sort operators)
 
-        outcome <- fetch outcomeCid
+        outcome <- fetch respondBidirectionalEventCid
         assertMsg "Outcome requestId mismatch"
           (outcome.requestId == pending.requestId)
 
@@ -569,9 +573,8 @@ signature, creates `Erc20Holding`.
         let success = abiDecodeBool outcome.serializedOutput 0
         assertMsg "ERC20 transfer returned false" success
 
-        -- Use Consume choices (Vault body lacks sigNetwork authority to archive directly)
-        exercise outcomeCid Consume_RespondBidirectional with actor = requester
-        exercise sigCid Consume_SignatureResponded with actor = requester
+        exercise respondBidirectionalEventCid Consume_RespondBidirectional with actor = requester
+        exercise signatureRespondedEventCid Consume_SignatureResponded with actor = requester
 
         let amount = (pending.evmTxParams).args !! 1
         create Erc20Holding with
@@ -588,7 +591,7 @@ Archives the `Erc20Holding` (optimistic debit), same atomic flow as
 
 ```daml
     nonconsuming choice RequestWithdrawal
-      : (ContractId SignBidirectionalEvent, ContractId PendingWithdrawal)
+      : (ContractId SignBidirectionalEvent, ContractId PendingWithdrawal, ContractId SigningNonce)
       with
         requester        : Party
         signerCid        : ContractId Signer
@@ -636,7 +639,7 @@ Archives the `Erc20Holding` (optimistic debit), same atomic flow as
           nonceCidText
           outputDeserializationSchema; respondSerializationSchema
 
-        signEventCid <- exercise signerCid SignBidirectional with
+        (signEventCid, newNonceCid) <- exercise signerCid SignBidirectional with
           signRequestCid = signReqCid; nonceCid; requester
 
         let requestId = computeRequestId
@@ -648,7 +651,7 @@ Archives the `Erc20Holding` (optimistic debit), same atomic flow as
           erc20Address = holding.erc20Address
           amount = holding.amount
 
-        pure (signEventCid, pendingCid)
+        pure (signEventCid, pendingCid, newNonceCid)
 ```
 
 ### `CompleteWithdrawal`
@@ -658,10 +661,10 @@ Consumes `PendingWithdrawal`. On failure, refunds the holding.
 ```daml
     nonconsuming choice CompleteWithdrawal : Optional (ContractId Erc20Holding)
       with
-        requester            : Party
-        pendingWithdrawalCid : ContractId PendingWithdrawal
-        outcomeCid           : ContractId RespondBidirectionalEvent
-        sigCid               : ContractId SignatureRespondedEvent
+        requester                    : Party
+        pendingWithdrawalCid         : ContractId PendingWithdrawal
+        respondBidirectionalEventCid : ContractId RespondBidirectionalEvent
+        signatureRespondedEventCid   : ContractId SignatureRespondedEvent
       controller requester
       do
         pending <- fetch pendingWithdrawalCid
@@ -670,7 +673,7 @@ Consumes `PendingWithdrawal`. On failure, refunds the holding.
         assertMsg "Sender mismatch" (pending.requester == requester)
         assertMsg "Operators mismatch" (sort pending.operators == sort operators)
 
-        outcome <- fetch outcomeCid
+        outcome <- fetch respondBidirectionalEventCid
         assertMsg "Outcome requestId mismatch"
           (outcome.requestId == pending.requestId)
 
@@ -678,8 +681,8 @@ Consumes `PendingWithdrawal`. On failure, refunds the holding.
         assertMsg "Invalid MPC signature"
           (secp256k1WithEcdsaOnly outcome.signature responseHash evmMpcPublicKey)
 
-        exercise outcomeCid Consume_RespondBidirectional with actor = requester
-        exercise sigCid Consume_SignatureResponded with actor = requester
+        exercise respondBidirectionalEventCid Consume_RespondBidirectional with actor = requester
+        exercise signatureRespondedEventCid Consume_SignatureResponded with actor = requester
 
         let shouldRefund =
               hasErrorPrefix outcome.serializedOutput
@@ -700,9 +703,7 @@ Consumes `PendingWithdrawal`. On failure, refunds the holding.
 
 Tracks on-ledger ERC20 balances per user. `sigNetwork` is NOT an
 observer — nonce verification uses `SigningNonce` (Signer layer), so
-domain contracts stay decoupled from MPC infrastructure. Authorization
-(auth cards, approval flows, etc.) is the integrator's concern — the
-base Vault does not enforce any authorization pattern.
+domain contracts stay decoupled from MPC infrastructure.
 
 ```daml
 template Erc20Holding
@@ -724,7 +725,7 @@ plus the `requester`. Since Canton party IDs are globally unique
 produce the same `requestId` even with identical `evmTxParams`.
 
 The operators list is sorted before hashing to ensure determinism.
-See `requestId` Computation above for the full formula.
+See `requestId` Computation below for the full formula.
 
 ## Deposit Lifecycle
 
@@ -785,9 +786,9 @@ See `requestId` Computation above for the full formula.
  Sender                Vault (Operators)       Signer (SigNetwork)     MPC (sigNetwork)         Sepolia
  |                     |                       |                       |                         |
  | 0. IssueNonce       |                       |                       |                         |
- |                     |                       | sigNetwork creates    |                         |
+ |--------------------------------------------►| requester creates     |                         |
  |                     |                       |   SigningNonce         |                         |
- |<--------------------------------------------|                       |                         |
+ |<--------------------------------------------|   (via disclosed Signer)                        |
  |                     |                       |                       |                         |
  | 1. RequestWithdrawal(nonceCid, ...)         |                       |                         |
  |-------------------->|                       |                       |                         |
@@ -883,9 +884,7 @@ Cross-Vault Isolation), so the `responseHash` transitively binds the MPC
 signature to the full operator set:
 
 ```
-responseHash = eip712Hash(keccak256(
-    responseTypeHash <> assertBytes32 requestId <> safeKeccak256 serializedOutput
-))
+responseHash = keccak256(assertBytes32 requestId <> safeKeccak256 serializedOutput)
 -- requestId transitively includes operatorsHash (from computeRequestId)
 ```
 
@@ -902,9 +901,8 @@ as Solana/Hydration (`generate_request_id()` in the MPC node). The
 determinism:
 
 ```
-requestId = eip712Hash(keccak256(
-    requestTypeHash
-    <> hashText sender             -- sender = predecessorId = vaultId <> operatorsHash
+requestId = keccak256(
+       hashText sender             -- sender = predecessorId = vaultId <> operatorsHash
     <> hashEvmParams evmTxParams
     <> hashText caip2Id
     <> padLeft (toHex keyVersion) 32
@@ -913,7 +911,7 @@ requestId = eip712Hash(keccak256(
     <> hashText dest
     <> hashText params
     <> hashText nonceCidText       -- consumed contract ID (replay prevention)
-))
+)
 ```
 
 Where:
@@ -938,9 +936,6 @@ hashes.
 - **Body authority**: `operators` (Vault signatories) + `requester`
   (controller of `RequestDeposit`)
 - `requester` has visibility of Signer via disclosed contract ✓
-- `SignBidirectionalEvent` signatory is `operators, requester` — sigNetwork
-  is NOT a signatory, only observer. SigNetwork cannot forge sign
-  requests.
 
 ### Multi-party authority flow
 
@@ -1008,11 +1003,10 @@ because the damage happens at **signing time** — the MPC already signed
 the transaction and funds already moved on Ethereum. The attacker never
 needs to claim anything on Canton.
 
-### MPC Service Must Validate Signatories
+### MPC Service Signatory Validation (implemented)
 
-The current MPC service only validates the `requestId` hash
-(`tx-handler.ts:137-153`). It must also validate the **transaction
-metadata** from the Canton JSON Ledger API:
+The MPC service validates **transaction metadata** from the Canton JSON
+Ledger API in addition to the `requestId` hash:
 
 1. **Check `CreatedEvent.signatories`** — verify that the expected
    operator parties are actual signatories on the contract, not just
@@ -1031,7 +1025,7 @@ metadata** from the Canton JSON Ledger API:
    `signatories = [sigNetwork]` only — a mismatch the MPC must reject.
 
 ```typescript
-// Proposed validation in tx-handler.ts
+// Implemented in tx-handler.ts signAndEnqueue()
 const created = event.CreatedEvent;
 const onLedgerSignatories = new Set(created.signatories);
 const claimedOperators = payload.operators as string[];
@@ -1053,10 +1047,11 @@ actual confirmation protocol), it closes the gap.
 
 ### Nonce: `SigningNonce` and MPC Verification
 
-Replay prevention uses a dedicated `SigningNonce` contract issued by
-`sigNetwork` via `Signer.IssueNonce`. The nonce is pure Signer-layer
-infrastructure — no domain semantics, no coupling to vault-specific
-templates.
+Replay prevention uses a dedicated `SigningNonce` contract. The
+requester self-serves the first nonce via `Signer.IssueNonce`
+(controller: requester); subsequent nonces are created atomically by
+`SignBidirectional` (nonce rotation). Pure Signer-layer infrastructure
+— no domain semantics, no coupling to vault-specific templates.
 
 #### Design rationale
 
@@ -1066,9 +1061,8 @@ templates: `sigNetwork` needed observer rights on domain contracts,
 and the MPC maintained an `ALLOWED_NONCE_TEMPLATES` set that grew
 per vault type. By moving the nonce to the Signer layer:
 
-- **Domain contracts stay clean** — `Authorization` and `Erc20Holding`
-  don't need `sigNetwork` as observer. Their templates are purely
-  vault-level, upgrade-safe, and integrator-controlled.
+- **Domain contracts stay clean** — `Erc20Holding` (and any future
+  integrator templates) don't need `sigNetwork` as observer.
 - **Authorization is the integrator's concern** — different vault
   types can implement their own auth patterns (auth cards, multi-sig
   approvals, rate limits, or nothing at all) without touching the
@@ -1079,11 +1073,11 @@ per vault type. By moving the nonce to the Signer layer:
 
 #### Lifecycle
 
-1. **Issuance** — The `requester` exercises `Signer.IssueNonce` on
-   the disclosed Signer contract. Creates a `SigningNonce` (signatory:
-   `sigNetwork`, observer: `requester`). This is a separate
-   transaction — the nonce is non-transient. Self-service: the
-   requester can issue nonces any time without waiting for sigNetwork.
+1. **Issuance (first nonce only)** — The `requester` exercises
+   `Signer.IssueNonce` on the disclosed Signer contract. Creates a
+   `SigningNonce` (signatory: `sigNetwork`, observer: `requester`).
+   This is a separate transaction — the nonce is non-transient.
+   Subsequent nonces come from atomic rotation in `SignBidirectional`.
 2. **Consumption + rotation** — The user passes `nonceCid` and
    `nonceCidText` to the Vault choice. `Signer.SignBidirectional`
    validates the nonce (sigNetwork + requester match), archives it,
@@ -1127,7 +1121,7 @@ const nonceEvent = archivedEvents.find((a) => a.contractId === nonceCidText);
 if (!nonceEvent) {
   throw new Error("nonceCidText does not match any ArchivedEvent");
 }
-if (templateSuffix(nonceEvent.templateId) !== "SigningNonce") {
+if (templateSuffix(nonceEvent.templateId) !== SIGNING_NONCE_SUFFIX) {
   throw new Error("nonceCidText is not a SigningNonce");
 }
 ```
@@ -1136,15 +1130,6 @@ During catch-up (reconnection via `getActiveContracts`), the
 transaction context is unavailable — the catch-up path trusts the
 ledger state, which is acceptable because catch-up only processes
 contracts that survived the confirmation protocol.
-
-#### Self-service nonce issuance
-
-`IssueNonce` is controlled by `requester` (flexible controller on the
-disclosed Signer). Any party with the Signer blob can self-serve nonces
-without waiting for SigNetwork. The nonce does not authorize anything
-(authorization is a Vault-layer concern); it only prevents replay. The
-Signer's `sigNetwork` signatory flows into the `SigningNonce` via the
-choice body authority.
 
 ### Why Canton Cannot Provide Light Client Proofs
 
@@ -1265,11 +1250,10 @@ the participant, it enforces its own rules.
    Signer layer across multiple vault implementations.
 
 2. **Signer-layer nonce** — Replay prevention uses `SigningNonce`
-   (signatory: `sigNetwork`), issued via `Signer.IssueNonce` and
-   archived in `Signer.SignBidirectional` (which has `sigNetwork`
-   authority). This decouples the nonce from domain contracts —
-   `Authorization` and `Erc20Holding` don't need `sigNetwork` as
-   observer, and the MPC checks exactly one template type.
+   (signatory: `sigNetwork`), issued via `Signer.IssueNonce`
+   (controller: `requester`) and atomically rotated in
+   `Signer.SignBidirectional`. Domain contracts don't need
+   `sigNetwork` as observer; the MPC checks exactly one template type.
    Authorization is the integrator's concern, not the Signer's.
 
 ## Open Questions

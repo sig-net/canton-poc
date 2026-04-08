@@ -370,6 +370,9 @@ testWithdrawalCompleteSuccess = do
 
   assertMsg "success must return None" (isNone result)
 
+  oldPending <- queryContractId requester pendingCid
+  assertMsg "pending must be archived" (isNone oldPending)
+
 ------------------------------------------------------------------------
 -- Withdrawal complete failure returns refund holding
 ------------------------------------------------------------------------
@@ -410,6 +413,9 @@ testWithdrawalCompleteFailureRefund = do
   assertMsg "refund operators" (h.operators == [operator])
   assertMsg "refund erc20Address" (h.erc20Address == sampleErc20Address)
   assertMsg "refund amount" (h.amount == sampleHoldingAmount)
+
+  oldPending <- queryContractId requester pendingCid
+  assertMsg "pending must be archived" (isNone oldPending)
 
 ------------------------------------------------------------------------
 -- Withdrawal validation negative tests
@@ -621,7 +627,7 @@ testWithdrawalRejectsHoldingOperatorsMismatch = do
       operators = [rogue]; owner = requester
       erc20Address = sampleErc20Address; amount = sampleHoldingAmount
 
-  submitMustFail (actAs requester <> readAs operator <> readAs sigNetwork <> readAs rogue) do
+  submitMustFail (actAs requester <> actAs rogue <> readAs operator <> readAs sigNetwork) do
     exerciseCmd vaultCid RequestWithdrawal with
       requester; signerCid; evmTxParams = sampleWithdrawalEvmParams
       recipientAddress = sampleRecipientAddress; balanceCid = holdingCid
@@ -704,3 +710,6 @@ testCompleteWithdrawalBoolFalseRefunds = do
   assertMsg "refund operators" (h.operators == [operator])
   assertMsg "refund erc20Address" (h.erc20Address == sampleErc20Address)
   assertMsg "refund amount" (h.amount == sampleHoldingAmount)
+
+  oldPending <- queryContractId requester pendingCid
+  assertMsg "pending must be archived" (isNone oldPending)
