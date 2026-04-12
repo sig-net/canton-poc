@@ -4,6 +4,7 @@ import DA.Optional (fromSome, isSome)
 import Daml.Script
 
 import Signer (Signer(..), SigningNonce(..), IssueNonce(..), SignBidirectional(..), Respond(..), RespondBidirectional(..), SignRequest(..), Consume_SignBidirectional(..), Consume_SignatureResponded(..), Consume_RespondBidirectional(..), Consume_SigningNonce(..))
+import TxParams (TxParams(..))
 import TestFixtures (sampleEvmParams, erc20BoolSchema)
 
 ------------------------------------------------------------------------
@@ -28,7 +29,7 @@ mkSignRequest operator requester sigNetwork =
     createCmd SignRequest with
       operators = [operator]; requester; sigNetwork
       sender = "test-sender"
-      evmTxParams = sampleEvmParams
+      txParams = EvmTxParams sampleEvmParams
       caip2Id = "eip155:11155111"
       keyVersion = 1
       path = "test-path"
@@ -128,7 +129,7 @@ testSignBidirectionalHappyPath = do
   assertMsg "requester"                  (e.requester                  == requester)
   assertMsg "sigNetwork"                 (e.sigNetwork                 == sigNetwork)
   assertMsg "sender"                     (e.sender                     == "test-sender")
-  assertMsg "evmTxParams"                (e.evmTxParams                == sampleEvmParams)
+  assertMsg "txParams"                (e.txParams                == EvmTxParams sampleEvmParams)
   assertMsg "caip2Id"                    (e.caip2Id                    == "eip155:11155111")
   assertMsg "keyVersion"                 (e.keyVersion                 == 1)
   assertMsg "path"                       (e.path                       == "test-path")
@@ -164,7 +165,7 @@ testSignRequestEmptyOperatorsFails = do
     createCmd SignRequest with
       operators = []; requester; sigNetwork
       sender = "test-sender"
-      evmTxParams = sampleEvmParams
+      txParams = EvmTxParams sampleEvmParams
       caip2Id = "eip155:11155111"
       keyVersion = 1
       path = "test-path"
@@ -184,7 +185,7 @@ testSignRequestDuplicateOperatorsFails = do
     createCmd SignRequest with
       operators = [operator, operator]; requester; sigNetwork
       sender = "test-sender"
-      evmTxParams = sampleEvmParams
+      txParams = EvmTxParams sampleEvmParams
       caip2Id = "eip155:11155111"
       keyVersion = 1
       path = "test-path"
@@ -431,7 +432,7 @@ testSignBidirectionalWrongSignerNonceFails = do
     createCmd SignRequest with
       operators = [operator]; requester; sigNetwork = sigNetworkB
       sender = "test-sender"
-      evmTxParams = sampleEvmParams
+      txParams = EvmTxParams sampleEvmParams
       caip2Id = "eip155:11155111"
       keyVersion = 1
       path = "test-path"

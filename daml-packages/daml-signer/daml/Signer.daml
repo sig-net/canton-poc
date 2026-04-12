@@ -3,7 +3,7 @@ module Signer where
 import DA.List (unique)
 import DA.Crypto.Text (BytesHex, SignatureHex)
 
-import EvmTypes (EvmTransactionParams)
+import TxParams (TxParams)
 
 -- ---------------------------------------------------------------------------
 -- SigningNonce — replay-prevention nonce (Signer-layer infrastructure)
@@ -89,7 +89,7 @@ template SignRequest
     requester                  : Party
     sigNetwork                 : Party
     sender                     : Text   -- predecessorId = vaultId <> keccak256(sort(operators)), for KDF
-    evmTxParams                : EvmTransactionParams
+    txParams                : TxParams
     caip2Id                    : Text
     keyVersion                 : Int
     path                       : Text
@@ -112,7 +112,7 @@ template SignRequest
       do
         create SignBidirectionalEvent with
           operators; requester; sigNetwork; sender
-          evmTxParams; caip2Id; keyVersion; path; algo; dest; params
+          txParams; caip2Id; keyVersion; path; algo; dest; params
           nonceCidText
           outputDeserializationSchema; respondSerializationSchema
 
@@ -126,7 +126,7 @@ template SignBidirectionalEvent
     requester                  : Party
     sigNetwork                 : Party
     sender                     : Text   -- predecessorId = vaultId <> keccak256(sort(operators)), for KDF
-    evmTxParams                : EvmTransactionParams
+    txParams                : TxParams
     caip2Id                    : Text
     keyVersion                 : Int
     path                       : Text

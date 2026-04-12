@@ -4,6 +4,7 @@ import DA.List ((!!) , sort, unique)
 import DA.Crypto.Text (BytesHex, PublicKeyHex, secp256k1WithEcdsaOnly)
 
 import EvmTypes (EvmTransactionParams)
+import TxParams (TxParams(..))
 import Eip712 (chainIdToDecimalText)
 import RequestId (computeRequestId, computeResponseHash, computeOperatorsHash)
 import Abi (hasErrorPrefix, abiDecodeBool)
@@ -138,7 +139,7 @@ template Vault
 
         signReqCid <- create SignRequest with
           operators; requester; sigNetwork
-          evmTxParams; sender = predecessorId; caip2Id; keyVersion
+          txParams = EvmTxParams evmTxParams; sender = predecessorId; caip2Id; keyVersion
           path = fullPath; algo; dest; params
           nonceCidText
           outputDeserializationSchema; respondSerializationSchema
@@ -147,7 +148,7 @@ template Vault
           signRequestCid = signReqCid; nonceCid; requester
 
         let requestId = computeRequestId
-              predecessorId evmTxParams caip2Id keyVersion
+              predecessorId (EvmTxParams evmTxParams) caip2Id keyVersion
               fullPath algo dest params nonceCidText
 
         pendingCid <- create PendingDeposit with
@@ -237,7 +238,7 @@ template Vault
 
         signReqCid <- create SignRequest with
           operators; requester; sigNetwork
-          evmTxParams; sender = predecessorId; caip2Id; keyVersion
+          txParams = EvmTxParams evmTxParams; sender = predecessorId; caip2Id; keyVersion
           path = "root"; algo; dest; params
           nonceCidText
           outputDeserializationSchema; respondSerializationSchema
@@ -246,7 +247,7 @@ template Vault
           signRequestCid = signReqCid; nonceCid; requester
 
         let requestId = computeRequestId
-              predecessorId evmTxParams caip2Id keyVersion
+              predecessorId (EvmTxParams evmTxParams) caip2Id keyVersion
               "root" algo dest params nonceCidText
 
         pendingCid <- create PendingWithdrawal with

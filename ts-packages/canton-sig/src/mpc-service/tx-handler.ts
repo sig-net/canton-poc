@@ -138,7 +138,7 @@ export async function signAndEnqueue(
     requester,
     sender,
     operators,
-    evmTxParams,
+    txParams,
     nonceCidText,
     keyVersion,
     algo,
@@ -146,6 +146,13 @@ export async function signAndEnqueue(
     params,
     path: requestPath,
   } = arg;
+
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- guard for future BTC/SOL variants
+  if (txParams.tag !== 'EvmTxParams') {
+    // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
+    throw new Error(`Unsupported chain params: ${txParams.tag}`);
+  }
+  const evmTxParams = txParams.value;
 
   const predecessorId = sender;
 
@@ -219,7 +226,7 @@ export async function signAndEnqueue(
   const caip2Id = chainIdHexToCaip2(evmTxParams.chainId);
   const computedRequestId = computeRequestId(
     sender,
-    evmTxParams,
+    txParams,
     caip2Id,
     Number(keyVersion),
     requestPath,

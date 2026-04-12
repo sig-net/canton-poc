@@ -13,44 +13,65 @@ export interface EvmTransactionParams {
   chainId: string;
 }
 
+export type TxParams = { tag: 'EvmTxParams'; value: EvmTransactionParams };
+
 // ---------------------------------------------------------------------------
-// Encoding helpers — mirror Daml's Eip712.daml primitives
+// EIP-712 primitive encoding — mirrors Daml's Eip712.daml
 // ---------------------------------------------------------------------------
 
-/** keccak256(utf8(text)) — mirrors Daml's hashText */
-function hashText(text: string): Hex {
+/** EIP-712 string encoding: keccak256(utf8(text)). */
+function eip712EncodeString(text: string): Hex {
   if (text === "") return keccak256("0x");
   return keccak256(toHex(text));
 }
 
-/** Left-pad hex to 32 bytes — mirrors Daml's padLeft */
-function padLeft32(hex: Hex): Hex {
+/** EIP-712 uint256 encoding: left-pad hex to 32 bytes. */
+function eip712EncodeUint256(hex: Hex): Hex {
   return pad(hex, { size: 32 });
 }
 
-/** keccak256(concat(map keccak256 xs)) — mirrors Daml's hashBytesList */
-function hashBytesList(items: Hex[]): Hex {
+/** EIP-712 address encoding: left-pad hex to 32 bytes. */
+function eip712EncodeAddress(hex: Hex): Hex {
+  return pad(hex, { size: 32 });
+}
+
+/** EIP-712 bytes[] encoding: keccak256(concat(map keccak256 items)). */
+function eip712EncodeBytesArray(items: Hex[]): Hex {
   if (items.length === 0) return keccak256("0x");
   const hashes = items.map((item) => keccak256(item));
   return keccak256(concat(hashes));
+}
+
+/** EIP-712 bytes encoding: keccak256(raw bytes). */
+function eip712EncodeBytes(data: Hex): Hex {
+  if (data === "0x") return keccak256("0x");
+  return keccak256(data);
 }
 
 // ---------------------------------------------------------------------------
 // Flat keccak256(concat(encoded fields)) — mirrors Daml's RequestId.daml
 // ---------------------------------------------------------------------------
 
+function hashTxParams(cp: TxParams): Hex {
+  switch (cp.tag) {
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- exhaustive switch for future BTC/SOL variants
+    case 'EvmTxParams':
+      return hashEvmParams(cp.value);
+  }
+}
+
 function hashEvmParams(p: EvmTransactionParams): Hex {
   return keccak256(
     concat([
-      padLeft32(`0x${p.to}`),
-      hashText(p.functionSignature),
-      hashBytesList(p.args.map((a): Hex => `0x${a}`)),
-      padLeft32(`0x${p.value}`),
-      padLeft32(`0x${p.nonce}`),
-      padLeft32(`0x${p.gasLimit}`),
-      padLeft32(`0x${p.maxFeePerGas}`),
-      padLeft32(`0x${p.maxPriorityFee}`),
-      padLeft32(`0x${p.chainId}`),
+      eip712EncodeAddress(`0x${p.to}`),
+      eip712EncodeString(p.functionSignature),
+      eip712EncodeBytesArray(p.args.map((a): Hex => `0x${a}`)),
+      eip712EncodeUint256(`0x${p.value}`),
+      eip712EncodeUint256(`0x${p.nonce}`),
+      eip712EncodeUint256(`0x${p.gasLimit}`),
+      eip712EncodeUint256(`0x${p.maxFeePerGas}`),
+      eip712EncodeUint256(`0x${p.maxPriorityFee}`),
+      eip712EncodeUint256(`0x${p.chainId}`),
     ]),
   );
 }
@@ -61,7 +82,7 @@ function hashEvmParams(p: EvmTransactionParams): Hex {
  */
 export function computeRequestId(
   sender: string,
-  evmParams: EvmTransactionParams,
+  txParams: TxParams,
   caip2Id: string,
   keyVersion: number,
   path: string,
@@ -72,15 +93,15 @@ export function computeRequestId(
 ): Hex {
   return keccak256(
     concat([
-      hashText(sender),
-      hashEvmParams(evmParams),
-      hashText(caip2Id),
-      padLeft32(toHex(keyVersion)),
-      hashText(path),
-      hashText(algo),
-      hashText(dest),
-      hashText(params),
-      hashText(nonceCidText),
+      eip712EncodeString(sender),
+      hashTxParams(txParams),
+      eip712EncodeString(caip2Id),
+      eip712EncodeUint256(toHex(keyVersion)),
+      eip712EncodeString(path),
+      eip712EncodeString(algo),
+      eip712EncodeString(dest),
+      eip712EncodeString(params),
+      eip712EncodeString(nonceCidText),
     ]),
   );
 }
@@ -91,7 +112,7 @@ export function computeRequestId(
  */
 export function computeResponseHash(requestId: string, mpcOutput: string): Hex {
   const requestIdBytes: Hex = `0x${requestId}`;
-  const outputHash = mpcOutput === "" ? keccak256("0x") : keccak256(`0x${mpcOutput}`);
+  const outputHash = eip712EncodeBytes(mpcOutput === "" ? "0x" : `0x${mpcOutput}`);
   return keccak256(concat([requestIdBytes, outputHash]));
 }
 

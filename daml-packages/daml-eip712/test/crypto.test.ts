@@ -40,7 +40,7 @@ describe("computeRequestId", () => {
   it("matches golden vector (kv=1)", () => {
     const rid = computeRequestId(
       SENDER,
-      sampleEvmParams,
+      { tag: 'EvmTxParams', value: sampleEvmParams },
       CAIP2_ID,
       KEY_VERSION,
       PATH,
@@ -55,7 +55,7 @@ describe("computeRequestId", () => {
   it("is deterministic", () => {
     const a = computeRequestId(
       SENDER,
-      sampleEvmParams,
+      { tag: 'EvmTxParams', value: sampleEvmParams },
       CAIP2_ID,
       KEY_VERSION,
       PATH,
@@ -66,7 +66,7 @@ describe("computeRequestId", () => {
     );
     const b = computeRequestId(
       SENDER,
-      sampleEvmParams,
+      { tag: 'EvmTxParams', value: sampleEvmParams },
       CAIP2_ID,
       KEY_VERSION,
       PATH,
@@ -81,7 +81,7 @@ describe("computeRequestId", () => {
   it("changes with different nonceCidText", () => {
     const a = computeRequestId(
       SENDER,
-      sampleEvmParams,
+      { tag: 'EvmTxParams', value: sampleEvmParams },
       CAIP2_ID,
       KEY_VERSION,
       PATH,
@@ -92,7 +92,7 @@ describe("computeRequestId", () => {
     );
     const b = computeRequestId(
       SENDER,
-      sampleEvmParams,
+      { tag: 'EvmTxParams', value: sampleEvmParams },
       CAIP2_ID,
       KEY_VERSION,
       PATH,
@@ -107,7 +107,7 @@ describe("computeRequestId", () => {
   it("changes with different params", () => {
     const a = computeRequestId(
       SENDER,
-      sampleEvmParams,
+      { tag: 'EvmTxParams', value: sampleEvmParams },
       CAIP2_ID,
       KEY_VERSION,
       PATH,
@@ -118,7 +118,7 @@ describe("computeRequestId", () => {
     );
     const b = computeRequestId(
       SENDER,
-      sampleEvmParams,
+      { tag: 'EvmTxParams', value: sampleEvmParams },
       CAIP2_ID,
       KEY_VERSION,
       PATH,
@@ -133,7 +133,7 @@ describe("computeRequestId", () => {
   it("changes with different keyVersion", () => {
     const a = computeRequestId(
       SENDER,
-      sampleEvmParams,
+      { tag: 'EvmTxParams', value: sampleEvmParams },
       CAIP2_ID,
       1,
       PATH,
@@ -144,7 +144,7 @@ describe("computeRequestId", () => {
     );
     const b = computeRequestId(
       SENDER,
-      sampleEvmParams,
+      { tag: 'EvmTxParams', value: sampleEvmParams },
       CAIP2_ID,
       256,
       PATH,
@@ -160,7 +160,7 @@ describe("computeRequestId", () => {
     const emptyArgsParams = { ...sampleEvmParams, args: [] as string[] };
     const a = computeRequestId(
       SENDER,
-      sampleEvmParams,
+      { tag: 'EvmTxParams', value: sampleEvmParams },
       CAIP2_ID,
       1,
       PATH,
@@ -171,7 +171,7 @@ describe("computeRequestId", () => {
     );
     const b = computeRequestId(
       SENDER,
-      emptyArgsParams,
+      { tag: 'EvmTxParams', value: emptyArgsParams },
       CAIP2_ID,
       1,
       PATH,

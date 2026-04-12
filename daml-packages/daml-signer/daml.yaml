@@ -7,6 +7,6 @@ dependencies:
   - daml-stdlib
   - daml-script
 data-dependencies:
-  - ../daml-evm-types/.daml/dist/daml-evm-types-0.0.1.dar
+  - ../daml-eip712/.daml/dist/daml-eip712-0.0.1.dar
 build-options:
   - -Wno-crypto-text-is-alpha

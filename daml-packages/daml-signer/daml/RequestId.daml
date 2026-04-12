@@ -1,0 +1,63 @@
+module RequestId where
+
+import DA.List (sort)
+import DA.Crypto.Text
+  ( BytesHex
+  , keccak256
+  , toHex
+  )
+
+import EvmTypes (EvmTransactionParams(..))
+import TxParams (TxParams(..))
+import Eip712 (assertBytes32, eip712EncodeString, eip712EncodeUint256, eip712EncodeAddress, eip712EncodeBytesArray, eip712EncodeBytes)
+
+-- ---------------------------------------------------------------------------
+-- Struct hashing
+-- ---------------------------------------------------------------------------
+
+hashEvmParams : EvmTransactionParams -> BytesHex
+hashEvmParams p =
+  keccak256 $
+       eip712EncodeAddress p.to
+    <> eip712EncodeString p.functionSignature
+    <> eip712EncodeBytesArray p.args
+    <> eip712EncodeUint256 p.value
+    <> eip712EncodeUint256 p.nonce
+    <> eip712EncodeUint256 p.gasLimit
+    <> eip712EncodeUint256 p.maxFeePerGas
+    <> eip712EncodeUint256 p.maxPriorityFee
+    <> eip712EncodeUint256 p.chainId
+
+hashTxParams : TxParams -> BytesHex
+hashTxParams (EvmTxParams p) = hashEvmParams p
+
+-- ---------------------------------------------------------------------------
+-- Operators hash — deterministic encoding of multi-sig operator set
+-- ---------------------------------------------------------------------------
+
+computeOperatorsHash : [Text] -> BytesHex
+computeOperatorsHash operatorTexts =
+  let sorted = sort operatorTexts
+      individualHashes = map (keccak256 . toHex) sorted
+  in keccak256 (mconcat individualHashes)
+
+-- ---------------------------------------------------------------------------
+-- Request ID and response hash
+-- ---------------------------------------------------------------------------
+
+computeRequestId : Text -> TxParams -> Text -> Int -> Text -> Text -> Text -> Text -> Text -> BytesHex
+computeRequestId sender txParams caip2Id keyVersion path algo dest params nonceCidText =
+  keccak256 $
+       eip712EncodeString sender
+    <> hashTxParams txParams
+    <> eip712EncodeString caip2Id
+    <> eip712EncodeUint256 (toHex keyVersion)
+    <> eip712EncodeString path
+    <> eip712EncodeString algo
+    <> eip712EncodeString dest
+    <> eip712EncodeString params
+    <> eip712EncodeString nonceCidText
+
+computeResponseHash : BytesHex -> BytesHex -> BytesHex
+computeResponseHash requestId output =
+  keccak256 (assertBytes32 requestId <> eip712EncodeBytes output)

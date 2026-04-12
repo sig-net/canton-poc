@@ -315,7 +315,7 @@ export async function executeDepositFlow(
   const fullPath = `${requester},${requesterPath}`;
   const tsRequestId = computeRequestId(
     predecessorId,
-    evmTxParams,
+    { tag: 'EvmTxParams' as const, value: evmTxParams },
     caip2Id,
     KEY_VERSION,
     fullPath,

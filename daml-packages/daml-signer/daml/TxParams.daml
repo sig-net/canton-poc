@@ -1,0 +1,7 @@
+module TxParams where
+
+import EvmTypes (EvmTransactionParams)
+
+data TxParams
+  = EvmTxParams EvmTransactionParams
+  deriving (Eq, Show)

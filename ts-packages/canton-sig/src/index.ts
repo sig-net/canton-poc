@@ -27,7 +27,7 @@ export {
   toSpkiPublicKey,
   derivePublicKey,
 } from "./mpc/crypto.js";
-export type { EvmTransactionParams } from "./mpc/crypto.js";
+export type { EvmTransactionParams, TxParams } from "./mpc/crypto.js";
 export { deriveDepositAddress, chainIdHexToCaip2, KEY_VERSION } from "./mpc/address-derivation.js";
 
 // EVM transaction building
