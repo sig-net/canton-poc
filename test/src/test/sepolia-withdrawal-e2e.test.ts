@@ -147,7 +147,7 @@ describeIf("sepolia e2e withdrawal lifecycle", () => {
     const caip2Id = chainIdHexToCaip2(evmTxParams.chainId);
     const tsRequestId = computeRequestId(
       setup.predecessorId,
-      { tag: 'EvmTxParams' as const, value: evmTxParams },
+      { tag: "EvmTxParams" as const, value: evmTxParams },
       caip2Id,
       KEY_VERSION,
       "root",

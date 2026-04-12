@@ -13,7 +13,7 @@ export interface EvmTransactionParams {
   chainId: string;
 }
 
-export type TxParams = { tag: 'EvmTxParams'; value: EvmTransactionParams };
+export type TxParams = { tag: "EvmTxParams"; value: EvmTransactionParams };
 
 // ---------------------------------------------------------------------------
 // EIP-712 primitive encoding — mirrors Daml's Eip712.daml
@@ -55,7 +55,7 @@ function eip712EncodeBytes(data: Hex): Hex {
 function hashTxParams(cp: TxParams): Hex {
   switch (cp.tag) {
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- exhaustive switch for future BTC/SOL variants
-    case 'EvmTxParams':
+    case "EvmTxParams":
       return hashEvmParams(cp.value);
   }
 }

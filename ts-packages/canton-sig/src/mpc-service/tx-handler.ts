@@ -148,7 +148,7 @@ export async function signAndEnqueue(
   } = arg;
 
   // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- guard for future BTC/SOL variants
-  if (txParams.tag !== 'EvmTxParams') {
+  if (txParams.tag !== "EvmTxParams") {
     // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
     throw new Error(`Unsupported chain params: ${txParams.tag}`);
   }
