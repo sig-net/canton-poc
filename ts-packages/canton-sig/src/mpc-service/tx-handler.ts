@@ -259,7 +259,7 @@ export async function signAndEnqueue(
     operators,
     requester,
     requestId,
-    signature: derSignature,
+    signature: { tag: "EcdsaSig", value: { der: derSignature, recoveryId: v } },
   });
   console.log(`[MPC] Respond exercised`);
 

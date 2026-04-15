@@ -2,6 +2,7 @@ module TestFixtures where
 
 import DA.Crypto.Text (BytesHex)
 import EvmTypes (EvmTransactionParams(..))
+import Signer (Signature(..), EcdsaSigData(..))
 
 -- ---------------------------------------------------------------------------
 -- Shared test keys and signatures
@@ -16,24 +17,28 @@ testMessageHex = "1c8aff950685c2ed4bc3174f3472287b56d9517b9c948127319a09a7a36dea
 testSignatureHex : Text
 testSignatureHex = "304602210093dffbc917a44aa1dd115ad85c5ddcfcda753490664a04802ac55028cea65b88022100acf58d3b62940b844872c1a156fc797499f823d9144ec2d05d21c71f901a3a3e"
 
+-- | Helper to create ECDSA test signature with default recoveryId=0
+ecdsaTestSig : Text -> Signature
+ecdsaTestSig der = EcdsaSig (EcdsaSigData with der; recoveryId = 0)
+
 -- SPKI-encoded secp256k1 public key matching the TS test private key
 claimTestPubKey : Text
 claimTestPubKey = "3056301006072a8648ce3d020106052b8104000a03420004bb50e2d89a4ed70663d080659fe0ad4b9bc3e06c17a227433966cb59ceee020decddbf6e00192011648d13b1c00af770c0c1bb609d4d3a5c98a43772e0e18ef4"
 
 -- DER signature over computeResponseHash(claimTestRequestId, boolTrueMpcOutput)
-claimTestSignature : Text
-claimTestSignature = "304402206746cf175d67deaf459dec41456060f814e6b82d54a1bc91285179c2532121b2022007fd8775f1f3225da085e5182b1a327a0e17046539b5eee6e4eb67cae6355fad"
+claimTestSignature : Signature
+claimTestSignature = ecdsaTestSig "304402206746cf175d67deaf459dec41456060f814e6b82d54a1bc91285179c2532121b2022007fd8775f1f3225da085e5182b1a327a0e17046539b5eee6e4eb67cae6355fad"
 
 claimTestRequestId : Text
 claimTestRequestId = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
 -- DER signature over computeResponseHash(claimTestRequestId, errorPrefixMpcOutput) — refund case
-refundTestSignature : Text
-refundTestSignature = "3045022100e514e9d188df1ed311baed7bda03243b5321084e7b50148988ae1b68233a59dd02207c6d154e46879d1bf04337251cffe7ce2f6398a604a82a809e8c5edf86494468"
+refundTestSignature : Signature
+refundTestSignature = ecdsaTestSig "3045022100e514e9d188df1ed311baed7bda03243b5321084e7b50148988ae1b68233a59dd02207c6d154e46879d1bf04337251cffe7ce2f6398a604a82a809e8c5edf86494468"
 
 -- DER signature over computeResponseHash(claimTestRequestId, boolFalseMpcOutput) — transfer returned false
-boolFalseTestSignature : Text
-boolFalseTestSignature = "304402203f0caa50c73e18a9788e093a349773bbd7951c6fc17547a776c041866489ded902200d67880f3b1ba2b34c244a75e828c9272cbb66c0591399a9ea4f42afa5f08a1f"
+boolFalseTestSignature : Signature
+boolFalseTestSignature = ecdsaTestSig "304402203f0caa50c73e18a9788e093a349773bbd7951c6fc17547a776c041866489ded902200d67880f3b1ba2b34c244a75e828c9272cbb66c0591399a9ea4f42afa5f08a1f"
 
 -- ---------------------------------------------------------------------------
 -- ABI-encoded mpcOutput constants

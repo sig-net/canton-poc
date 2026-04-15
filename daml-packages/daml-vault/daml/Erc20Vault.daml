@@ -11,7 +11,8 @@ import Abi (hasErrorPrefix, abiDecodeBool)
 import Signer (Signer, SignRequest(..), SignBidirectionalEvent,
                SignatureRespondedEvent(..), RespondBidirectionalEvent(..),
                SignBidirectional(..), SigningNonce,
-               Consume_SignatureResponded(..), Consume_RespondBidirectional(..))
+               Consume_SignatureResponded(..), Consume_RespondBidirectional(..),
+               signatureDer)
 
 -- ---------------------------------------------------------------------------
 -- Holdings
@@ -176,7 +177,7 @@ template Vault
 
         let responseHash = computeResponseHash pending.requestId outcome.serializedOutput
         assertMsg "Invalid MPC signature"
-          (secp256k1WithEcdsaOnly outcome.signature responseHash evmMpcPublicKey)
+          (secp256k1WithEcdsaOnly (signatureDer outcome.signature) responseHash evmMpcPublicKey)
 
         assertMsg "MPC reported ETH transaction failure"
           (not (hasErrorPrefix outcome.serializedOutput))
@@ -277,7 +278,7 @@ template Vault
 
         let responseHash = computeResponseHash pending.requestId outcome.serializedOutput
         assertMsg "Invalid MPC signature"
-          (secp256k1WithEcdsaOnly outcome.signature responseHash evmMpcPublicKey)
+          (secp256k1WithEcdsaOnly (signatureDer outcome.signature) responseHash evmMpcPublicKey)
 
         exercise respondBidirectionalEventCid Consume_RespondBidirectional with actor = requester
         exercise signatureRespondedEventCid Consume_SignatureResponded with actor = requester

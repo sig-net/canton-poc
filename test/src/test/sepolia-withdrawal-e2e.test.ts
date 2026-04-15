@@ -172,11 +172,7 @@ describeIf("sepolia e2e withdrawal lifecycle", () => {
     console.log("[wdl-e2e] SignatureRespondedEvent observed");
 
     // ── User submits signed withdrawal tx to Sepolia ──
-    const { r, s, v } = await parseDerSignature(
-      signatureRespondedArgs.signature,
-      evmTxParams,
-      setup.vaultAddress,
-    );
+    const { r, s, v } = parseDerSignature(signatureRespondedArgs.signature);
     const signedTx = reconstructSignedTx(evmTxParams, {
       r: `0x${r}`,
       s: `0x${s}`,

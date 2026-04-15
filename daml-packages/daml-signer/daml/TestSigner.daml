@@ -3,13 +3,17 @@ module TestSigner where
 import DA.Optional (fromSome, isSome)
 import Daml.Script
 
-import Signer (Signer(..), SigningNonce(..), IssueNonce(..), SignBidirectional(..), Respond(..), RespondBidirectional(..), SignRequest(..), Consume_SignBidirectional(..), Consume_SignatureResponded(..), Consume_RespondBidirectional(..), Consume_SigningNonce(..))
+import Signer (Signer(..), SigningNonce(..), IssueNonce(..), SignBidirectional(..), Respond(..), RespondBidirectional(..), SignRequest(..), Consume_SignBidirectional(..), Consume_SignatureResponded(..), Consume_RespondBidirectional(..), Consume_SigningNonce(..), Signature(..), EcdsaSigData(..))
 import TxParams (TxParams(..))
 import TestFixtures (sampleEvmParams, erc20BoolSchema)
 
 ------------------------------------------------------------------------
 -- Helpers
 ------------------------------------------------------------------------
+
+-- | Create a test ECDSA signature with default recoveryId=0
+testSig : Text -> Signature
+testSig der = EcdsaSig (EcdsaSigData with der; recoveryId = 0)
 
 setup : Script (Party, Party, Party, ContractId Signer)
 setup = do
@@ -22,10 +26,10 @@ setup = do
 
   pure (sigNetwork, operator, requester, signerCid)
 
--- Create a SignRequest signed by the given operator
+-- Create a SignRequest signed by the given operator and requester
 mkSignRequest : Party -> Party -> Party -> Script (ContractId SignRequest)
 mkSignRequest operator requester sigNetwork =
-  submit operator do
+  submit (actAs operator <> actAs requester) do
     createCmd SignRequest with
       operators = [operator]; requester; sigNetwork
       sender = "test-sender"
@@ -57,7 +61,7 @@ testRespondHappyPath = do
   evtCid <- submit sigNetwork do
     exerciseCmd signerCid Respond with
       operators = [operator]; requester
-      requestId = "aa"; signature = "bb"
+      requestId = "aa"; signature = testSig "bb"
 
   evt <- queryContractId sigNetwork evtCid
   let e = fromSome evt
@@ -66,7 +70,7 @@ testRespondHappyPath = do
   assertMsg "requester"  (e.requester  == requester)
   assertMsg "requestId"  (e.requestId  == "aa")
   assertMsg "responder"  (e.responder  == sigNetwork)
-  assertMsg "signature"  (e.signature  == "bb")
+  assertMsg "signature"  (e.signature  == testSig "bb")
 
 -- requester cannot exercise Respond (controller is sigNetwork)
 testRespondByRequesterFails : Script ()
@@ -76,7 +80,7 @@ testRespondByRequesterFails = do
   submitMustFail requester do
     exerciseCmd signerCid Respond with
       operators = [operator]; requester
-      requestId = "aa"; signature = "bb"
+      requestId = "aa"; signature = testSig "bb"
 
 -- sigNetwork exercises RespondBidirectional; verify all fields including serializedOutput
 testRespondBidirectionalHappyPath : Script ()
@@ -86,7 +90,7 @@ testRespondBidirectionalHappyPath = do
   evtCid <- submit sigNetwork do
     exerciseCmd signerCid RespondBidirectional with
       operators = [operator]; requester
-      requestId = "aa"; serializedOutput = "cc"; signature = "dd"
+      requestId = "aa"; serializedOutput = "cc"; signature = testSig "dd"
 
   evt <- queryContractId sigNetwork evtCid
   let e = fromSome evt
@@ -96,7 +100,7 @@ testRespondBidirectionalHappyPath = do
   assertMsg "requestId"        (e.requestId         == "aa")
   assertMsg "responder"        (e.responder         == sigNetwork)
   assertMsg "serializedOutput" (e.serializedOutput  == "cc")
-  assertMsg "signature"        (e.signature         == "dd")
+  assertMsg "signature"        (e.signature         == testSig "dd")
 
 -- requester cannot exercise RespondBidirectional (controller is sigNetwork)
 testRespondBidirectionalByRequesterFails : Script ()
@@ -106,7 +110,7 @@ testRespondBidirectionalByRequesterFails = do
   submitMustFail requester do
     exerciseCmd signerCid RespondBidirectional with
       operators = [operator]; requester
-      requestId = "aa"; serializedOutput = "cc"; signature = "dd"
+      requestId = "aa"; serializedOutput = "cc"; signature = testSig "dd"
 
 ------------------------------------------------------------------------
 -- SignBidirectional
@@ -181,7 +185,7 @@ testSignRequestDuplicateOperatorsFails : Script ()
 testSignRequestDuplicateOperatorsFails = do
   (sigNetwork, operator, requester, _signerCid) <- setup
 
-  submitMustFail operator do
+  submitMustFail (actAs operator <> actAs requester) do
     createCmd SignRequest with
       operators = [operator, operator]; requester; sigNetwork
       sender = "test-sender"
@@ -260,7 +264,7 @@ testConsumeSignatureRespondedByOperator = do
   evtCid <- submit sigNetwork do
     exerciseCmd signerCid Respond with
       operators = [operator]; requester
-      requestId = "aa"; signature = "bb"
+      requestId = "aa"; signature = testSig "bb"
 
   submit operator do
     exerciseCmd evtCid Consume_SignatureResponded with actor = operator
@@ -275,7 +279,7 @@ testConsumeSignatureRespondedByRequester = do
   evtCid <- submit sigNetwork do
     exerciseCmd signerCid Respond with
       operators = [operator]; requester
-      requestId = "aa"; signature = "bb"
+      requestId = "aa"; signature = testSig "bb"
 
   submit requester do
     exerciseCmd evtCid Consume_SignatureResponded with actor = requester
@@ -291,7 +295,7 @@ testConsumeSignatureRespondedByRogueFails = do
   evtCid <- submit sigNetwork do
     exerciseCmd signerCid Respond with
       operators = [operator]; requester
-      requestId = "aa"; signature = "bb"
+      requestId = "aa"; signature = testSig "bb"
 
   -- rogue has visibility (readAs sigNetwork) but fails on assertMsg authorization
   submitMustFail (actAs rogue <> readAs sigNetwork) do
@@ -307,7 +311,7 @@ testConsumeRespondBidirectionalByRequester = do
   evtCid <- submit sigNetwork do
     exerciseCmd signerCid RespondBidirectional with
       operators = [operator]; requester
-      requestId = "aa"; serializedOutput = "cc"; signature = "dd"
+      requestId = "aa"; serializedOutput = "cc"; signature = testSig "dd"
 
   submit requester do
     exerciseCmd evtCid Consume_RespondBidirectional with actor = requester
@@ -322,7 +326,7 @@ testConsumeRespondBidirectionalByOperator = do
   evtCid <- submit sigNetwork do
     exerciseCmd signerCid RespondBidirectional with
       operators = [operator]; requester
-      requestId = "aa"; serializedOutput = "cc"; signature = "dd"
+      requestId = "aa"; serializedOutput = "cc"; signature = testSig "dd"
 
   submit operator do
     exerciseCmd evtCid Consume_RespondBidirectional with actor = operator
@@ -338,7 +342,7 @@ testConsumeRespondBidirectionalByRogueFails = do
   evtCid <- submit sigNetwork do
     exerciseCmd signerCid RespondBidirectional with
       operators = [operator]; requester
-      requestId = "aa"; serializedOutput = "cc"; signature = "dd"
+      requestId = "aa"; serializedOutput = "cc"; signature = testSig "dd"
 
   -- rogue has visibility (readAs sigNetwork) but fails on assertMsg authorization
   submitMustFail (actAs rogue <> readAs sigNetwork) do
@@ -428,7 +432,7 @@ testSignBidirectionalWrongSignerNonceFails = do
     exerciseCmd signerCidA IssueNonce with requester
 
   -- Create a SignRequest targeting sigNetworkB
-  signReqCid <- submit operator do
+  signReqCid <- submit (actAs operator <> actAs requester) do
     createCmd SignRequest with
       operators = [operator]; requester; sigNetwork = sigNetworkB
       sender = "test-sender"

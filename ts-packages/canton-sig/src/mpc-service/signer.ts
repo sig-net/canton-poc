@@ -55,22 +55,31 @@ export function signEvmTxHash(privateKey: Hex, txHash: Hex): { r: string; s: str
   return { r, s, v };
 }
 
+/** Canton Signature union type */
+type CantonSignature = { tag: "EcdsaSig"; value: { der: string; recoveryId: number } };
+
 /**
  * Sign the MPC response for Canton's EvmTxOutcomeSignature.
  * responseHash = keccak256(RESPONSE_TYPE_HASH || requestId || mpcOutput)
- * Returns DER-encoded signature as bare hex without 0x prefix (Daml format).
+ * Returns Canton Signature union type with DER-encoded signature and recoveryId.
  */
-export function signMpcResponse(rootPrivateKey: Hex, requestId: string, mpcOutput: string): string {
+export function signMpcResponse(
+  rootPrivateKey: Hex,
+  requestId: string,
+  mpcOutput: string,
+): CantonSignature {
   // requestId and mpcOutput are bare hex (no 0x)
   const responseHash = computeResponseHash(requestId, mpcOutput);
   const msgHash = toBytes(responseHash);
   const privKeyBytes = toBytes(rootPrivateKey);
 
-  // Default format: 'compact' (64 bytes = r || s), prehash: false
-  const raw = secp256k1.sign(msgHash, privKeyBytes, { prehash: false });
-  const r = hexToBigInt(toHex(raw.slice(0, 32)));
-  const s = hexToBigInt(toHex(raw.slice(32, 64)));
+  // 'recovered' format: Uint8Array(65) = [recovery_byte, r_32, s_32]
+  const sig = secp256k1.sign(msgHash, privKeyBytes, { format: "recovered", prehash: false });
+  const recoveryId = sig[0]!;
+  const r = hexToBigInt(toHex(sig.slice(1, 33)));
+  const s = hexToBigInt(toHex(sig.slice(33, 65)));
 
   // DER-encode via @noble/curves
-  return DER.hexFromSig({ r, s });
+  const der = DER.hexFromSig({ r, s });
+  return { tag: "EcdsaSig", value: { der, recoveryId } };
 }

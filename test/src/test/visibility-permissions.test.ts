@@ -269,7 +269,12 @@ describe("ledger visibility + permission model", () => {
         SIGNER_TEMPLATE,
         signerCid,
         "Respond",
-        { operators: [operator], requester, requestId, signature: "00" },
+        {
+          operators: [operator],
+          requester,
+          requestId,
+          signature: { tag: "EcdsaSig", value: { der: "00", recoveryId: 0 } },
+        },
         undefined,
         [signerDisclosure],
       ),
@@ -281,7 +286,12 @@ describe("ledger visibility + permission model", () => {
       SIGNER_TEMPLATE,
       signerCid,
       "Respond",
-      { operators: [operator], requester, requestId, signature: "00" },
+      {
+        operators: [operator],
+        requester,
+        requestId,
+        signature: { tag: "EcdsaSig", value: { der: "00", recoveryId: 0 } },
+      },
     );
     const signatureRespondedEventCid = findCreated(
       signResult.transaction.events,
@@ -308,7 +318,7 @@ describe("ledger visibility + permission model", () => {
           operators: [operator],
           requester,
           requestId,
-          signature: "00",
+          signature: { tag: "EcdsaSig", value: { der: "00", recoveryId: 0 } },
           serializedOutput: "0000000000000000000000000000000000000000000000000000000000000001",
         },
         undefined,

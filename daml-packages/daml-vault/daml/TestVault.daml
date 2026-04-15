@@ -8,7 +8,7 @@ import Signer
 import Erc20Vault
 import TestFixtures
   ( testPubKeyHex, claimTestPubKey, claimTestSignature, claimTestRequestId
-  , refundTestSignature, boolFalseTestSignature
+  , refundTestSignature, boolFalseTestSignature, ecdsaTestSig
   , sampleVaultAddress, sampleEvmParams, sampleWithdrawalEvmParams
   , sampleRecipientAddress, sampleErc20Address, sampleHoldingAmount
   , erc20BoolSchema, boolTrueMpcOutput, boolFalseMpcOutput, errorPrefixMpcOutput
@@ -267,7 +267,7 @@ testRespondWrongController = do
   -- requester tries to exercise Respond (controller is sigNetwork)
   submitMustFail requester do
     exerciseCmd signerCid Respond with
-      operators = [operator]; requester; requestId = "aa"; signature = "00"
+      operators = [operator]; requester; requestId = "aa"; signature = ecdsaTestSig "00"
 
 -- RequestDeposit rejects EVM call with function other than transfer(address,uint256)
 testWrongFunctionSignature : Script ()

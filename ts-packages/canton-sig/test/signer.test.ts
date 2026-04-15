@@ -52,27 +52,30 @@ describe("signMpcResponse", () => {
   const requestId = "abcd".padStart(64, "0");
   const mpcOutput = "deadbeef";
 
-  it("returns DER-encoded hex starting with '30'", () => {
-    const der = signMpcResponse(TEST_PRIVATE_KEY, requestId, mpcOutput);
+  it("returns CantonSignature with DER-encoded hex starting with '30'", () => {
+    const sig = signMpcResponse(TEST_PRIVATE_KEY, requestId, mpcOutput);
 
+    expect(sig.tag).toBe("EcdsaSig");
     // DER-encoded ECDSA signature starts with SEQUENCE tag 0x30
-    expect(der.startsWith("30")).toBe(true);
+    expect(sig.value.der.startsWith("30")).toBe(true);
     // DER is bare hex (no 0x prefix)
-    expect(der.startsWith("0x")).toBe(false);
+    expect(sig.value.der.startsWith("0x")).toBe(false);
     // Must be valid hex
-    expect(der).toMatch(/^[0-9a-f]+$/);
+    expect(sig.value.der).toMatch(/^[0-9a-f]+$/);
+    // recoveryId must be 0 or 1
+    expect([0, 1]).toContain(sig.value.recoveryId);
   });
 
   it("is deterministic", () => {
     const sig1 = signMpcResponse(TEST_PRIVATE_KEY, requestId, mpcOutput);
     const sig2 = signMpcResponse(TEST_PRIVATE_KEY, requestId, mpcOutput);
 
-    expect(sig1).toBe(sig2);
+    expect(sig1).toEqual(sig2);
   });
 
   it("verifies against the root public key", () => {
-    const der = signMpcResponse(TEST_PRIVATE_KEY, requestId, mpcOutput);
-    const derBytes = Uint8Array.from(Buffer.from(der, "hex"));
+    const sig = signMpcResponse(TEST_PRIVATE_KEY, requestId, mpcOutput);
+    const derBytes = Uint8Array.from(Buffer.from(sig.value.der, "hex"));
     // Derive uncompressed public key from the private key
     const pubKey = secp256k1.getPublicKey(toBytes(TEST_PRIVATE_KEY), false);
     // Compute the response hash the same way the function does internally

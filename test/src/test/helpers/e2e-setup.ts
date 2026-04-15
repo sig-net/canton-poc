@@ -19,13 +19,7 @@ import {
   PendingDeposit,
   PendingWithdrawal,
 } from "canton-sig";
-import {
-  keccak256,
-  toHex,
-  recoverTransactionAddress,
-  type Hex,
-  type TransactionSerializedEIP1559,
-} from "viem";
+import { keccak256, toHex } from "viem";
 import { DER } from "@noble/curves/abstract/weierstrass.js";
 import { loadEnv } from "../../config/env.js";
 import {
@@ -188,31 +182,23 @@ interface DepositResult {
 }
 
 /**
- * Parse a DER-encoded ECDSA signature into {r, s, v} for EVM tx reconstruction.
- * Tries both recovery parities (0 and 1) and picks the one whose recovered
- * sender matches `expectedFrom`.
+ * Canton Signature union type (matches Daml-generated Signature type).
+ * Note: recoveryId is string because Daml Int is arbitrary-precision.
  */
-export async function parseDerSignature(
-  derHex: string,
-  evmTxParams: import("canton-sig").CantonEvmParams,
-  expectedFrom: Hex,
-): Promise<{ r: string; s: string; v: number }> {
-  const { r, s } = DER.toSig(Uint8Array.from(Buffer.from(derHex, "hex")));
-  const rHex = r.toString(16).padStart(64, "0");
-  const sHex = s.toString(16).padStart(64, "0");
+type EcdsaSig = { tag: "EcdsaSig"; value: { der: string; recoveryId: string } };
+type CantonSignature = EcdsaSig; // Future: | EddsaSig | SchnorrSig
 
-  for (const v of [0, 1] as const) {
-    const signed = reconstructSignedTx(evmTxParams, { r: `0x${rHex}`, s: `0x${sHex}`, v });
-    const recovered = await recoverTransactionAddress({
-      serializedTransaction: signed as TransactionSerializedEIP1559,
-    });
-    if (recovered.toLowerCase() === expectedFrom.toLowerCase()) {
-      return { r: rHex, s: sHex, v };
-    }
-  }
-  throw new Error(
-    `parseDerSignature: neither v=0 nor v=1 recovers expected sender ${expectedFrom}`,
-  );
+/**
+ * Parse a Canton Signature (union type) into {r, s, v} for EVM tx reconstruction.
+ */
+export function parseDerSignature(signature: CantonSignature): { r: string; s: string; v: number } {
+  const { der, recoveryId } = signature.value;
+  const { r, s } = DER.toSig(Uint8Array.from(Buffer.from(der, "hex")));
+  return {
+    r: r.toString(16).padStart(64, "0"),
+    s: s.toString(16).padStart(64, "0"),
+    v: Number(recoveryId),
+  };
 }
 
 export async function executeDepositFlow(
@@ -343,12 +329,7 @@ export async function executeDepositFlow(
   console.log(`${logPrefix} SignatureRespondedEvent observed`);
 
   // ── Submit to Sepolia ──
-  // Parse DER-encoded signature to r,s,v for EVM tx reconstruction
-  const { r, s, v } = await parseDerSignature(
-    signatureRespondedArgs.signature,
-    evmTxParams,
-    depositAddress,
-  );
+  const { r, s, v } = parseDerSignature(signatureRespondedArgs.signature);
   const signedTx = reconstructSignedTx(evmTxParams, {
     r: `0x${r}`,
     s: `0x${s}`,
