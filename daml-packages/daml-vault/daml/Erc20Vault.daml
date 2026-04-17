@@ -1,13 +1,13 @@
 module Erc20Vault where
 
 import DA.List (sort, unique)
-import DA.Crypto.Text (BytesHex, PublicKeyHex, secp256k1WithEcdsaOnly)
+import DA.Crypto.Text (BytesHex, PublicKeyHex, byteCount, secp256k1WithEcdsaOnly)
 
 import EvmTypes (EvmTransactionParams)
 import TxParams (TxParams(..))
 import Eip712 (chainIdToDecimalText)
 import RequestId (computeRequestId, computeResponseHash, computeOperatorsHash)
-import Abi (hasErrorPrefix, abiDecodeBool, abiDecodeUint, abiSlot)
+import Abi (abiHasErrorPrefix, abiDecodeBool, abiDecodeUint, abiSlot, abiSlotCount)
 import Signer (Signer, SignRequest(..), SignBidirectionalEvent,
                SignatureRespondedEvent(..), RespondBidirectionalEvent(..),
                SignBidirectional(..), SigningNonce,
@@ -78,6 +78,7 @@ template VaultProposal
     signatory alreadySigned
     observer allOperators
     ensure not (null allOperators) && unique allOperators && unique alreadySigned
+      && byteCount evmVaultAddress == 32
 
     choice SignVault : Either (ContractId VaultProposal) (ContractId Vault)
       with signer : Party
@@ -106,6 +107,7 @@ template Vault
     signatory operators
     observer sigNetwork
     ensure not (null operators) && unique operators
+      && byteCount evmVaultAddress == 32
 
     -- Deposit flow
     nonconsuming choice RequestDeposit
@@ -125,9 +127,11 @@ template Vault
         respondSerializationSchema  : Text
       controller requester
       do
-        let recipientArg = abiSlot evmTxParams.encodedArgs 0
         assertMsg "Only ERC20 transfer allowed"
           (evmTxParams.functionSignature == "transfer(address,uint256)")
+        assertMsg "encodedArgs must be exactly 2 slots"
+          (abiSlotCount evmTxParams.encodedArgs == 2)
+        let recipientArg = abiSlot evmTxParams.encodedArgs 0
         assertMsg "Transfer recipient must be vault address"
           (recipientArg == evmVaultAddress)
 
@@ -178,7 +182,7 @@ template Vault
           (secp256k1WithEcdsaOnly (signatureDer outcome.signature) responseHash evmMpcPublicKey)
 
         assertMsg "MPC reported ETH transaction failure"
-          (not (hasErrorPrefix outcome.serializedOutput))
+          (not (abiHasErrorPrefix outcome.serializedOutput))
         let success = abiDecodeBool outcome.serializedOutput 0
         assertMsg "ERC20 transfer returned false" success
 
@@ -215,11 +219,12 @@ template Vault
         assertMsg "Holding operators mismatch" (sort holding.operators == sort operators)
         assertMsg "Holding owner mismatch" (holding.owner == requester)
 
-        let recipientArg = abiSlot evmTxParams.encodedArgs 0
-        let amountArg = abiDecodeUint evmTxParams.encodedArgs 1
-
         assertMsg "Only ERC20 transfer allowed"
           (evmTxParams.functionSignature == "transfer(address,uint256)")
+        assertMsg "encodedArgs must be exactly 2 slots"
+          (abiSlotCount evmTxParams.encodedArgs == 2)
+        let recipientArg = abiSlot evmTxParams.encodedArgs 0
+        let amountArg = abiDecodeUint evmTxParams.encodedArgs 1
         assertMsg "ERC20 contract must match holding"
           (evmTxParams.to == holding.erc20Address)
         assertMsg "Transfer recipient must match"
@@ -280,7 +285,7 @@ template Vault
         exercise signatureRespondedEventCid Consume_SignatureResponded with actor = requester
 
         let shouldRefund =
-              hasErrorPrefix outcome.serializedOutput
+              abiHasErrorPrefix outcome.serializedOutput
                 || not (abiDecodeBool outcome.serializedOutput 0)
 
         if not shouldRefund

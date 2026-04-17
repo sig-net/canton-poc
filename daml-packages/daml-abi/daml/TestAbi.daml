@@ -4,6 +4,7 @@ import Daml.Script
 import qualified DA.Text
 import DA.Crypto.Text (BytesHex, fromHex)
 import DA.Optional (fromSomeNote)
+import DA.Exception (GeneralError(..))
 import Abi
 
 -- ---------------------------------------------------------------------------
@@ -288,6 +289,28 @@ vec_bytes_empty : BytesHex
 vec_bytes_empty =
      "0000000000000000000000000000000000000000000000000000000000000020"
   <> "0000000000000000000000000000000000000000000000000000000000000000"
+
+-- Address with leading zeros in the 20-byte payload
+vec_address_leading_zeros : BytesHex
+vec_address_leading_zeros = "0000000000000000000000000001000000000000000000000000000000000001"
+
+-- (uint256, uint256[3]) — static fixed array as tuple member (all inlined)
+vec_tuple_uint_fixed_array : BytesHex
+vec_tuple_uint_fixed_array =
+     "000000000000000000000000000000000000000000000000000000000000002a"
+  <> "0000000000000000000000000000000000000000000000000000000000000001"
+  <> "0000000000000000000000000000000000000000000000000000000000000002"
+  <> "0000000000000000000000000000000000000000000000000000000000000003"
+
+-- Calldata with only selector (no args)
+vec_calldata_selector_only : BytesHex
+vec_calldata_selector_only = "a9059cbb"
+
+-- (uint256, uint256) where both exceed Int64
+vec_tuple_two_large_uints : BytesHex
+vec_tuple_two_large_uints =
+     "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+  <> "8000000000000000000000000000000000000000000000000000000000000000"
 
 -- ---------------------------------------------------------------------------
 -- Helper
@@ -682,21 +705,248 @@ testAbiDecodeTupleTwoDynMembers = do
   assertMsg "second string = World" (abiDecodeString vec_two_strings str1Offset == "World")
 
 -- ---------------------------------------------------------------------------
--- Tests: hasErrorPrefix / stripErrorPrefix
+-- Tests: abiHasErrorPrefix / abiStripErrorPrefix
 -- ---------------------------------------------------------------------------
 
 testHasErrorPrefix : Script ()
 testHasErrorPrefix = do
-  assertMsg "deadbeef + payload is error" (hasErrorPrefix ("deadbeef" <> vec_bool_true))
-  assertMsg "exactly deadbeef is error" (hasErrorPrefix "deadbeef")
-  assertMsg "deadbeef + short data" (hasErrorPrefix "deadbeef01")
-  assertMsg "normal ABI bool true is not error" (not (hasErrorPrefix vec_bool_true))
-  assertMsg "normal ABI bool false is not error" (not (hasErrorPrefix vec_bool_false))
-  assertMsg "empty string is not error" (not (hasErrorPrefix ""))
-  assertMsg "short string is not error" (not (hasErrorPrefix "dead"))
-  assertMsg "different prefix is not error" (not (hasErrorPrefix ("cafebabe" <> vec_bool_true)))
+  assertMsg "deadbeef + payload is error" (abiHasErrorPrefix ("deadbeef" <> vec_bool_true))
+  assertMsg "exactly deadbeef is error" (abiHasErrorPrefix "deadbeef")
+  assertMsg "deadbeef + short data" (abiHasErrorPrefix "deadbeef01")
+  assertMsg "normal ABI bool true is not error" (not (abiHasErrorPrefix vec_bool_true))
+  assertMsg "normal ABI bool false is not error" (not (abiHasErrorPrefix vec_bool_false))
+  assertMsg "empty string is not error" (not (abiHasErrorPrefix ""))
+  assertMsg "short string is not error" (not (abiHasErrorPrefix "dead"))
+  assertMsg "different prefix is not error" (not (abiHasErrorPrefix ("cafebabe" <> vec_bool_true)))
 
 testStripErrorPrefix : Script ()
 testStripErrorPrefix = do
-  assertMsg "strip deadbeef + bool true" (stripErrorPrefix ("deadbeef" <> vec_bool_true) == vec_bool_true)
-  assertMsg "strip exactly deadbeef" (stripErrorPrefix "deadbeef" == "")
+  assertMsg "strip deadbeef + bool true" (abiStripErrorPrefix ("deadbeef" <> vec_bool_true) == vec_bool_true)
+  assertMsg "strip exactly deadbeef" (abiStripErrorPrefix "deadbeef" == "")
+
+-- ---------------------------------------------------------------------------
+-- Tests: error paths (negative tests)
+-- ---------------------------------------------------------------------------
+
+testAbiSlotOutOfBounds : Script ()
+testAbiSlotOutOfBounds = do
+  -- Slot past end of data
+  caught1 <- try (pure (abiSlot vec_uint256_1000 1))
+    catch (GeneralError _) -> pure "caught"
+  assertMsg "slot past end errors" (caught1 == "caught")
+  -- Negative slot index
+  caught2 <- try (pure (abiSlot vec_uint256_1000 (-1)))
+    catch (GeneralError _) -> pure "caught"
+  assertMsg "negative slot errors" (caught2 == "caught")
+  -- Empty data
+  caught3 <- try (pure (abiSlot "" 0))
+    catch (GeneralError _) -> pure "caught"
+  assertMsg "empty data errors" (caught3 == "caught")
+
+testAbiSelectorTooShort : Script ()
+testAbiSelectorTooShort = do
+  caught1 <- try (pure (abiSelector "dead"))
+    catch (GeneralError _) -> pure "caught"
+  assertMsg "selector on 2 bytes errors" (caught1 == "caught")
+  caught2 <- try (pure (abiSelector ""))
+    catch (GeneralError _) -> pure "caught"
+  assertMsg "selector on empty errors" (caught2 == "caught")
+
+testAbiStripSelectorTooShort : Script ()
+testAbiStripSelectorTooShort = do
+  caught1 <- try (pure (abiStripSelector "dead"))
+    catch (GeneralError _) -> pure "caught"
+  assertMsg "strip selector on 2 bytes errors" (caught1 == "caught")
+  caught2 <- try (pure (abiStripSelector ""))
+    catch (GeneralError _) -> pure "caught"
+  assertMsg "strip selector on empty errors" (caught2 == "caught")
+
+testAbiDecodeBytesNInvalidN : Script ()
+testAbiDecodeBytesNInvalidN = do
+  caught1 <- try (pure (abiDecodeBytesN vec_bytes32_deadbeef 0 33))
+    catch (GeneralError _) -> pure "caught"
+  assertMsg "bytesN n=33 errors" (caught1 == "caught")
+  caught2 <- try (pure (abiDecodeBytesN vec_bytes32_deadbeef 0 (-1)))
+    catch (GeneralError _) -> pure "caught"
+  assertMsg "bytesN n=-1 errors" (caught2 == "caught")
+
+testAbiDecodeBytesClaimedLenExceedsData : Script ()
+testAbiDecodeBytesClaimedLenExceedsData = do
+  -- Construct a payload that claims 32 bytes but only has 3 bytes of data
+  let truncated = "0000000000000000000000000000000000000000000000000000000000000020"
+               <> "0000000000000000000000000000000000000000000000000000000000000020"
+               <> "aabbcc"
+  let offset = abiReadOffset truncated 0
+  caught <- try (pure (abiDecodeBytes truncated offset))
+    catch (GeneralError _) -> pure "caught"
+  assertMsg "truncated bytes payload errors" (caught == "caught")
+
+testAbiDecodeArrayElemOutOfBounds : Script ()
+testAbiDecodeArrayElemOutOfBounds = do
+  -- Empty array: reading element 0 should error, not return garbage
+  let emptyOffset = abiReadOffset vec_empty_dynamic_array 0
+  caught1 <- try (pure (abiDecodeArrayElem vec_empty_dynamic_array emptyOffset 0))
+    catch (GeneralError _) -> pure "caught"
+  assertMsg "elem 0 of empty array errors" (caught1 == "caught")
+  -- 3-element array: reading index 3 should error
+  let arrOffset = abiReadOffset vec_dynamic_array_uint256 0
+  caught2 <- try (pure (abiDecodeArrayElem vec_dynamic_array_uint256 arrOffset 3))
+    catch (GeneralError _) -> pure "caught"
+  assertMsg "elem past end of array errors" (caught2 == "caught")
+  -- Negative index
+  caught3 <- try (pure (abiDecodeArrayElem vec_dynamic_array_uint256 arrOffset (-1)))
+    catch (GeneralError _) -> pure "caught"
+  assertMsg "negative index errors" (caught3 == "caught")
+
+-- ---------------------------------------------------------------------------
+-- Tests: address with leading zeros in 20-byte payload
+-- ---------------------------------------------------------------------------
+
+testAbiDecodeAddressLeadingZeros : Script ()
+testAbiDecodeAddressLeadingZeros = do
+  assertMsg "address with leading zeros"
+    (abiDecodeAddress vec_address_leading_zeros 0 == "0001000000000000000000000000000000000001")
+  assertMsg "leading-zero address is 40 chars"
+    (DA.Text.length (abiDecodeAddress vec_address_leading_zeros 0) == 40)
+
+-- ---------------------------------------------------------------------------
+-- Tests: static fixed array as tuple member — (uint256, uint256[3])
+-- ---------------------------------------------------------------------------
+
+testAbiDecodeTupleWithFixedArray : Script ()
+testAbiDecodeTupleWithFixedArray = do
+  assertMsg "tuple uint = 42"
+    (abiDecodeUint vec_tuple_uint_fixed_array 0 == "000000000000000000000000000000000000000000000000000000000000002a")
+  assertMsg "fixed array elem 0 = 1"
+    (abiDecodeUint vec_tuple_uint_fixed_array 1 == "0000000000000000000000000000000000000000000000000000000000000001")
+  assertMsg "fixed array elem 1 = 2"
+    (abiDecodeUint vec_tuple_uint_fixed_array 2 == "0000000000000000000000000000000000000000000000000000000000000002")
+  assertMsg "fixed array elem 2 = 3"
+    (abiDecodeUint vec_tuple_uint_fixed_array 3 == "0000000000000000000000000000000000000000000000000000000000000003")
+  assertMsg "slot count = 4" (abiSlotCount vec_tuple_uint_fixed_array == 4)
+
+-- ---------------------------------------------------------------------------
+-- Tests: large uints in tuple (not just slot 0)
+-- ---------------------------------------------------------------------------
+
+testAbiDecodeUintMaxInTuple : Script ()
+testAbiDecodeUintMaxInTuple = do
+  assertMsg "tuple slot 0 = uint256 max"
+    (abiDecodeUint vec_tuple_two_large_uints 0 == "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")
+  assertMsg "tuple slot 1 = 2^255"
+    (abiDecodeUint vec_tuple_two_large_uints 1 == "8000000000000000000000000000000000000000000000000000000000000000")
+
+-- ---------------------------------------------------------------------------
+-- Tests: calldata with selector only (no args)
+-- ---------------------------------------------------------------------------
+
+testAbiStripSelectorExact : Script ()
+testAbiStripSelectorExact = do
+  assertMsg "strip selector-only returns empty" (abiStripSelector vec_calldata_selector_only == "")
+  assertMsg "selector of selector-only" (abiSelector vec_calldata_selector_only == "a9059cbb")
+  assertMsg "slot count of empty = 0" (abiSlotCount (abiStripSelector vec_calldata_selector_only) == 0)
+
+-- ---------------------------------------------------------------------------
+-- Tests: error prefix edge cases
+-- ---------------------------------------------------------------------------
+
+testErrorPrefixEdgeCases : Script ()
+testErrorPrefixEdgeCases = do
+  assertMsg "short string not error" (not (abiHasErrorPrefix "dead"))
+  assertMsg "empty string not error" (not (abiHasErrorPrefix ""))
+
+-- ---------------------------------------------------------------------------
+-- Tests: abiSlotCount non-multiple-of-32
+-- ---------------------------------------------------------------------------
+
+testAbiSlotCountNonMultiple : Script ()
+testAbiSlotCountNonMultiple = do
+  -- 96 hex chars = 48 bytes → 48/32 = 1 (integer division truncates)
+  let hex96 = "000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000"
+  assertMsg "48 bytes = 1 slot (truncated)" (abiSlotCount hex96 == 1)
+
+-- ---------------------------------------------------------------------------
+-- Tests: abiReadOffset in isolation
+-- ---------------------------------------------------------------------------
+
+testAbiReadOffset : Script ()
+testAbiReadOffset = do
+  assertMsg "offset from single string = 32" (abiReadOffset vec_single_string 0 == 32)
+  assertMsg "offset from tuple = 64" (abiReadOffset vec_tuple_uint_string 1 == 64)
+  assertMsg "offset from dynamic array = 32" (abiReadOffset vec_dynamic_array_uint256 0 == 32)
+
+-- ---------------------------------------------------------------------------
+-- Tests: H1 — abiDecodeAddress must reject non-zero padding
+-- ---------------------------------------------------------------------------
+
+testAbiDecodeAddressDirtyPadding : Script ()
+testAbiDecodeAddressDirtyPadding = do
+  let dirtyPadded = "ffffffffffffffffffffffff" <> "d8da6bf26964af9d7eed9e03e53415d37aa96045"
+  caught <- try (pure (abiDecodeAddress dirtyPadded 0))
+    catch (GeneralError _) -> pure "caught"
+  assertMsg "dirty address padding errors" (caught == "caught")
+
+-- ---------------------------------------------------------------------------
+-- Tests: H2 — abiDecodeArrayDynElem must bounds-check j
+-- ---------------------------------------------------------------------------
+
+testAbiDecodeArrayDynElemOutOfBounds : Script ()
+testAbiDecodeArrayDynElemOutOfBounds = do
+  let arrOffset = abiReadOffset vec_string_array 0
+  caught1 <- try (pure (abiDecodeArrayDynElem vec_string_array arrOffset 2))
+    catch (GeneralError _) -> pure (-1)
+  assertMsg "dyn elem past end errors" (caught1 == (-1))
+  caught2 <- try (pure (abiDecodeArrayDynElem vec_string_array arrOffset (-1)))
+    catch (GeneralError _) -> pure (-1)
+  assertMsg "dyn elem negative index errors" (caught2 == (-1))
+
+-- ---------------------------------------------------------------------------
+-- Tests: H3 — abiDecodeBytes must not overflow on large len
+-- ---------------------------------------------------------------------------
+
+testAbiDecodeBytesLenOverflow : Script ()
+testAbiDecodeBytesLenOverflow = do
+  let overflowPayload = "0000000000000000000000000000000000000000000000000000000000000020"
+                      <> "0000000000000000000000000000000000000000000000004000000000000000"
+                      <> "aabbcc0000000000000000000000000000000000000000000000000000000000"
+  let offset = abiReadOffset overflowPayload 0
+  caught <- try (pure (abiDecodeBytes overflowPayload offset))
+    catch (GeneralError _) -> pure "caught"
+  assertMsg "bytes len overflow produces clean error" (caught == "caught")
+
+-- ---------------------------------------------------------------------------
+-- Tests: H4a — abiSlotToInt overflow (missing coverage)
+-- ---------------------------------------------------------------------------
+
+testAbiSlotToIntOverflow : Script ()
+testAbiSlotToIntOverflow = do
+  caught <- try (pure (abiReadOffset vec_uint256_max 0))
+    catch (GeneralError _) -> pure (-1)
+  assertMsg "offset overflow errors" (caught == (-1))
+
+-- ---------------------------------------------------------------------------
+-- Tests: H4b — abiDecodeString invalid UTF-8 (missing coverage)
+-- ---------------------------------------------------------------------------
+
+testAbiDecodeStringInvalidUtf8 : Script ()
+testAbiDecodeStringInvalidUtf8 = do
+  let invalidUtf8 = "0000000000000000000000000000000000000000000000000000000000000020"
+                  <> "0000000000000000000000000000000000000000000000000000000000000002"
+                  <> "c0c0000000000000000000000000000000000000000000000000000000000000"
+  let offset = abiReadOffset invalidUtf8 0
+  caught <- try (pure (abiDecodeString invalidUtf8 offset))
+    catch (GeneralError _) -> pure "caught"
+  assertMsg "invalid UTF-8 errors" (caught == "caught")
+
+-- ---------------------------------------------------------------------------
+-- Tests: M3 — abiStripErrorPrefix must error on short input
+-- ---------------------------------------------------------------------------
+
+testStripErrorPrefixTooShort : Script ()
+testStripErrorPrefixTooShort = do
+  caught1 <- try (pure (abiStripErrorPrefix "dead"))
+    catch (GeneralError _) -> pure "caught"
+  assertMsg "strip error prefix on short input errors" (caught1 == "caught")
+  caught2 <- try (pure (abiStripErrorPrefix ""))
+    catch (GeneralError _) -> pure "caught"
+  assertMsg "strip error prefix on empty errors" (caught2 == "caught")

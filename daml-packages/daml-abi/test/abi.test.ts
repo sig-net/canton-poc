@@ -203,6 +203,20 @@ const VECTORS = {
     "0000000000000000000000000000000000000000000000000000000000000020" +
     "0000000000000000000000000000000000000000000000000000000000000000",
 
+  // --- New vectors: address with leading zeros, tuple with fixed array, large uint tuple ---
+  address_leading_zeros:
+    "0x0000000000000000000000000001000000000000000000000000000000000001",
+  tuple_uint_fixed_array:
+    "0x" +
+    "000000000000000000000000000000000000000000000000000000000000002a" +
+    "0000000000000000000000000000000000000000000000000000000000000001" +
+    "0000000000000000000000000000000000000000000000000000000000000002" +
+    "0000000000000000000000000000000000000000000000000000000000000003",
+  tuple_two_large_uints:
+    "0x" +
+    "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff" +
+    "8000000000000000000000000000000000000000000000000000000000000000",
+
   // --- New vectors: multi-dimensional array ---
   nested_dynamic_array:
     "0x" +
@@ -496,5 +510,28 @@ describe("ABI encoding vectors (cross-language ground truth)", () => {
   });
   it("bytes — empty payload", () => {
     expect(encodeAbiParameters([{ type: "bytes" }], ["0x"])).toBe(VECTORS.bytes_empty);
+  });
+
+  // --- New: address with leading zeros, tuple with fixed array, large uint tuple ---
+  it("address with leading zeros in payload", () => {
+    expect(
+      encodeAbiParameters([{ type: "address" }], ["0x0001000000000000000000000000000000000001"]),
+    ).toBe(VECTORS.address_leading_zeros);
+  });
+  it("(uint256, uint256[3]) — static fixed array as tuple member", () => {
+    expect(
+      encodeAbiParameters(
+        [{ type: "uint256" }, { type: "uint256[3]" }],
+        [42n, [1n, 2n, 3n]],
+      ),
+    ).toBe(VECTORS.tuple_uint_fixed_array);
+  });
+  it("(uint256, uint256) = (2^256-1, 2^255) — both exceed Int64", () => {
+    expect(
+      encodeAbiParameters(
+        [{ type: "uint256" }, { type: "uint256" }],
+        [2n ** 256n - 1n, 2n ** 255n],
+      ),
+    ).toBe(VECTORS.tuple_two_large_uints);
   });
 });
