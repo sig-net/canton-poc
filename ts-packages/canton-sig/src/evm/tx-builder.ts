@@ -15,7 +15,7 @@ import { sepolia } from "viem/chains";
 export interface CantonEvmParams {
   to: string;
   functionSignature: string;
-  args: string[];
+  encodedArgs: string;
   value: string;
   nonce: string;
   gasLimit: string;
@@ -24,13 +24,14 @@ export interface CantonEvmParams {
   chainId: string;
 }
 
-/** Reconstruct calldata from functionSignature + args */
-export function buildCalldata(functionSignature: string, args: Hex[]): Hex {
+/** Reconstruct calldata from functionSignature + encodedArgs */
+export function buildCalldata(functionSignature: string, encodedArgs: string): Hex {
   const selector = toFunctionSelector(`function ${functionSignature}`);
-  // args are already ABI-encoded (32 bytes each), just concatenate
-  const encodedArgs =
-    args.length > 0 ? concat(args.map((a): Hex => (a.startsWith("0x") ? a : `0x${a}`))) : "0x";
-  return concat([selector, encodedArgs]);
+  if (!encodedArgs) return selector;
+  const argsHex: Hex = encodedArgs.startsWith("0x")
+    ? (encodedArgs as Hex)
+    : `0x${encodedArgs}`;
+  return concat([selector, argsHex]);
 }
 
 /** Build a viem-compatible EIP-1559 tx request from CantonEvmParams */
@@ -44,10 +45,7 @@ export function buildTxRequest(evmParams: CantonEvmParams): TransactionSerializa
     gas: hexToBigInt(`0x${evmParams.gasLimit}`),
     to: `0x${evmParams.to}`,
     value: hexToBigInt(`0x${evmParams.value}`),
-    data: buildCalldata(
-      evmParams.functionSignature,
-      evmParams.args.map((a): Hex => `0x${a}`),
-    ),
+    data: buildCalldata(evmParams.functionSignature, evmParams.encodedArgs),
     accessList: [],
   };
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll } from "vitest";
-import { type Hex } from "viem";
+import { encodeAbiParameters, parseAbiParameters, type Hex } from "viem";
 import {
   CantonClient,
   type CreatedEvent,
@@ -41,19 +41,21 @@ const ALGO = "ECDSA";
 const DEST = "ethereum";
 
 function buildSampleEvmParams(vaultAddress: Hex) {
+  const encodedArgs = encodeAbiParameters(parseAbiParameters("address, uint256"), [
+    vaultAddress,
+    100_000_000n,
+  ]).slice(2);
+
   return {
     to: "a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
     functionSignature: "transfer(address,uint256)",
-    args: [
-      vaultAddress.slice(2).padStart(64, "0"),
-      "0000000000000000000000000000000000000000000000000000000005f5e100",
-    ],
-    value: "0000000000000000000000000000000000000000000000000000000000000000",
-    nonce: "0000000000000000000000000000000000000000000000000000000000000001",
-    gasLimit: "000000000000000000000000000000000000000000000000000000000000c350",
-    maxFeePerGas: "00000000000000000000000000000000000000000000000000000001dcd65000",
-    maxPriorityFee: "000000000000000000000000000000000000000000000000000000003b9aca00",
-    chainId: "0000000000000000000000000000000000000000000000000000000000aa36a7",
+    encodedArgs,
+    value: "0".repeat(64),
+    nonce: "0".repeat(64),
+    gasLimit: "0".repeat(64),
+    maxFeePerGas: "0".repeat(64),
+    maxPriorityFee: "0".repeat(64),
+    chainId: "0".repeat(62) + "01",
   };
 }
 

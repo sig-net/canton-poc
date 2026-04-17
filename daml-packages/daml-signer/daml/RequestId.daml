@@ -9,7 +9,7 @@ import DA.Crypto.Text
 
 import EvmTypes (EvmTransactionParams(..))
 import TxParams (TxParams(..))
-import Eip712 (assertBytes32, eip712EncodeString, eip712EncodeUint256, eip712EncodeAddress, eip712EncodeBytesArray, eip712EncodeBytes)
+import Eip712 (assertBytes32, eip712EncodeString, eip712EncodeUint256, eip712EncodeAddress, eip712EncodeBytes)
 
 -- ---------------------------------------------------------------------------
 -- Struct hashing
@@ -20,7 +20,7 @@ hashEvmParams p =
   keccak256 $
        eip712EncodeAddress p.to
     <> eip712EncodeString p.functionSignature
-    <> eip712EncodeBytesArray p.args
+    <> eip712EncodeBytes p.encodedArgs
     <> eip712EncodeUint256 p.value
     <> eip712EncodeUint256 p.nonce
     <> eip712EncodeUint256 p.gasLimit

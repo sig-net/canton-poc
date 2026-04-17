@@ -4,7 +4,7 @@ import { secp256k1 } from "@noble/curves/secp256k1.js";
 export interface EvmTransactionParams {
   to: string;
   functionSignature: string;
-  args: string[];
+  encodedArgs: string;
   value: string;
   nonce: string;
   gasLimit: string;
@@ -35,13 +35,6 @@ function eip712EncodeAddress(hex: Hex): Hex {
   return pad(hex, { size: 32 });
 }
 
-/** EIP-712 bytes[] encoding: keccak256(concat(map keccak256 items)). */
-function eip712EncodeBytesArray(items: Hex[]): Hex {
-  if (items.length === 0) return keccak256("0x");
-  const hashes = items.map((item) => keccak256(item));
-  return keccak256(concat(hashes));
-}
-
 /** EIP-712 bytes encoding: keccak256(raw bytes). */
 function eip712EncodeBytes(data: Hex): Hex {
   if (data === "0x") return keccak256("0x");
@@ -65,7 +58,7 @@ function hashEvmParams(p: EvmTransactionParams): Hex {
     concat([
       eip712EncodeAddress(`0x${p.to}`),
       eip712EncodeString(p.functionSignature),
-      eip712EncodeBytesArray(p.args.map((a): Hex => `0x${a}`)),
+      eip712EncodeBytes(p.encodedArgs === "" ? "0x" : `0x${p.encodedArgs}`),
       eip712EncodeUint256(`0x${p.value}`),
       eip712EncodeUint256(`0x${p.nonce}`),
       eip712EncodeUint256(`0x${p.gasLimit}`),

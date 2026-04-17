@@ -67,9 +67,8 @@ sampleEvmParams : EvmTransactionParams
 sampleEvmParams = EvmTransactionParams with
   to = "a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
   functionSignature = "transfer(address,uint256)"
-  args = [ sampleVaultAddress
-         , "0000000000000000000000000000000000000000000000000000000005f5e100"
-         ]
+  encodedArgs = sampleVaultAddress
+             <> "0000000000000000000000000000000000000000000000000000000005f5e100"
   value = "0000000000000000000000000000000000000000000000000000000000000000"
   nonce = "0000000000000000000000000000000000000000000000000000000000000001"
   gasLimit = "000000000000000000000000000000000000000000000000000000000000c350"
@@ -94,9 +93,8 @@ sampleWithdrawalEvmParams : EvmTransactionParams
 sampleWithdrawalEvmParams = EvmTransactionParams with
   to = sampleErc20Address
   functionSignature = "transfer(address,uint256)"
-  args = [ sampleRecipientAddress
-         , sampleHoldingAmount
-         ]
+  encodedArgs = sampleRecipientAddress
+             <> sampleHoldingAmount
   value = "0000000000000000000000000000000000000000000000000000000000000000"
   nonce = "0000000000000000000000000000000000000000000000000000000000000001"
   gasLimit = "000000000000000000000000000000000000000000000000000000000000c350"

@@ -291,9 +291,8 @@ testWrongRecipient = do
   nonceCid <- issueNonce sigNetwork requester signerCid
 
   let badParams = sampleEvmParams with
-        args = [ "0000000000000000000000001111111111111111111111111111111111111111"
-               , "0000000000000000000000000000000000000000000000000000000005f5e100"
-               ]
+        encodedArgs = "0000000000000000000000001111111111111111111111111111111111111111"
+                   <> "0000000000000000000000000000000000000000000000000000000005f5e100"
   submitMustFail (actAs requester <> readAs operator <> readAs sigNetwork) do
     exerciseCmd vaultCid RequestDeposit with
       requester; signerCid; path = "test"; evmTxParams = badParams

@@ -1,5 +1,11 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { createPublicClient, createWalletClient, http } from "viem";
+import {
+  createPublicClient,
+  createWalletClient,
+  encodeAbiParameters,
+  http,
+  parseAbiParameters,
+} from "viem";
 import { privateKeyToAddress, privateKeyToAccount } from "viem/accounts";
 import { sepolia } from "viem/chains";
 import {
@@ -70,20 +76,24 @@ describeIf("sepolia e2e withdrawal lifecycle", () => {
 
   it("completes full withdrawal flow through Sepolia", async () => {
     const erc20AddressNoPrefix = env!.ERC20_ADDRESS.slice(2).toLowerCase();
-    const amountPadded = toCantonHex(DEPOSIT_AMOUNT, 32);
 
     // Recipient is the faucet address (send tokens back)
-    const recipientAddress = privateKeyToAddress(env!.FAUCET_PRIVATE_KEY).slice(2).toLowerCase();
+    const recipientHex = privateKeyToAddress(env!.FAUCET_PRIVATE_KEY);
+    const recipientAddress = recipientHex.slice(2).toLowerCase();
     const recipientPadded = recipientAddress.padStart(64, "0");
 
     // Fetch vault nonce and gas
     const vaultNonce = await fetchNonce(env!.SEPOLIA_RPC_URL, setup.vaultAddress);
     const { maxFeePerGas, maxPriorityFeePerGas } = await fetchGasParams(env!.SEPOLIA_RPC_URL);
 
+    const encodedArgs = encodeAbiParameters(parseAbiParameters("address, uint256"), [
+      recipientHex,
+      DEPOSIT_AMOUNT,
+    ]).slice(2);
     const evmTxParams = {
       to: erc20AddressNoPrefix,
       functionSignature: "transfer(address,uint256)",
-      args: [recipientPadded, amountPadded],
+      encodedArgs,
       value: toCantonHex(0n, 32),
       nonce: toCantonHex(BigInt(vaultNonce), 32),
       gasLimit: toCantonHex(GAS_LIMIT, 32),
@@ -242,7 +252,8 @@ describeIf("sepolia e2e withdrawal lifecycle", () => {
 
     const erc20AddressNoPrefix = env!.ERC20_ADDRESS.slice(2).toLowerCase();
     const amountPadded = toCantonHex(DEPOSIT_AMOUNT, 32);
-    const recipientAddress = privateKeyToAddress(env!.FAUCET_PRIVATE_KEY).slice(2).toLowerCase();
+    const recipientHex = privateKeyToAddress(env!.FAUCET_PRIVATE_KEY);
+    const recipientAddress = recipientHex.slice(2).toLowerCase();
     const recipientPadded = recipientAddress.padStart(64, "0");
 
     // Ensure vault has ETH for the replacement tx (may have been spent on prior withdrawal gas)
@@ -257,10 +268,14 @@ describeIf("sepolia e2e withdrawal lifecycle", () => {
     const vaultNonce = await fetchNonce(env!.SEPOLIA_RPC_URL, setup.vaultAddress);
     const { maxFeePerGas, maxPriorityFeePerGas } = await fetchGasParams(env!.SEPOLIA_RPC_URL);
 
+    const encodedArgs = encodeAbiParameters(parseAbiParameters("address, uint256"), [
+      recipientHex,
+      DEPOSIT_AMOUNT,
+    ]).slice(2);
     const evmTxParams = {
       to: erc20AddressNoPrefix,
       functionSignature: "transfer(address,uint256)",
-      args: [recipientPadded, amountPadded],
+      encodedArgs,
       value: toCantonHex(0n, 32),
       nonce: toCantonHex(BigInt(vaultNonce), 32),
       gasLimit: toCantonHex(GAS_LIMIT, 32),

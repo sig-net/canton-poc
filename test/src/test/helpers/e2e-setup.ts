@@ -19,7 +19,7 @@ import {
   PendingDeposit,
   PendingWithdrawal,
 } from "canton-sig";
-import { keccak256, toHex } from "viem";
+import { encodeAbiParameters, keccak256, parseAbiParameters, toHex } from "viem";
 import { DER } from "@noble/curves/abstract/weierstrass.js";
 import { loadEnv } from "../../config/env.js";
 import {
@@ -214,7 +214,7 @@ export async function executeDepositFlow(
     vaultCid,
     signerDisclosure,
     vaultDisclosure,
-    vaultAddressPadded,
+    vaultAddress,
     predecessorId,
     userId,
   } = setup;
@@ -240,10 +240,14 @@ export async function executeDepositFlow(
 
   const amountPadded = toCantonHex(DEPOSIT_AMOUNT, 32);
   const erc20AddressNoPrefix = env.ERC20_ADDRESS.slice(2).toLowerCase();
+  const encodedArgs = encodeAbiParameters(parseAbiParameters("address, uint256"), [
+    vaultAddress,
+    DEPOSIT_AMOUNT,
+  ]).slice(2);
   const evmTxParams = {
     to: erc20AddressNoPrefix,
     functionSignature: "transfer(address,uint256)",
-    args: [vaultAddressPadded, amountPadded],
+    encodedArgs,
     value: toCantonHex(0n, 32),
     nonce: toCantonHex(BigInt(nonce), 32),
     gasLimit: toCantonHex(GAS_LIMIT, 32),

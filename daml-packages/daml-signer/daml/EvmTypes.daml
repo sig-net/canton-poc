@@ -6,7 +6,7 @@ data EvmTransactionParams = EvmTransactionParams
   with
     to                : BytesHex   -- 20 bytes, destination address
     functionSignature : Text       -- e.g., "transfer(address,uint256)"
-    args              : [BytesHex] -- per-arg hex values, canonical width
+    encodedArgs       : BytesHex   -- full ABI-encoded parameter body (after selector)
     value             : BytesHex   -- 32 bytes, ETH value (usually "00...")
     nonce             : BytesHex   -- 32 bytes
     gasLimit          : BytesHex   -- 32 bytes

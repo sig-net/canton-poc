@@ -4,10 +4,9 @@ import { computeRequestId, computeResponseHash, type EvmTransactionParams } from
 const sampleEvmParams: EvmTransactionParams = {
   to: "a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
   functionSignature: "transfer(address,uint256)",
-  args: [
-    "000000000000000000000000d8da6bf26964af9d7eed9e03e53415d37aa96045",
+  encodedArgs:
+    "000000000000000000000000d8da6bf26964af9d7eed9e03e53415d37aa96045" +
     "0000000000000000000000000000000000000000000000000000000005f5e100",
-  ],
   value: "0000000000000000000000000000000000000000000000000000000000000000",
   nonce: "0000000000000000000000000000000000000000000000000000000000000001",
   gasLimit: "000000000000000000000000000000000000000000000000000000000000c350",
@@ -26,7 +25,7 @@ const PATH = "m/44/60/0/0";
 // Uses flat keccak256(concat(encoded fields)) — no EIP-712 domain/type hashes.
 // ---------------------------------------------------------------------------
 const VECTORS = {
-  requestIdKv1: "0xab592010331a78defa4ba5f84daf1bb95b0f2572da0cc3e16f9f52b7e98d702d",
+  requestIdKv1: "0x50035809af6c64044011e75e7a0366c2acb9fbfba19e39c83f3b96be590ac81c",
   responseHash01: "0xe4f5b08c4c816896be4b121dad39b8910c8a0875ef14f1a1275a037416fea55d",
   responseHashEmpty: "0x411ab826623d7ba0be7b366112614d65632617e47325d33ec2cbfbf89186f775",
 };
@@ -156,8 +155,8 @@ describe("computeRequestId", () => {
     expect(a).not.toBe(b);
   });
 
-  it("changes with empty args", () => {
-    const emptyArgsParams = { ...sampleEvmParams, args: [] as string[] };
+  it("changes with empty encodedArgs", () => {
+    const emptyArgsParams = { ...sampleEvmParams, encodedArgs: "" };
     const a = computeRequestId(
       SENDER,
       { tag: "EvmTxParams", value: sampleEvmParams },

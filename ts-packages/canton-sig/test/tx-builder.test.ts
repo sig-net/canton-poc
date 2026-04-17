@@ -12,10 +12,9 @@ import {
 const sampleEvmParams: CantonEvmParams = {
   to: "a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
   functionSignature: "transfer(address,uint256)",
-  args: [
-    "000000000000000000000000d8da6bf26964af9d7eed9e03e53415d37aa96045",
+  encodedArgs:
+    "000000000000000000000000d8da6bf26964af9d7eed9e03e53415d37aa96045" +
     "0000000000000000000000000000000000000000000000000000000005f5e100",
-  ],
   value: "0000000000000000000000000000000000000000000000000000000000000000",
   nonce: "0000000000000000000000000000000000000000000000000000000000000001",
   gasLimit: "000000000000000000000000000000000000000000000000000000000000c350",
@@ -26,18 +25,15 @@ const sampleEvmParams: CantonEvmParams = {
 
 describe("buildCalldata", () => {
   it("produces 4-byte selector + concatenated args", () => {
-    const data = buildCalldata(
-      sampleEvmParams.functionSignature,
-      sampleEvmParams.args.map((a): Hex => `0x${a}`),
-    );
+    const data = buildCalldata(sampleEvmParams.functionSignature, sampleEvmParams.encodedArgs);
     // transfer(address,uint256) selector = 0xa9059cbb
     expect(data).toMatch(/^0xa9059cbb/);
     // 4 bytes selector + 2 x 32 bytes args = 68 bytes = 136 hex chars + "0x" prefix
     expect(data.length).toBe(2 + 136);
   });
 
-  it("returns just the selector when args are empty", () => {
-    const data = buildCalldata("transfer(address,uint256)", []);
+  it("returns just the selector when encodedArgs is empty", () => {
+    const data = buildCalldata("transfer(address,uint256)", "");
     expect(data).toMatch(/^0xa9059cbb$/);
     expect(data.length).toBe(2 + 8); // "0x" + 4-byte selector
   });

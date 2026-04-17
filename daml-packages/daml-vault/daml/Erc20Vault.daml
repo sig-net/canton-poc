@@ -1,13 +1,13 @@
 module Erc20Vault where
 
-import DA.List ((!!) , sort, unique)
+import DA.List (sort, unique)
 import DA.Crypto.Text (BytesHex, PublicKeyHex, secp256k1WithEcdsaOnly)
 
 import EvmTypes (EvmTransactionParams)
 import TxParams (TxParams(..))
 import Eip712 (chainIdToDecimalText)
 import RequestId (computeRequestId, computeResponseHash, computeOperatorsHash)
-import Abi (hasErrorPrefix, abiDecodeBool)
+import Abi (hasErrorPrefix, abiDecodeBool, abiDecodeUint, abiSlot)
 import Signer (Signer, SignRequest(..), SignBidirectionalEvent,
                SignatureRespondedEvent(..), RespondBidirectionalEvent(..),
                SignBidirectional(..), SigningNonce,
@@ -125,9 +125,7 @@ template Vault
         respondSerializationSchema  : Text
       controller requester
       do
-        let recipientArg = case evmTxParams.args of
-              recipient :: _ -> recipient
-              [] -> ""
+        let recipientArg = abiSlot evmTxParams.encodedArgs 0
         assertMsg "Only ERC20 transfer allowed"
           (evmTxParams.functionSignature == "transfer(address,uint256)")
         assertMsg "Transfer recipient must be vault address"
@@ -187,7 +185,7 @@ template Vault
         exercise respondBidirectionalEventCid Consume_RespondBidirectional with actor = requester
         exercise signatureRespondedEventCid Consume_SignatureResponded with actor = requester
 
-        let amount = (pending.evmTxParams).args !! 1
+        let amount = abiDecodeUint (pending.evmTxParams).encodedArgs 1
         create Erc20Holding with
           operators
           owner = requester
@@ -217,10 +215,8 @@ template Vault
         assertMsg "Holding operators mismatch" (sort holding.operators == sort operators)
         assertMsg "Holding owner mismatch" (holding.owner == requester)
 
-        let recipientArg = case evmTxParams.args of
-              recipient :: _ -> recipient
-              [] -> ""
-        let amountArg = evmTxParams.args !! 1
+        let recipientArg = abiSlot evmTxParams.encodedArgs 0
+        let amountArg = abiDecodeUint evmTxParams.encodedArgs 1
 
         assertMsg "Only ERC20 transfer allowed"
           (evmTxParams.functionSignature == "transfer(address,uint256)")

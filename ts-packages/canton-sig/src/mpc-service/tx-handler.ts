@@ -23,7 +23,7 @@ import {
   type Event,
   type TransactionResponse,
 } from "../infra/canton-client.js";
-import { computeRequestId } from "../mpc/crypto.js";
+import { computeRequestId, type TxParams as CryptoTxParams } from "../mpc/crypto.js";
 import { chainIdHexToCaip2 } from "../mpc/address-derivation.js";
 import {
   type SignBidirectionalEvent,
@@ -226,7 +226,7 @@ export async function signAndEnqueue(
   const caip2Id = chainIdHexToCaip2(evmTxParams.chainId);
   const computedRequestId = computeRequestId(
     sender,
-    txParams,
+    txParams as CryptoTxParams,
     caip2Id,
     Number(keyVersion),
     requestPath,
@@ -295,7 +295,7 @@ async function extractReturnData(
   const client = createPublicClient({ chain: sepolia, transport: http(rpcUrl) });
   const calldata = buildCalldata(
     tx.evmParams.functionSignature,
-    tx.evmParams.args.map((a): Hex => `0x${a}`),
+    tx.evmParams.encodedArgs,
   );
   const result = await client.call({
     to: `0x${tx.evmParams.to}`,
