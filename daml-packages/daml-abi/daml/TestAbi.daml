@@ -704,6 +704,17 @@ testAbiDecodeTupleTwoDynMembers = do
   assertMsg "first string = Hello" (abiDecodeString vec_two_strings str0Offset == "Hello")
   assertMsg "second string = World" (abiDecodeString vec_two_strings str1Offset == "World")
 
+testAbiDecodeTupleDynMemberNonZeroBase : Script ()
+testAbiDecodeTupleDynMemberNonZeroBase = do
+  -- Prepend a dummy slot to shift the tuple to base offset 32.
+  -- (uint256, string, uint256) = (42, "Hello", 99) at byte 32.
+  -- Slot 1 of the tuple (at slot 2 overall) holds offset = 96 (0x60).
+  -- abiDecodeTupleDynMember with base=32 and member=1 should return 32+96=128.
+  let shifted = "0000000000000000000000000000000000000000000000000000000000000000" <> vec_uint_string_uint
+  let strOffset = abiDecodeTupleDynMember shifted 32 1
+  assertMsg "non-zero base: string offset = 128" (strOffset == 128)
+  assertMsg "non-zero base: string = Hello" (abiDecodeString shifted strOffset == "Hello")
+
 -- ---------------------------------------------------------------------------
 -- Tests: abiHasErrorPrefix / abiStripErrorPrefix
 -- ---------------------------------------------------------------------------
