@@ -71,6 +71,22 @@ testChainIdToDecimalText = do
   assertMsg "single 1 -> 1" (chainIdToDecimalText "1" == "1")
 
 ------------------------------------------------------------------------
+-- secp256k1 accepts both low-s and high-s signatures (EIP-2 / BIP-62)
+------------------------------------------------------------------------
+
+-- testSignatureHex has high-s (s = 0xacf5... > n/2).
+-- This is the low-s counterpart: s' = n - s, same r, same (message, pubkey).
+testSignatureLowSHex : Text
+testSignatureLowSHex = "304502210093dffbc917a44aa1dd115ad85c5ddcfcda753490664a04802ac55028cea65b880220530a72c49d6bf47bb78d3e5ea903868a20b6b90d9af9dd6b62b0976d401c0703"
+
+testSecp256k1AcceptsBothLowAndHighS : Script ()
+testSecp256k1AcceptsBothLowAndHighS = do
+  let okHigh = secp256k1WithEcdsaOnly testSignatureHex      testMessageHex testPubKeyHex
+  let okLow  = secp256k1WithEcdsaOnly testSignatureLowSHex  testMessageHex testPubKeyHex
+  assertMsg "high-s signature must verify" okHigh
+  assertMsg "low-s signature must verify"  okLow
+
+------------------------------------------------------------------------
 -- toHex / fromHex round-trips
 ------------------------------------------------------------------------
 
