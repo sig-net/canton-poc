@@ -293,10 +293,7 @@ async function extractReturnData(
   receipt: { blockNumber: bigint },
 ): Promise<string> {
   const client = createPublicClient({ chain: sepolia, transport: http(rpcUrl) });
-  const calldata = buildCalldata(
-    tx.evmParams.functionSignature,
-    tx.evmParams.encodedArgs,
-  );
+  const calldata = buildCalldata(tx.evmParams.functionSignature, tx.evmParams.encodedArgs);
   const result = await client.call({
     to: `0x${tx.evmParams.to}`,
     data: calldata,

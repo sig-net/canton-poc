@@ -28,9 +28,7 @@ export interface CantonEvmParams {
 export function buildCalldata(functionSignature: string, encodedArgs: string): Hex {
   const selector = toFunctionSelector(`function ${functionSignature}`);
   if (!encodedArgs) return selector;
-  const argsHex: Hex = encodedArgs.startsWith("0x")
-    ? (encodedArgs as Hex)
-    : `0x${encodedArgs}`;
+  const argsHex: Hex = encodedArgs.startsWith("0x") ? (encodedArgs as Hex) : `0x${encodedArgs}`;
   return concat([selector, argsHex]);
 }
 
