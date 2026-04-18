@@ -116,7 +116,7 @@ export async function setupVault(
   const predecessorId = `${env.VAULT_ID}${operatorsHash}`;
 
   const vaultAddress = deriveDepositAddress(env.MPC_ROOT_PUBLIC_KEY, predecessorId, "root");
-  const vaultAddressPadded = vaultAddress.slice(2).padStart(64, "0");
+  const vaultAddressPadded = vaultAddress.slice(2).toLowerCase().padStart(64, "0");
 
   // Create Signer contract (signatory: sigNetwork)
   const signerResult = await canton.createContract(userId, [sigNetwork], SIGNER_TEMPLATE, {

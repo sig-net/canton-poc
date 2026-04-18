@@ -130,7 +130,7 @@ describe("ledger visibility + permission model", () => {
     const vaultResult = await canton.createContract(OPERATOR_USER, [operator], VAULT_TEMPLATE, {
       operators: [operator],
       sigNetwork,
-      evmVaultAddress: vaultAddress.slice(2).padStart(64, "0"),
+      evmVaultAddress: vaultAddress.slice(2).toLowerCase().padStart(64, "0"),
       evmMpcPublicKey: mpcPubKeySpki,
       vaultId: VAULT_ID,
     });
