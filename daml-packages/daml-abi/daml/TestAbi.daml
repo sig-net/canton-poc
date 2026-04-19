@@ -729,11 +729,34 @@ testHasErrorPrefix = do
   assertMsg "empty string is not error" (not (abiHasErrorPrefix ""))
   assertMsg "short string is not error" (not (abiHasErrorPrefix "dead"))
   assertMsg "different prefix is not error" (not (abiHasErrorPrefix ("cafebabe" <> vec_bool_true)))
+  -- Case-insensitive: BytesHex legitimately allows A-F or a-f; the detector
+  -- must match regardless of case so security-critical callers don't miss
+  -- an error that was uppercase-encoded.
+  assertMsg "uppercase DEADBEEF is error" (abiHasErrorPrefix ("DEADBEEF" <> vec_bool_true))
+  assertMsg "mixed-case DeAdBeEf is error" (abiHasErrorPrefix ("DeAdBeEf" <> vec_bool_true))
+  assertMsg "uppercase DEADBEEF (no payload) is error" (abiHasErrorPrefix "DEADBEEF")
 
 testStripErrorPrefix : Script ()
 testStripErrorPrefix = do
   assertMsg "strip deadbeef + bool true" (abiStripErrorPrefix ("deadbeef" <> vec_bool_true) == vec_bool_true)
   assertMsg "strip exactly deadbeef" (abiStripErrorPrefix "deadbeef" == "")
+  -- Case-insensitive strip mirrors the case-insensitive detector
+  assertMsg "strip uppercase DEADBEEF + payload"
+    (abiStripErrorPrefix ("DEADBEEF" <> vec_bool_true) == vec_bool_true)
+  assertMsg "strip mixed-case DeAdBeEf"
+    (abiStripErrorPrefix ("DeAdBeEf" <> vec_bool_true) == vec_bool_true)
+
+testStripErrorPrefixInvalidMagic : Script ()
+testStripErrorPrefixInvalidMagic = do
+  -- Non-deadbeef prefix must be rejected so callers can't silently
+  -- mis-strip a function selector or garbage as if it were an error payload.
+  caught1 <- try (pure (abiStripErrorPrefix ("cafebabe" <> vec_bool_true)))
+    catch (GeneralError _) -> pure "caught"
+  assertMsg "non-deadbeef prefix rejected" (caught1 == "caught")
+  -- A function selector is a natural footgun — must also be rejected.
+  caught2 <- try (pure (abiStripErrorPrefix ("a9059cbb" <> vec_bool_true)))
+    catch (GeneralError _) -> pure "caught"
+  assertMsg "function selector prefix rejected" (caught2 == "caught")
 
 -- ---------------------------------------------------------------------------
 -- Tests: error paths (negative tests)
@@ -961,3 +984,127 @@ testStripErrorPrefixTooShort = do
   caught2 <- try (pure (abiStripErrorPrefix ""))
     catch (GeneralError _) -> pure "caught"
   assertMsg "strip error prefix on empty errors" (caught2 == "caught")
+
+-- ---------------------------------------------------------------------------
+-- Tests: dynamic decoders must reject non-slot-aligned byte offsets.
+-- Well-formed ABI always aligns dynamic payloads to 32-byte slots; an
+-- unaligned offset indicates corrupt or malicious input and must be rejected
+-- rather than silently reinterpreting nearby bytes.
+-- ---------------------------------------------------------------------------
+
+-- Two-slot payload used by several alignment tests:
+--   slot 0: length = 3
+--   slot 1: data "aabbccddeeff..." (remainder zero-padded)
+vec_bytes_payload_3 : BytesHex
+vec_bytes_payload_3 =
+     "0000000000000000000000000000000000000000000000000000000000000003"
+  <> "aabbccddeeff0000000000000000000000000000000000000000000000000000"
+
+testAbiDecodeBytesRequiresAlignedOffset : Script ()
+testAbiDecodeBytesRequiresAlignedOffset = do
+  -- Sanity: aligned offset=0 returns the intended payload
+  assertMsg "aligned offset=0 returns aabbcc"
+    (abiDecodeBytes vec_bytes_payload_3 0 == "aabbcc")
+  -- Unaligned byte offset must error (used to silently return shifted bytes)
+  caught1 <- try (pure (abiDecodeBytes vec_bytes_payload_3 1))
+    catch (GeneralError _) -> pure "caught"
+  assertMsg "unaligned offset=1 rejected" (caught1 == "caught")
+  caught2 <- try (pure (abiDecodeBytes vec_bytes_payload_3 31))
+    catch (GeneralError _) -> pure "caught"
+  assertMsg "unaligned offset=31 rejected" (caught2 == "caught")
+  -- Negative offset must also error
+  caught3 <- try (pure (abiDecodeBytes vec_bytes_payload_3 (-32)))
+    catch (GeneralError _) -> pure "caught"
+  assertMsg "negative offset rejected" (caught3 == "caught")
+
+testAbiDecodeArrayLenRequiresAlignedOffset : Script ()
+testAbiDecodeArrayLenRequiresAlignedOffset = do
+  -- Sanity: aligned offset returns the length
+  assertMsg "aligned offset=0 returns length 3"
+    (abiDecodeArrayLen vec_bytes_payload_3 0 == 3)
+  -- Unaligned must error (used to floor to same slot silently)
+  caught1 <- try (pure (abiDecodeArrayLen vec_bytes_payload_3 1))
+    catch (GeneralError _) -> pure (-1)
+  assertMsg "unaligned offset=1 rejected" (caught1 == (-1))
+  caught2 <- try (pure (abiDecodeArrayLen vec_bytes_payload_3 63))
+    catch (GeneralError _) -> pure (-1)
+  assertMsg "unaligned offset=63 rejected" (caught2 == (-1))
+
+testAbiDecodeArrayElemRequiresAlignedOffset : Script ()
+testAbiDecodeArrayElemRequiresAlignedOffset = do
+  -- Use a well-formed dynamic array: [10,20,30]
+  let arrOffset = abiReadOffset vec_dynamic_array_uint256 0
+  assertMsg "aligned offset works (sanity)"
+    (hexToInt (abiDecodeArrayElem vec_dynamic_array_uint256 arrOffset 0) == 10)
+  -- Unaligned offset rejected
+  caught <- try (pure (abiDecodeArrayElem vec_dynamic_array_uint256 (arrOffset + 1) 0))
+    catch (GeneralError _) -> pure "caught"
+  assertMsg "unaligned offset rejected" (caught == "caught")
+
+testAbiDecodeArrayDynElemRequiresAlignedOffset : Script ()
+testAbiDecodeArrayDynElemRequiresAlignedOffset = do
+  -- Use string[] = ["Hello", "World"]
+  let arrOffset = abiReadOffset vec_string_array 0
+  -- Sanity: aligned offset works
+  let elem0Aligned = abiDecodeArrayDynElem vec_string_array arrOffset 0
+  assertMsg "aligned offset: elem 0 = Hello"
+    (abiDecodeString vec_string_array elem0Aligned == "Hello")
+  -- Unaligned offset rejected
+  caught <- try (pure (abiDecodeArrayDynElem vec_string_array (arrOffset + 1) 0))
+    catch (GeneralError _) -> pure (-1)
+  assertMsg "unaligned offset rejected" (caught == (-1))
+
+testAbiDecodeFixedArrayDynElemRequiresAlignedOffset : Script ()
+testAbiDecodeFixedArrayDynElemRequiresAlignedOffset = do
+  -- Use string[2] = ["Hello", "World"]
+  let innerOffset = abiReadOffset vec_string_fixed_array 0
+  -- Sanity: aligned works
+  let elem0Aligned = abiDecodeFixedArrayDynElem vec_string_fixed_array innerOffset 0
+  assertMsg "aligned offset: elem 0 = Hello"
+    (abiDecodeString vec_string_fixed_array elem0Aligned == "Hello")
+  -- Unaligned offset rejected
+  caught <- try (pure (abiDecodeFixedArrayDynElem vec_string_fixed_array (innerOffset + 1) 0))
+    catch (GeneralError _) -> pure (-1)
+  assertMsg "unaligned offset rejected" (caught == (-1))
+
+testAbiDecodeTupleDynMemberRequiresAlignedOffset : Script ()
+testAbiDecodeTupleDynMemberRequiresAlignedOffset = do
+  -- Sanity: aligned base offset=0 works for (uint256, string, bool)
+  let strOffset = abiDecodeTupleDynMember vec_dynamic_tuple 0 1
+  assertMsg "aligned base=0 works (sanity)"
+    (abiDecodeString vec_dynamic_tuple strOffset == "Hello")
+  -- Unaligned base offset rejected
+  caught1 <- try (pure (abiDecodeTupleDynMember vec_dynamic_tuple 1 1))
+    catch (GeneralError _) -> pure (-1)
+  assertMsg "unaligned base=1 rejected" (caught1 == (-1))
+  caught2 <- try (pure (abiDecodeTupleDynMember vec_dynamic_tuple (-32) 1))
+    catch (GeneralError _) -> pure (-1)
+  assertMsg "negative base rejected" (caught2 == (-1))
+
+-- ---------------------------------------------------------------------------
+-- Tests: regression — hex case-insensitivity does NOT break bool/address.
+-- Only abiHasErrorPrefix / abiStripErrorPrefix need explicit case handling;
+-- bool and address validations rely on numeric non-zero comparison that is
+-- inherently case-insensitive for the digits involved.
+-- ---------------------------------------------------------------------------
+
+testAbiDecodeBoolCaseInsensitive : Script ()
+testAbiDecodeBoolCaseInsensitive = do
+  let lowerFf = "00000000000000000000000000000000000000000000000000000000000000ff"
+  let upperFf = "00000000000000000000000000000000000000000000000000000000000000FF"
+  let zero    = "0000000000000000000000000000000000000000000000000000000000000000"
+  assertMsg "bool(0xff lowercase) = true" (abiDecodeBool lowerFf 0 == True)
+  assertMsg "bool(0xFF uppercase) = true" (abiDecodeBool upperFf 0 == True)
+  assertMsg "bool(all zero) = false" (abiDecodeBool zero 0 == False)
+
+testAbiDecodeAddressCaseInsensitive : Script ()
+testAbiDecodeAddressCaseInsensitive = do
+  -- Uppercase payload: padding is still all zeros (case-free), so decoding works
+  let upperAddr = "000000000000000000000000D8DA6BF26964AF9D7EED9E03E53415D37AA96045"
+  assertMsg "uppercase address decodes to 40-hex-char result"
+    (DA.Text.length (abiDecodeAddress upperAddr 0) == 40)
+  -- Uppercase dirty padding (non-zero hex digits, any case) is still rejected
+  let dirtyUpper = "FFFFFFFFFFFFFFFFFFFFFFFF" <> "d8da6bf26964af9d7eed9e03e53415d37aa96045"
+  caught <- try (pure (abiDecodeAddress dirtyUpper 0))
+    catch (GeneralError _) -> pure "caught"
+  assertMsg "uppercase dirty padding rejected" (caught == "caught")

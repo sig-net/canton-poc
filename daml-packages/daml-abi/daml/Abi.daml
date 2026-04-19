@@ -122,6 +122,18 @@ abiSlotToInt hex i = case fromHex (abiSlot hex i) of
   Some _ -> error ("abiSlotToInt: negative value at slot " <> show i)
   None -> error ("abiSlotToInt: overflow at slot " <> show i)
 
+-- | Internal: validate that a byte offset is non-negative and slot-aligned.
+-- Well-formed ABI always places dynamic payloads at multiples of 32; a
+-- non-aligned offset indicates corrupt or adversarial input. Returns the
+-- offset unchanged on success; errors otherwise.
+requireAlignedOffset : Text -> Int -> Int
+requireAlignedOffset fnName byteOffset =
+  if byteOffset < 0
+  then error (fnName <> ": negative byte offset " <> show byteOffset)
+  else if byteOffset % slotBytes /= 0
+  then error (fnName <> ": byte offset " <> show byteOffset <> " must be a multiple of 32")
+  else byteOffset
+
 -- ---------------------------------------------------------------------------
 -- Dynamic type decoders
 -- ---------------------------------------------------------------------------
@@ -132,17 +144,19 @@ abiReadOffset = abiSlotToInt
 
 -- | Decode dynamic bytes at the given byte offset.
 -- Layout: uint256 length at offset, then raw data bytes.
+-- Errors if byteOffset is negative or not a multiple of 32.
 abiDecodeBytes : BytesHex -> Int -> BytesHex
 abiDecodeBytes hex byteOffset =
-  let hexLen = DA.Text.length hex
-      len = abiSlotToInt hex (byteOffset / slotBytes)
-      dataStartChar = (byteOffset + slotBytes) * 2
+  let off = requireAlignedOffset "abiDecodeBytes" byteOffset
+      hexLen = DA.Text.length hex
+      len = abiSlotToInt hex (off / slotBytes)
+      dataStartChar = (off + slotBytes) * 2
   in if len == 0
      then ""
      else
        let availableBytes = (hexLen - dataStartChar) / 2
        in if len < 0 || len > availableBytes
-          then error ("abiDecodeBytes: claimed " <> show len <> " bytes but only " <> show availableBytes <> " available at offset " <> show byteOffset)
+          then error ("abiDecodeBytes: claimed " <> show len <> " bytes but only " <> show availableBytes <> " available at offset " <> show off)
           else DA.Text.take (len * 2) (DA.Text.drop dataStartChar hex)
 
 -- | Decode dynamic string at the given byte offset (UTF-8).
@@ -157,29 +171,36 @@ abiDecodeString hex byteOffset =
        None -> error ("abiDecodeString: invalid UTF-8 at offset " <> show byteOffset)
 
 -- | Read dynamic array length at the given byte offset.
+-- Errors if byteOffset is negative or not a multiple of 32.
 abiDecodeArrayLen : BytesHex -> Int -> Int
-abiDecodeArrayLen hex byteOffset = abiSlotToInt hex (byteOffset / slotBytes)
+abiDecodeArrayLen hex byteOffset =
+  let off = requireAlignedOffset "abiDecodeArrayLen" byteOffset
+  in abiSlotToInt hex (off / slotBytes)
 
 -- | Read the j-th element (0-indexed) of a dynamic array of static 32-byte
 -- elements at the given byte offset. Returns raw 32-byte slot.
+-- Errors if byteOffset is negative or not a multiple of 32.
 abiDecodeArrayElem : BytesHex -> Int -> Int -> BytesHex
 abiDecodeArrayElem hex byteOffset j =
-  let len = abiSlotToInt hex (byteOffset / slotBytes)
+  let off = requireAlignedOffset "abiDecodeArrayElem" byteOffset
+      len = abiSlotToInt hex (off / slotBytes)
   in if j < 0 || j >= len
      then error ("abiDecodeArrayElem: index " <> show j <> " out of bounds (length " <> show len <> ")")
-     else abiSlot hex (byteOffset / slotBytes + 1 + j)
+     else abiSlot hex (off / slotBytes + 1 + j)
 
 -- | Resolve the j-th element of a dynamic array of dynamic types
 -- (string[], bytes[], tuple[] with dynamic members) at the given byte offset.
 -- Returns the absolute byte offset of the element's data, suitable for
 -- passing to abiDecodeBytes, abiDecodeString, etc.
+-- Errors if byteOffset is negative or not a multiple of 32.
 abiDecodeArrayDynElem : BytesHex -> Int -> Int -> Int
 abiDecodeArrayDynElem hex byteOffset j =
-  let len = abiSlotToInt hex (byteOffset / slotBytes)
+  let off = requireAlignedOffset "abiDecodeArrayDynElem" byteOffset
+      len = abiSlotToInt hex (off / slotBytes)
   in if j < 0 || j >= len
      then error ("abiDecodeArrayDynElem: index " <> show j <> " out of bounds (length " <> show len <> ")")
      else
-       let dataAreaOffset = byteOffset + slotBytes
+       let dataAreaOffset = off + slotBytes
            elemOffsetSlot = dataAreaOffset / slotBytes + j
            relativeOffset = abiSlotToInt hex elemOffsetSlot
        in dataAreaOffset + relativeOffset
@@ -188,11 +209,13 @@ abiDecodeArrayDynElem hex byteOffset j =
 -- (T[k] where T is dynamic, e.g. string[2]). No length prefix — the data
 -- area starts at the array's base position directly.
 -- Returns the absolute byte offset of the element's data.
+-- Errors if byteOffset is negative or not a multiple of 32.
 abiDecodeFixedArrayDynElem : BytesHex -> Int -> Int -> Int
 abiDecodeFixedArrayDynElem hex byteOffset j =
-  let elemOffsetSlot = byteOffset / slotBytes + j
+  let off = requireAlignedOffset "abiDecodeFixedArrayDynElem" byteOffset
+      elemOffsetSlot = off / slotBytes + j
       relativeOffset = abiSlotToInt hex elemOffsetSlot
-  in byteOffset + relativeOffset
+  in off + relativeOffset
 
 -- ---------------------------------------------------------------------------
 -- Dynamic tuple decoders
@@ -207,10 +230,12 @@ abiDecodeFixedArrayDynElem hex byteOffset j =
 --   strOff = abiDecodeTupleDynMember hex B 1
 --   str    = abiDecodeString hex strOff
 --   flag   = abiDecodeBool hex (B / 32 + 2)
+-- Errors if tupleBaseOffset is negative or not a multiple of 32.
 abiDecodeTupleDynMember : BytesHex -> Int -> Int -> Int
 abiDecodeTupleDynMember hex tupleBaseOffset memberSlotIndex =
-  let relativeOffset = abiSlotToInt hex (tupleBaseOffset / slotBytes + memberSlotIndex)
-  in tupleBaseOffset + relativeOffset
+  let off = requireAlignedOffset "abiDecodeTupleDynMember" tupleBaseOffset
+      relativeOffset = abiSlotToInt hex (off / slotBytes + memberSlotIndex)
+  in off + relativeOffset
 
 -- ---------------------------------------------------------------------------
 -- Multi-dimensional array patterns (documentation)
@@ -242,12 +267,19 @@ abiDecodeTupleDynMember hex tupleBaseOffset memberSlotIndex =
 
 -- | Check if a hex-encoded response starts with the 4-byte error magic prefix.
 -- Used to distinguish tx-level failures from successful return data.
+-- Case-insensitive: accepts "deadbeef", "DEADBEEF", or any mixed case since
+-- BytesHex legitimately allows both A–F and a–f.
 abiHasErrorPrefix : BytesHex -> Bool
-abiHasErrorPrefix hex = DA.Text.length hex >= selectorHexChars && DA.Text.take selectorHexChars hex == "deadbeef"
+abiHasErrorPrefix hex =
+  DA.Text.length hex >= selectorHexChars
+  && DA.Text.asciiToLower (DA.Text.take selectorHexChars hex) == "deadbeef"
 
 -- | Strip the 4-byte error prefix, leaving the ABI-encoded error payload.
+-- Errors if the data is too short or the prefix is not the deadbeef magic.
 abiStripErrorPrefix : BytesHex -> BytesHex
 abiStripErrorPrefix hex =
   if DA.Text.length hex < selectorHexChars
   then error ("abiStripErrorPrefix: data too short (" <> show (DA.Text.length hex / 2) <> " bytes)")
+  else if DA.Text.asciiToLower (DA.Text.take selectorHexChars hex) /= "deadbeef"
+  then error "abiStripErrorPrefix: prefix is not the 0xdeadbeef error magic"
   else DA.Text.drop selectorHexChars hex
