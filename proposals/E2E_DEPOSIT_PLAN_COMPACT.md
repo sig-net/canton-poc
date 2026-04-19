@@ -386,11 +386,11 @@ computeRequestId sender txParams caip2Id keyVersion path algo dest params nonceC
 
 computeResponseHash : BytesHex -> BytesHex -> BytesHex
 computeResponseHash requestId output =
-  keccak256 (assertBytes32 requestId <> eip712EncodeBytes output)
+  keccak256 (assertBytes32 requestId <> output)
 ```
 
-`computeResponseHash` hashes `mpcOutput` generically via `eip712EncodeBytes` —
-it works for any length.
+`computeResponseHash` concatenates the raw `mpcOutput` after `requestId` and
+hashes once — matches the MPC node and Solana reference.
 
 ## ABI-Encoded mpcOutput
 

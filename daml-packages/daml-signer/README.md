@@ -355,7 +355,7 @@ The MPC service is fully generic — it has no knowledge of deposits, withdrawal
 6. Threshold-sign the transaction hash.
 7. Exercise `Signer.Respond` → creates `SignatureRespondedEvent`.
 8. Poll the destination chain for confirmation; re-simulate the call at `blockNumber - 1` to extract ABI-encoded return data (or encode `0xdeadbeef` + error payload on failure).
-9. Sign `responseHash = keccak256(requestId <> keccak256(mpcOutput))` with the **root** private key (not the child) and exercise `Signer.RespondBidirectional` → creates `RespondBidirectionalEvent`.
+9. Sign `responseHash = keccak256(requestId <> mpcOutput)` with the **root** private key (not the child) and exercise `Signer.RespondBidirectional` → creates `RespondBidirectionalEvent`.
 
 ### KDF chain ID
 
@@ -385,7 +385,7 @@ computeRequestId sender txParams caip2Id keyVersion path algo dest params nonceC
     <> eip712EncodeString nonceCidText
 
 computeResponseHash requestId output =
-  keccak256 (assertBytes32 requestId <> eip712EncodeBytes output)
+  keccak256 (assertBytes32 requestId <> output)
 ```
 
 The `responseHash` is what the MPC signs with the root key. Since `sender` already encodes `operatorsHash`, the MPC signature transitively binds the outcome to the full operator set.

@@ -60,6 +60,7 @@ computeRequestId sender txParams caip2Id keyVersion path algo dest params nonceC
     <> eip712EncodeString params
     <> eip712EncodeString nonceCidText
 
+-- keccak256(requestId ‖ rawOutput) — matches MPC (respond_bidirectional.rs) and Solana (erc20_vault.rs); no inner keccak on `output`
 computeResponseHash : BytesHex -> BytesHex -> BytesHex
 computeResponseHash requestId output =
-  keccak256 (assertBytes32 requestId <> eip712EncodeBytes output)
+  keccak256 (assertBytes32 requestId <> output)

@@ -26,8 +26,8 @@ const PATH = "m/44/60/0/0";
 // ---------------------------------------------------------------------------
 const VECTORS = {
   requestIdKv1: "0x50035809af6c64044011e75e7a0366c2acb9fbfba19e39c83f3b96be590ac81c",
-  responseHash01: "0xe4f5b08c4c816896be4b121dad39b8910c8a0875ef14f1a1275a037416fea55d",
-  responseHashEmpty: "0x411ab826623d7ba0be7b366112614d65632617e47325d33ec2cbfbf89186f775",
+  responseHash01: "0x0344a8df5db02fe0579ff283081b60d9e6f3956594facfc6ea2befd5890366f4",
+  responseHashEmpty: "0x20ee8f1366f06926e9e8771d8fb9007a8537c8dfdb6a3f8c2cfd64db19d2ec90",
 };
 
 const KNOWN_REQUEST_ID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";

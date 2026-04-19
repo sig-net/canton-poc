@@ -267,5 +267,6 @@ nonconsuming choice CompleteWithdrawal : Optional (ContractId Erc20Holding)
 No new functions. `computeRequestId` and `computeResponseHash` are reused
 as-is — see `E2E_DEPOSIT_PLAN_COMPACT.md`. The nonce slot receives
 `nonceCidText` (the consumed `SigningNonce` contractId as text) for both
-deposit and withdrawal. `computeResponseHash` hashes `mpcOutput` generically
-via `eip712EncodeBytes` — works unchanged for any length.
+deposit and withdrawal. `computeResponseHash` concatenates the raw
+`mpcOutput` after `requestId` — no inner keccak — so it matches the MPC
+and Solana single-hash semantics.

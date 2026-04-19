@@ -27,18 +27,20 @@ claimTestPubKey = "3056301006072a8648ce3d020106052b8104000a03420004bb50e2d89a4ed
 
 -- DER signature over computeResponseHash(claimTestRequestId, boolTrueMpcOutput)
 claimTestSignature : Signature
-claimTestSignature = ecdsaTestSig "304402206746cf175d67deaf459dec41456060f814e6b82d54a1bc91285179c2532121b2022007fd8775f1f3225da085e5182b1a327a0e17046539b5eee6e4eb67cae6355fad"
+claimTestSignature = ecdsaTestSig "3045022100c68b288dcc7bb7f24160e67adc46e06665c06967eb1fdbb92fde9181a87ea8780220055cc0ec2cc3e317ad863853df58b91fbacfade5abc549e144347e4e115a8578"
 
 claimTestRequestId : Text
 claimTestRequestId = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
 -- DER signature over computeResponseHash(claimTestRequestId, errorPrefixMpcOutput) — refund case
 refundTestSignature : Signature
-refundTestSignature = ecdsaTestSig "3045022100e514e9d188df1ed311baed7bda03243b5321084e7b50148988ae1b68233a59dd02207c6d154e46879d1bf04337251cffe7ce2f6398a604a82a809e8c5edf86494468"
+refundTestSignature = ecdsaTestSig "3045022100bb8e3521b36754e8603a28510bd49f0b716ea4f264033ae4610fc2d01c81004a02205ca7a3482080bc49f8ee63ce438e71f63301cff3614234cad9e74086e8de3205"
 
 -- DER signature over computeResponseHash(claimTestRequestId, boolFalseMpcOutput) — transfer returned false
 boolFalseTestSignature : Signature
-boolFalseTestSignature = ecdsaTestSig "304402203f0caa50c73e18a9788e093a349773bbd7951c6fc17547a776c041866489ded902200d67880f3b1ba2b34c244a75e828c9272cbb66c0591399a9ea4f42afa5f08a1f"
+boolFalseTestSignature = EcdsaSig (EcdsaSigData with
+  der = "30440220138d9f41f9d65fcf591b3914e9368beebb25de83406b5319ce198feb9302312a022065fa8342c5ef82f7f7c81bf9f43585cf3528eb6ad2390100ba74a177be79e74c"
+  recoveryId = 1)
 
 -- ---------------------------------------------------------------------------
 -- ABI-encoded mpcOutput constants

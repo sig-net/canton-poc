@@ -144,11 +144,11 @@ testCrossLanguageVectors = do
   let knownId = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   assertMsg "computeResponseHash(knownId, 01) matches TS"
     (computeResponseHash knownId "01"
-      == "e4f5b08c4c816896be4b121dad39b8910c8a0875ef14f1a1275a037416fea55d")
+      == "0344a8df5db02fe0579ff283081b60d9e6f3956594facfc6ea2befd5890366f4")
 
   assertMsg "computeResponseHash(knownId, empty) matches TS"
     (computeResponseHash knownId ""
-      == "411ab826623d7ba0be7b366112614d65632617e47325d33ec2cbfbf89186f775")
+      == "20ee8f1366f06926e9e8771d8fb9007a8537c8dfdb6a3f8c2cfd64db19d2ec90")
 
   let rid0 = computeRequestId predecessorId (EvmTxParams sampleEvmParams) caip2Id 0 path "ECDSA" "ethereum" "" ""
   assertMsg "requestId(kv=0) differs from kv=1" (rid0 /= rid1)

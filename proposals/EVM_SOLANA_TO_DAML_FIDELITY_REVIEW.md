@@ -2,22 +2,6 @@
 
 Review of the DAML implementation in `canton-mpc-poc/daml-packages/` against the EVM reference (`signet.sol/`) and Solana reference (`signet-solana-program/` + `solana-contract-examples/erc20_vault.rs`).
 
----
-
-## Critical fidelity risk (fix first)
-
-**`computeResponseHash` double-hashes `serializedOutput`.**
-
-- `Erc20Vault.daml:182,283` calls `RequestId.daml:63-65`, which uses `eip712EncodeBytes` — and `eip712EncodeBytes` wraps the input in `keccak256`.
-- Result: DAML computes `keccak256(requestId ‖ keccak256(serializedOutput))`.
-- The MPC node (`mpc/chain-signatures/node/src/respond_bidirectional.rs:179-189`) signs `keccak256(requestId ‖ serializedOutput)` — no inner `keccak256`. This matches Solana (`erc20_vault.rs:450-456`).
-
-**Impact:** every MPC-produced `RespondBidirectional` signature will fail `secp256k1WithEcdsaOnly` verification on `Vault.ClaimDeposit` and `Vault.CompleteWithdrawal` until one side is aligned.
-
-**Fix options:**
-
-1. Drop the `eip712EncodeBytes` wrapping in `computeResponseHash` (DAML-side change — preferred).
-2. Add a Canton-specific branch in the MPC's `calculate_respond_bidirectional_hash_message` that pre-hashes `serializedOutput`.
 
 ---
 
@@ -92,4 +76,3 @@ EcdsaSigData {
 - ⚠️ **Signature wire format reshaped** (DER vs affine RSV, `bigR.y` dropped).
 - ⚠️ **Added Canton authority fields** on every event (`operators`, `sigNetwork`, `requester`, `nonceCidText`).
 - ⚠️ **`serialized_transaction: Vec<u8>` → typed `txParams: TxParams`** — richer but EVM-only; no route for non-EVM destinations today.
-- 🔴 **`computeResponseHash` double-hash** — integration-blocking; must be resolved before end-to-end signature verification works.

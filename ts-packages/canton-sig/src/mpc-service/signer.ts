@@ -60,7 +60,7 @@ export function signEvmTxHash(privateKey: Hex, txHash: Hex): { r: string; s: str
 type CantonSignature = { tag: "EcdsaSig"; value: { der: string; recoveryId: number } };
 
 /**
- * Sign the MPC response with the ROOT key (not the child). responseHash = keccak256(requestId || keccak256(mpcOutput)).
+ * Sign the MPC response with the ROOT key (not the child). responseHash = keccak256(requestId ‖ mpcOutput).
  * requestId transitively encodes operatorsHash (via `sender`), so the signature binds to the full operator set.
  */
 export function signMpcResponse(

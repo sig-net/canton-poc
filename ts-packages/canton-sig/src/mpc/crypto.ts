@@ -100,13 +100,13 @@ export function computeRequestId(
 }
 
 /**
- * Compute response_hash using flat keccak256(requestId || keccak256(mpcOutput)).
- * Mirrors Daml's computeResponseHash in RequestId.daml.
+ * Compute response_hash = keccak256(requestId ‖ mpcOutput).
+ * Matches MPC node (respond_bidirectional.rs) and Solana (erc20_vault.rs); mirrored by Daml RequestId.daml.
  */
 export function computeResponseHash(requestId: string, mpcOutput: string): Hex {
   const requestIdBytes: Hex = `0x${requestId}`;
-  const outputHash = eip712EncodeBytes(mpcOutput === "" ? "0x" : `0x${mpcOutput}`);
-  return keccak256(concat([requestIdBytes, outputHash]));
+  const outputBytes: Hex = mpcOutput === "" ? "0x" : `0x${mpcOutput}`;
+  return keccak256(concat([requestIdBytes, outputBytes]));
 }
 
 // ---------------------------------------------------------------------------
