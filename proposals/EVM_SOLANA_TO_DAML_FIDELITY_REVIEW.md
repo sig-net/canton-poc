@@ -2,7 +2,6 @@
 
 Review of the DAML implementation in `canton-mpc-poc/daml-packages/` against the EVM reference (`signet.sol/`) and Solana reference (`signet-solana-program/` + `solana-contract-examples/erc20_vault.rs`).
 
-
 ---
 
 ## Function / instruction / choice parity
