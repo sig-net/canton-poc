@@ -154,14 +154,17 @@ export async function signAndEnqueue(
   }
   const evmTxParams = txParams.value;
 
+  // sender was precomputed by the Vault as vaultId <> operatorsHash — already encodes the operator set for KDF + requestId
   const predecessorId = sender;
 
   // ---------------------------------------------------------------------------
   // Validate Canton transaction metadata (defense-in-depth).
+  // WHY validate here: MPC signs + tx lands on EVM BEFORE any Canton-side claim —
+  // damage happens at signing time, not claim time, so we must catch forgery up front.
   // In single-participant mode a malicious participant could forge both payload
-  // AND metadata. In multi-participant mode, signatories/witnessParties are
-  // populated from the actual confirmation protocol (each signatory's CPN
-  // must confirm), making forgery detectable.
+  // AND metadata. In multi-participant mode, signatories are populated from the
+  // actual confirmation protocol (each signatory's CPN must confirm), making
+  // forgery detectable.
   // ---------------------------------------------------------------------------
 
   // 1. Check CreatedEvent.signatories — operators must be actual signatories
@@ -175,26 +178,13 @@ export async function signAndEnqueue(
     }
   }
 
-  // 2. Check CreatedEvent.witnessParties — operators must be witnesses
-  //    (meaning their participants confirmed the transaction)
-  const rawWitnesses = (event as Record<string, unknown>).witnessParties as string[] | undefined;
-  const witnesses = new Set(rawWitnesses ?? []);
-  for (const op of operators) {
-    if (!witnesses.has(op)) {
-      console.warn(
-        `[MPC] Operator ${op} is not in witnessParties — ` +
-          `their participant may not have confirmed this transaction`,
-      );
-    }
-  }
-
-  // 3. Cross-reference: requester must also be a signatory (SignBidirectionalEvent
+  // 2. Cross-reference: requester must also be a signatory (SignBidirectionalEvent
   //    has signatory operators, requester)
   if (!onLedgerSignatories.has(requester)) {
     throw new Error(`Requester ${requester} is not in CreatedEvent.signatories — possible forgery`);
   }
 
-  // 4. Verify nonceCidText corresponds to an archived SigningNonce in the same
+  // 3. Verify nonceCidText corresponds to an archived SigningNonce in the same
   //    transaction. SigningNonce is a Signer-layer nonce (signatory: sigNetwork),
   //    archived by Signer.SignBidirectional. This ensures: (a) the nonce was
   //    actually consumed (replay prevention), and (b) it's a SigningNonce — not
@@ -223,6 +213,7 @@ export async function signAndEnqueue(
   }
 
   // Validate requestId via EIP-712 re-computation
+  // caip2Id is the DESTINATION chain (used in requestId); KDF uses SOURCE (canton:global) — they differ
   const caip2Id = chainIdHexToCaip2(evmTxParams.chainId);
   const computedRequestId = computeRequestId(
     sender,

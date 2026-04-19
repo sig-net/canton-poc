@@ -26,7 +26,7 @@ template Erc20Holding
     amount       : BytesHex
   where
     signatory operators
-    observer owner
+    observer owner  -- sigNetwork intentionally NOT an observer — domain contracts decoupled from MPC layer
 
 -- ---------------------------------------------------------------------------
 -- Pending anchors (single-use via archive)
@@ -110,6 +110,7 @@ template Vault
       && byteCount evmVaultAddress == 32
 
     -- Deposit flow
+    -- atomic create+exercise: Vault body (operators + requester) creates SignRequest, requester exercises Signer.SignBidirectional → Execute → SignBidirectionalEvent — all in one tx
     nonconsuming choice RequestDeposit
       : (ContractId SignBidirectionalEvent, ContractId PendingDeposit, ContractId SigningNonce)
       with
@@ -138,6 +139,7 @@ template Vault
         let fullPath = partyToText requester <> "," <> path
         let caip2Id = "eip155:" <> chainIdToDecimalText evmTxParams.chainId
         let operatorsHash = computeOperatorsHash (map partyToText operators)
+        -- cross-vault isolation: same operator set in different vaults derives a different EVM key via KDF
         let predecessorId = vaultId <> operatorsHash
 
         signReqCid <- create SignRequest with
@@ -168,7 +170,7 @@ template Vault
       controller requester
       do
         pending <- fetch pendingDepositCid
-        archive pendingDepositCid
+        archive pendingDepositCid        -- archive first: single-use guarantee against MPC-outcome replay
 
         assertMsg "Sender mismatch" (pending.requester == requester)
         assertMsg "Operators mismatch" (sort pending.operators == sort operators)
@@ -232,10 +234,11 @@ template Vault
         assertMsg "Withdraw amount must match holding"
           (amountArg == holding.amount)
 
-        archive balanceCid
+        archive balanceCid        -- optimistic debit: refunded by CompleteWithdrawal if MPC reports failure
 
         let caip2Id = "eip155:" <> chainIdToDecimalText evmTxParams.chainId
         let operatorsHash = computeOperatorsHash (map partyToText operators)
+        -- cross-vault isolation: same operator set in different vaults derives a different EVM key via KDF
         let predecessorId = vaultId <> operatorsHash
 
         signReqCid <- create SignRequest with

@@ -44,6 +44,7 @@ template SigningNonce
     sigNetwork : Party
     requester  : Party
   where
+    -- sole signatory so MPC observes the archive without needing observer rights on domain contracts
     signatory sigNetwork
     observer requester
 
@@ -68,6 +69,7 @@ template Signer
       do
         create SigningNonce with sigNetwork; requester
 
+    -- authority bridge: archives nonce, delegates to SignRequest.Execute for operators+requester authority, rotates nonce atomically
     nonconsuming choice SignBidirectional
       : (ContractId SignBidirectionalEvent, ContractId SigningNonce)
       with
@@ -137,6 +139,7 @@ template SignRequest
     observer sigNetwork
     ensure not (null operators) && unique operators
 
+    -- body authority = operators (signatory) + requester (controller) — exactly SignBidirectionalEvent's signatories
     choice Execute : ContractId SignBidirectionalEvent
       controller requester
       do
@@ -167,6 +170,7 @@ template SignBidirectionalEvent
     outputDeserializationSchema : Text
     respondSerializationSchema  : Text
   where
+    -- operators + requester — NOT sigNetwork — so a compromised sigNetwork cannot forge sign requests at the ledger level
     signatory operators, requester
     observer sigNetwork
     ensure not (null operators) && unique operators
@@ -195,6 +199,7 @@ template SignatureRespondedEvent
     signatory sigNetwork
     observer operators, requester
 
+    -- Vault claim path cannot `archive` directly (lacks sigNetwork authority) — this choice delegates cleanup
     choice Consume_SignatureResponded : ()
       with actor : Party
       controller actor

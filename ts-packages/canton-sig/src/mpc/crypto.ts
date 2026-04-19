@@ -71,10 +71,10 @@ function hashEvmParams(p: EvmTransactionParams): Hex {
 
 /**
  * Compute request_id using flat keccak256(concat(encoded fields)).
- * Mirrors Daml's computeRequestId in RequestId.daml.
+ * Three-way consistency required: must match Daml RequestId.daml and Rust indexer_canton::generate_request_id() byte-for-byte.
  */
 export function computeRequestId(
-  sender: string,
+  sender: string, // predecessorId = vaultId <> operatorsHash — encodes the full operator set
   txParams: TxParams,
   caip2Id: string,
   keyVersion: number,
@@ -82,7 +82,7 @@ export function computeRequestId(
   algo: string,
   dest: string,
   params: string,
-  nonceCidText: string,
+  nonceCidText: string, // consumed SigningNonce contract ID (replay prevention, archived in same tx)
 ): Hex {
   return keccak256(
     concat([

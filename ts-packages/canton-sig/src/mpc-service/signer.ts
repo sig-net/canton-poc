@@ -6,6 +6,7 @@ import { computeResponseHash } from "../mpc/crypto.js";
 import { constants } from "signet.js";
 
 const EPSILON_DERIVATION_PREFIX = "sig.network v2.0.0 epsilon derivation";
+// KDF binds to SOURCE chain (canton:global), NOT destination EVM — must match Chain::Canton.caip2_chain_id() in Rust MPC node
 const KDF_CHAIN_ID = constants.KDF_CHAIN_IDS.CANTON;
 
 /** secp256k1 curve order (n). */
@@ -59,9 +60,8 @@ export function signEvmTxHash(privateKey: Hex, txHash: Hex): { r: string; s: str
 type CantonSignature = { tag: "EcdsaSig"; value: { der: string; recoveryId: number } };
 
 /**
- * Sign the MPC response for Canton's EvmTxOutcomeSignature.
- * responseHash = keccak256(RESPONSE_TYPE_HASH || requestId || mpcOutput)
- * Returns Canton Signature union type with DER-encoded signature and recoveryId.
+ * Sign the MPC response with the ROOT key (not the child). responseHash = keccak256(requestId || keccak256(mpcOutput)).
+ * requestId transitively encodes operatorsHash (via `sender`), so the signature binds to the full operator set.
  */
 export function signMpcResponse(
   rootPrivateKey: Hex,
@@ -79,7 +79,7 @@ export function signMpcResponse(
   const r = hexToBigInt(toHex(sig.slice(1, 33)));
   const s = hexToBigInt(toHex(sig.slice(33, 65)));
 
-  // DER-encode via @noble/curves
+  // DER: Daml's secp256k1WithEcdsaOnly builtin only accepts DER-encoded sigs (no (r,s) variant)
   const der = DER.hexFromSig({ r, s });
   return { tag: "EcdsaSig", value: { der, recoveryId } };
 }
