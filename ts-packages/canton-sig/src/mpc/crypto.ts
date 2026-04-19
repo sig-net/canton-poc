@@ -9,7 +9,7 @@ export interface EvmTransactionParams {
   nonce: string;
   gasLimit: string;
   maxFeePerGas: string;
-  maxPriorityFee: string;
+  maxPriorityFeePerGas: string;
   chainId: string;
 }
 
@@ -63,7 +63,7 @@ function hashEvmParams(p: EvmTransactionParams): Hex {
       eip712EncodeUint256(`0x${p.nonce}`),
       eip712EncodeUint256(`0x${p.gasLimit}`),
       eip712EncodeUint256(`0x${p.maxFeePerGas}`),
-      eip712EncodeUint256(`0x${p.maxPriorityFee}`),
+      eip712EncodeUint256(`0x${p.maxPriorityFeePerGas}`),
       eip712EncodeUint256(`0x${p.chainId}`),
     ]),
   );

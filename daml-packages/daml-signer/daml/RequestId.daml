@@ -25,7 +25,7 @@ hashEvmParams p =
     <> eip712EncodeUint256 p.nonce
     <> eip712EncodeUint256 p.gasLimit
     <> eip712EncodeUint256 p.maxFeePerGas
-    <> eip712EncodeUint256 p.maxPriorityFee
+    <> eip712EncodeUint256 p.maxPriorityFeePerGas
     <> eip712EncodeUint256 p.chainId
 
 hashTxParams : TxParams -> BytesHex

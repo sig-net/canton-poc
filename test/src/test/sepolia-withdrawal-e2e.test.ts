@@ -98,7 +98,7 @@ describeIf("sepolia e2e withdrawal lifecycle", () => {
       nonce: toCantonHex(BigInt(vaultNonce), 32),
       gasLimit: toCantonHex(GAS_LIMIT, 32),
       maxFeePerGas: toCantonHex(maxFeePerGas, 32),
-      maxPriorityFee: toCantonHex(maxPriorityFeePerGas, 32),
+      maxPriorityFeePerGas: toCantonHex(maxPriorityFeePerGas, 32),
       chainId: toCantonHex(BigInt(SEPOLIA_CHAIN_ID), 32),
     };
 
@@ -280,7 +280,7 @@ describeIf("sepolia e2e withdrawal lifecycle", () => {
       nonce: toCantonHex(BigInt(vaultNonce), 32),
       gasLimit: toCantonHex(GAS_LIMIT, 32),
       maxFeePerGas: toCantonHex(maxFeePerGas, 32),
-      maxPriorityFee: toCantonHex(maxPriorityFeePerGas, 32),
+      maxPriorityFeePerGas: toCantonHex(maxPriorityFeePerGas, 32),
       chainId: toCantonHex(BigInt(SEPOLIA_CHAIN_ID), 32),
     };
 

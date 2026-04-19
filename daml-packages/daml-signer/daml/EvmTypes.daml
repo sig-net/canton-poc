@@ -4,13 +4,13 @@ import DA.Crypto.Text (BytesHex)
 
 data EvmTransactionParams = EvmTransactionParams
   with
-    to                : BytesHex   -- 20 bytes, destination address
-    functionSignature : Text       -- e.g., "transfer(address,uint256)"
-    encodedArgs       : BytesHex   -- full ABI-encoded parameter body (after selector)
-    value             : BytesHex   -- 32 bytes, ETH value (usually "00...")
-    nonce             : BytesHex   -- 32 bytes
-    gasLimit          : BytesHex   -- 32 bytes
-    maxFeePerGas      : BytesHex   -- 32 bytes
-    maxPriorityFee    : BytesHex   -- 32 bytes
-    chainId           : BytesHex   -- 32 bytes
+    to                   : BytesHex   -- 20 bytes, destination address
+    functionSignature    : Text       -- e.g., "transfer(address,uint256)"
+    encodedArgs          : BytesHex   -- full ABI-encoded parameter body (after selector)
+    value                : BytesHex   -- 32 bytes, ETH value (usually "00...")
+    nonce                : BytesHex   -- 32 bytes
+    gasLimit             : BytesHex   -- 32 bytes
+    maxFeePerGas         : BytesHex   -- 32 bytes
+    maxPriorityFeePerGas : BytesHex   -- 32 bytes
+    chainId              : BytesHex   -- 32 bytes
   deriving (Eq, Show)

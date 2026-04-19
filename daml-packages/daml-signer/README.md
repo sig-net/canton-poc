@@ -259,15 +259,15 @@ Generic EIP-1559 transaction parameters (`EvmTypes.daml`). The MPC is transactio
 ```daml
 data EvmTransactionParams = EvmTransactionParams
   with
-    to                : BytesHex   -- 20 bytes, destination address
-    functionSignature : Text       -- e.g., "transfer(address,uint256)"
-    encodedArgs       : BytesHex   -- full ABI-encoded parameter body (after selector)
-    value             : BytesHex   -- 32 bytes, ETH value (usually "00...")
-    nonce             : BytesHex   -- 32 bytes
-    gasLimit          : BytesHex   -- 32 bytes
-    maxFeePerGas      : BytesHex   -- 32 bytes
-    maxPriorityFee    : BytesHex   -- 32 bytes
-    chainId           : BytesHex   -- 32 bytes
+    to                   : BytesHex   -- 20 bytes, destination address
+    functionSignature    : Text       -- e.g., "transfer(address,uint256)"
+    encodedArgs          : BytesHex   -- full ABI-encoded parameter body (after selector)
+    value                : BytesHex   -- 32 bytes, ETH value (usually "00...")
+    nonce                : BytesHex   -- 32 bytes
+    gasLimit             : BytesHex   -- 32 bytes
+    maxFeePerGas         : BytesHex   -- 32 bytes
+    maxPriorityFeePerGas : BytesHex   -- 32 bytes
+    chainId              : BytesHex   -- 32 bytes
   deriving (Eq, Show)
 ```
 
@@ -347,15 +347,16 @@ The Vault computes `predecessorId` on-chain and passes it to the Signer as `send
 
 The MPC service is fully generic — it has no knowledge of deposits, withdrawals, or ERC-20 concepts. It only watches `SignBidirectionalEvent` and exercises `Signer.Respond` / `Signer.RespondBidirectional`.
 
-1. Watch `SignBidirectionalEvent` via Canton `/v2/updates` WebSocket stream in `ACS_DELTA` mode (required so non-transient archives are visible).
+1. Watch `SignBidirectionalEvent` via Canton `/v2/updates` WebSocket stream in `LEDGER_EFFECTS` mode — the `ExercisedEvent` nodes let the MPC assert the `SignBidirectional` choice directly and see nonce archival as a consuming exercise (under `ACS_DELTA` it would only see an `ArchivedEvent`). The TS reference client in `ts-packages/canton-sig` subscribes in `ACS_DELTA` and binds the nonce via `ArchivedEvent` instead.
 2. Validate transaction metadata: `CreatedEvent.signatories` must include all operators and the requester (defense-in-depth against API-layer forgery).
-3. Verify `nonceCidText` matches the `contractId` of an `ArchivedEvent` in the same transaction, and that its `templateId` suffix is `SigningNonce`. Skipped during catch-up (`getActiveContracts`) where transaction context is unavailable.
-4. Re-compute `requestId` with the TS mirror of `RequestId.daml` and log it for traceability.
-5. Derive the child private key with `derive_epsilon_canton()` using `predecessorId` (= `sender`) and `path`.
-6. Threshold-sign the transaction hash.
-7. Exercise `Signer.Respond` → creates `SignatureRespondedEvent`.
-8. Poll the destination chain for confirmation; re-simulate the call at `blockNumber - 1` to extract ABI-encoded return data (or encode `0xdeadbeef` + error payload on failure).
-9. Sign `responseHash = keccak256(requestId <> mpcOutput)` with the **root** private key (not the child) and exercise `Signer.RespondBidirectional` → creates `RespondBidirectionalEvent`.
+3. Verify an `ExercisedEvent` with choice `SignBidirectional` on the pinned `Signer` contract exists in the same transaction — proves the event came through the correct Daml code path, not fabricated.
+4. Verify `nonceCidText` matches the `contractId` of a **consuming** `ExercisedEvent` in the same transaction, and that its `templateId` suffix is `SigningNonce`. Skipped during catch-up (`getActiveContracts`) where transaction context is unavailable.
+5. Re-compute `requestId` with the TS mirror of `RequestId.daml` and log it for traceability.
+6. Derive the child private key with `derive_epsilon_canton()` using `predecessorId` (= `sender`) and `path`.
+7. Threshold-sign the transaction hash.
+8. Exercise `Signer.Respond` → creates `SignatureRespondedEvent`.
+9. Poll the destination chain for confirmation; re-simulate the call at `blockNumber - 1` to extract ABI-encoded return data (or encode `0xdeadbeef` + error payload on failure).
+10. Sign `responseHash = keccak256(requestId <> mpcOutput)` with the **root** private key (not the child) and exercise `Signer.RespondBidirectional` → creates `RespondBidirectionalEvent`.
 
 ### KDF chain ID
 
@@ -400,7 +401,7 @@ The `responseHash` is what the MPC signs with the root key. Since `sender` alrea
 
 The multi-signatory model protects the ledger but not the API. The MPC service reads from SigNetwork's JSON Ledger API via WebSocket — analogous to an off-chain service trusting a single Ethereum RPC endpoint. A malicious SigNetwork participant could patch its API to inject fake `CreatedEvent` entries into the stream.
 
-The MPC service validates `CreatedEvent.signatories` and the `nonceCidText → ArchivedEvent(SigningNonce)` binding as defense-in-depth. In **single-participant** mode, a malicious participant can forge metadata too, so these checks only close the gap when combined with **multi-participant** deployment, where metadata is populated from the actual confirmation protocol.
+The MPC service validates `CreatedEvent.signatories`, the presence of an `ExercisedEvent` for choice `SignBidirectional` on the pinned `Signer`, and the `nonceCidText → consuming ExercisedEvent(SigningNonce)` binding as defense-in-depth. In **single-participant** mode, a malicious participant can forge metadata too, so these checks only close the gap when combined with **multi-participant** deployment, where metadata is populated from the actual confirmation protocol.
 
 Canton has no light-client proof protocol — no Merkle proofs against a global state root — so the only robust mitigation is distributing MPC reads across multiple participants.
 

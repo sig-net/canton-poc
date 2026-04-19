@@ -54,7 +54,7 @@ function buildSampleEvmParams(vaultAddress: Hex) {
     nonce: "0".repeat(64),
     gasLimit: "0".repeat(64),
     maxFeePerGas: "0".repeat(64),
-    maxPriorityFee: "0".repeat(64),
+    maxPriorityFeePerGas: "0".repeat(64),
     chainId: "0".repeat(62) + "01",
   };
 }

@@ -20,7 +20,7 @@ export interface CantonEvmParams {
   nonce: string;
   gasLimit: string;
   maxFeePerGas: string;
-  maxPriorityFee: string;
+  maxPriorityFeePerGas: string;
   chainId: string;
 }
 
@@ -38,7 +38,7 @@ export function buildTxRequest(evmParams: CantonEvmParams): TransactionSerializa
     type: "eip1559",
     chainId: hexToNumber(`0x${evmParams.chainId}`),
     nonce: hexToNumber(`0x${evmParams.nonce}`),
-    maxPriorityFeePerGas: hexToBigInt(`0x${evmParams.maxPriorityFee}`),
+    maxPriorityFeePerGas: hexToBigInt(`0x${evmParams.maxPriorityFeePerGas}`),
     maxFeePerGas: hexToBigInt(`0x${evmParams.maxFeePerGas}`),
     gas: hexToBigInt(`0x${evmParams.gasLimit}`),
     to: `0x${evmParams.to}`,

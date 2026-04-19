@@ -252,7 +252,7 @@ export async function executeDepositFlow(
     nonce: toCantonHex(BigInt(nonce), 32),
     gasLimit: toCantonHex(GAS_LIMIT, 32),
     maxFeePerGas: toCantonHex(maxFeePerGas, 32),
-    maxPriorityFee: toCantonHex(maxPriorityFeePerGas, 32),
+    maxPriorityFeePerGas: toCantonHex(maxPriorityFeePerGas, 32),
     chainId: toCantonHex(BigInt(SEPOLIA_CHAIN_ID), 32),
   };
 
