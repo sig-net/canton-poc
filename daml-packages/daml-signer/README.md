@@ -107,6 +107,8 @@ Replay-prevention nonce with atomic rotation. The requester issues the first non
 
 `sigNetwork` is the sole signatory so the MPC observes the archive in the sign transaction without needing observer rights on domain contracts. Pure Signer-layer infrastructure — no domain semantics.
 
+**Nonce binding is validated off-chain, by design.** The `nonceCidText` field carried in `SignRequest` / `SignBidirectionalEvent` is the text form of the consumed `SigningNonce` contract ID, hashed into `requestId` for replay prevention. An on-chain check like `assertMsg "..." (nonceCidText == show nonceCid)` is architecturally impossible: Daml's `Show` instance for `ContractId` returns the placeholder string `"<contract-id>"` inside ledger code, and the underlying Daml-LF `CONTRACT_ID_TO_TEXT` builtin always returns `None` on-ledger (it is only defined for off-ledger code). Binding enforcement therefore lives in the MPC service, which cross-checks `nonceCidText` against the `ArchivedEvent` (templateId suffix `SigningNonce`) observed in the same transaction tree — see [MPC Service Flow](#mpc-service-flow) step 3. This split is intentional, not a gap: the ledger cannot express the check, so it is enforced at the observer layer instead.
+
 ```daml
 template SigningNonce
   with
@@ -298,7 +300,7 @@ No re-signing happens per transaction. Operator authority established at Vault c
 
 ```
 sender = predecessorId = vaultId <> computeOperatorsHash(map partyToText operators)
-computeOperatorsHash = keccak256(concat(sort(map (keccak256 . toHex) operatorTexts)))
+computeOperatorsHash = keccak256(concat(map (keccak256 . toHex) (sort operatorTexts)))
 ```
 
 The Vault computes `predecessorId` on-chain and passes it to the Signer as `sender`. The MPC's KDF and the `requestId` hash both depend on `sender`, so the MPC signature is transitively bound to the full operator set — stripping or reordering operators breaks verification.
