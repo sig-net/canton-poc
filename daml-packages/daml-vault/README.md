@@ -15,13 +15,13 @@ For the Signer layer, authority delegation flow, MPC service flow, KDF chain ID,
 
 ## Templates (overview)
 
-| Template            | Signatory   | Purpose                                                                  |
-| ------------------- | ----------- | ------------------------------------------------------------------------ |
-| `VaultProposal`     | `alreadySigned` | Multi-party agreement; each operator signs in sequence until finalized |
-| `Vault`             | `operators` | ERC-20 custody singleton; holds `evmMpcPublicKey` (per-vault KDF-derived key) |
-| `PendingDeposit`    | `operators` | In-flight deposit anchor; archived in `ClaimDeposit` (single-use)         |
-| `PendingWithdrawal` | `operators` | In-flight withdrawal anchor; archived in `CompleteWithdrawal` (single-use, refund-on-failure) |
-| `Erc20Holding`      | `operators` | On-ledger ERC-20 balance. `sigNetwork` is deliberately NOT an observer — domain contracts stay decoupled from MPC infrastructure |
+| Template            | Signatory       | Purpose                                                                                                                          |
+| ------------------- | --------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `VaultProposal`     | `alreadySigned` | Multi-party agreement; each operator signs in sequence until finalized                                                           |
+| `Vault`             | `operators`     | ERC-20 custody singleton; holds `evmMpcPublicKey` (per-vault KDF-derived key)                                                    |
+| `PendingDeposit`    | `operators`     | In-flight deposit anchor; archived in `ClaimDeposit` (single-use)                                                                |
+| `PendingWithdrawal` | `operators`     | In-flight withdrawal anchor; archived in `CompleteWithdrawal` (single-use, refund-on-failure)                                    |
+| `Erc20Holding`      | `operators`     | On-ledger ERC-20 balance. `sigNetwork` is deliberately NOT an observer — domain contracts stay decoupled from MPC infrastructure |
 
 Full template definitions and choice bodies are in the E2E plan docs linked above.
 
