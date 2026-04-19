@@ -8,11 +8,11 @@ The Vault layer — e.g. [`daml-vault`](../daml-vault/README.md) — is the doma
 
 ### Parties
 
-| Party        | Role                               | Owns                                           |
-| ------------ | ---------------------------------- | ---------------------------------------------- |
-| `sigNetwork` | MPC infrastructure (single party)  | `Signer`, `SigningNonce`, evidence contracts   |
-| `operators`  | Vault operator multi-sig `[Party]` | Vault templates (in downstream packages)       |
-| `requester`  | End user (depositor/holder)        | —                                              |
+| Party        | Role                               | Owns                                         |
+| ------------ | ---------------------------------- | -------------------------------------------- |
+| `sigNetwork` | MPC infrastructure (single party)  | `Signer`, `SigningNonce`, evidence contracts |
+| `operators`  | Vault operator multi-sig `[Party]` | Vault templates (in downstream packages)     |
+| `requester`  | End user (depositor/holder)        | —                                            |
 
 `sigNetwork` is both the MPC party identity AND the Signer operator — no separate `mpc` party. A vault can have one or more operator parties (e.g., `[dex1, dex2, dex3]`); all operators must agree at Vault creation time via the `VaultProposal` multi-party agreement.
 
@@ -251,6 +251,44 @@ template RespondBidirectionalEvent
           (actor `elem` operators || actor == requester)
         pure ()
 ```
+
+### `EvmTransactionParams`
+
+Generic EIP-1559 transaction parameters (`EvmTypes.daml`). The MPC is transaction-type agnostic — it signs any Type 2 transaction. The contract stores the function signature and ABI-encoded args as a single blob, giving Daml visibility into the EVM call for on-chain authorization via `abiSlot` / `abiSlotCount` (from `daml-abi`).
+
+```daml
+data EvmTransactionParams = EvmTransactionParams
+  with
+    to                : BytesHex   -- 20 bytes, destination address
+    functionSignature : Text       -- e.g., "transfer(address,uint256)"
+    encodedArgs       : BytesHex   -- full ABI-encoded parameter body (after selector)
+    value             : BytesHex   -- 32 bytes, ETH value (usually "00...")
+    nonce             : BytesHex   -- 32 bytes
+    gasLimit          : BytesHex   -- 32 bytes
+    maxFeePerGas      : BytesHex   -- 32 bytes
+    maxPriorityFee    : BytesHex   -- 32 bytes
+    chainId           : BytesHex   -- 32 bytes
+  deriving (Eq, Show)
+```
+
+**Why split `functionSignature` and `encodedArgs` instead of storing raw calldata?** EVM calldata is a 4-byte function selector followed by the ABI-encoded parameter body. Storing the two pieces separately keeps both halves inspectable from Daml while letting any signer reconstruct byte-identical calldata:
+
+- `functionSignature : Text` is the canonical signature string, e.g. `"transfer(address,uint256)"`. The 4-byte selector is recomputable off-chain as `keccak256(functionSignature)[0..4]` (→ `0xa9059cbb` for `transfer`). Keeping it as `Text` — not a pre-hashed constant — means Daml can compare and display it directly, and the selector is always provably derived from a human-readable name.
+- `encodedArgs : BytesHex` is the ABI-encoded parameter body _after_ the selector. For `transfer(address,uint256)` this is exactly two 32-byte slots: slot 0 = recipient (address left-padded to 32 bytes), slot 1 = amount (uint256). Vault code authorizes the call on-chain by reading these slots — e.g. `daml-vault`'s `Erc20Vault` asserts `abiSlotCount encodedArgs == 2`, extracts the recipient with `abiSlot encodedArgs 0`, and the amount with `abiDecodeUint encodedArgs 1`.
+
+The MPC (and any other signer) reconstructs canonical calldata deterministically as `keccak256(functionSignature)[0..4] <> encodedArgs` — see `buildCalldata` in `ts-packages/canton-sig/src/evm/tx-builder.ts`. Every byte that goes on the wire is therefore a pure function of fields the ledger already sees.
+
+### `TxParams`
+
+Chain-agnostic transaction parameter wrapper (`TxParams.daml`). Currently EVM-only, extensible to BTC/SOL by adding further constructors.
+
+```daml
+data TxParams
+  = EvmTxParams EvmTransactionParams
+  deriving (Eq, Show)
+```
+
+`SignRequest` and `SignBidirectionalEvent` carry `TxParams`; `hashTxParams` in `RequestId.daml` pattern-matches per constructor, so a future `BtcTxParams` / `SolTxParams` slots into the request-ID hash layout without disturbing the EVM path.
 
 ### `Signature` union type
 
