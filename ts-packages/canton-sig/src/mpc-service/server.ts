@@ -2,7 +2,6 @@ import type { Hex } from "viem";
 import {
   CantonClient,
   type CreatedEvent,
-  type Event,
   type JsGetUpdatesResponse,
 } from "../infra/canton-client.js";
 import { createLedgerStream, type StreamHandle } from "../infra/ledger-stream.js";
@@ -57,15 +56,15 @@ export class MpcServer {
     };
   }
 
-  private dispatch(event: CreatedEvent, txEvents?: Event[]): void {
+  private dispatch(event: CreatedEvent): void {
     if (this.pendingTxs.has(event.contractId)) return;
     console.log(`[MPC] SignBidirectionalEvent detected, contractId=${event.contractId}`);
-    void this.process(event, txEvents);
+    void this.process(event);
   }
 
-  private async process(event: CreatedEvent, txEvents?: Event[]): Promise<void> {
+  private async process(event: CreatedEvent): Promise<void> {
     try {
-      const pending = await signAndEnqueue(this.serviceConfig, event, txEvents);
+      const pending = await signAndEnqueue(this.serviceConfig, event);
       this.pendingTxs.set(event.contractId, pending);
       console.log(`[MPC] Monitoring tx ${pending.signedTxHash} for requestId=${pending.requestId}`);
     } catch (err) {
@@ -139,7 +138,7 @@ export class MpcServer {
           if (!("CreatedEvent" in event)) continue;
           const created = event.CreatedEvent;
           if (templateSuffix(created.templateId) === SIGN_EVENT_SUFFIX) {
-            this.dispatch(created, txEvents);
+            this.dispatch(created);
           }
         }
       },

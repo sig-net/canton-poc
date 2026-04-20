@@ -10,7 +10,7 @@ import RequestId (computeRequestId, computeResponseHash, computeOperatorsHash)
 import Abi (abiHasErrorPrefix, abiDecodeBool, abiDecodeUint, abiSlot, abiSlotCount)
 import Signer (Signer, SignRequest(..), SignBidirectionalEvent,
                SignatureRespondedEvent(..), RespondBidirectionalEvent(..),
-               SignBidirectional(..), SigningNonce,
+               SignBidirectional(..),
                Consume_SignatureResponded(..), Consume_RespondBidirectional(..),
                signatureDer)
 
@@ -112,14 +112,12 @@ template Vault
     -- Deposit flow
     -- atomic create+exercise: Vault body (operators + requester) creates SignRequest, requester exercises Signer.SignBidirectional → Execute → SignBidirectionalEvent — all in one tx
     nonconsuming choice RequestDeposit
-      : (ContractId SignBidirectionalEvent, ContractId PendingDeposit, ContractId SigningNonce)
+      : (ContractId SignBidirectionalEvent, ContractId PendingDeposit)
       with
         requester    : Party
         signerCid    : ContractId Signer
         path         : Text
         evmTxParams  : EvmTransactionParams
-        nonceCid     : ContractId SigningNonce
-        nonceCidText : Text
         keyVersion   : Int
         algo         : Text
         dest         : Text
@@ -136,30 +134,28 @@ template Vault
         assertMsg "Transfer recipient must be vault address"
           (recipientArg == evmVaultAddress)
 
-        let fullPath = partyToText requester <> "," <> path
+        -- Vault namespaces its key derivation via path so two vaults sharing the same operator set still get distinct EVM keys
+        let fullPath = vaultId <> "," <> partyToText requester <> "," <> path
         let caip2Id = "eip155:" <> chainIdToDecimalText evmTxParams.chainId
-        let operatorsHash = computeOperatorsHash (map partyToText operators)
-        -- cross-vault isolation: same operator set in different vaults derives a different EVM key via KDF
-        let predecessorId = vaultId <> operatorsHash
+        let sender = computeOperatorsHash (map partyToText operators)
 
         signReqCid <- create SignRequest with
           operators; requester; sigNetwork
-          txParams = EvmTxParams evmTxParams; sender = predecessorId; caip2Id; keyVersion
+          txParams = EvmTxParams evmTxParams; caip2Id; keyVersion
           path = fullPath; algo; dest; params
-          nonceCidText
           outputDeserializationSchema; respondSerializationSchema
 
-        (signEventCid, newNonceCid) <- exercise signerCid SignBidirectional with
-          signRequestCid = signReqCid; nonceCid; requester
+        signEventCid <- exercise signerCid SignBidirectional with
+          signRequestCid = signReqCid; requester
 
         let requestId = computeRequestId
-              predecessorId (EvmTxParams evmTxParams) caip2Id keyVersion
-              fullPath algo dest params nonceCidText
+              sender (EvmTxParams evmTxParams) caip2Id keyVersion
+              fullPath algo dest params
 
         pendingCid <- create PendingDeposit with
           operators; requester; sigNetwork; requestId; evmTxParams
 
-        pure (signEventCid, pendingCid, newNonceCid)
+        pure (signEventCid, pendingCid)
 
     nonconsuming choice ClaimDeposit : ContractId Erc20Holding
       with
@@ -200,15 +196,13 @@ template Vault
 
     -- Withdrawal flow
     nonconsuming choice RequestWithdrawal
-      : (ContractId SignBidirectionalEvent, ContractId PendingWithdrawal, ContractId SigningNonce)
+      : (ContractId SignBidirectionalEvent, ContractId PendingWithdrawal)
       with
         requester        : Party
         signerCid        : ContractId Signer
         evmTxParams      : EvmTransactionParams
         recipientAddress : BytesHex
         balanceCid       : ContractId Erc20Holding
-        nonceCid         : ContractId SigningNonce
-        nonceCidText     : Text
         keyVersion       : Int
         algo             : Text
         dest             : Text
@@ -237,30 +231,29 @@ template Vault
         archive balanceCid        -- optimistic debit: refunded by CompleteWithdrawal if MPC reports failure
 
         let caip2Id = "eip155:" <> chainIdToDecimalText evmTxParams.chainId
-        let operatorsHash = computeOperatorsHash (map partyToText operators)
-        -- cross-vault isolation: same operator set in different vaults derives a different EVM key via KDF
-        let predecessorId = vaultId <> operatorsHash
+        let sender = computeOperatorsHash (map partyToText operators)
+        -- Vault namespaces its key derivation via path so two vaults sharing the same operator set still get distinct EVM keys
+        let fullPath = vaultId <> ",root"
 
         signReqCid <- create SignRequest with
           operators; requester; sigNetwork
-          txParams = EvmTxParams evmTxParams; sender = predecessorId; caip2Id; keyVersion
-          path = "root"; algo; dest; params
-          nonceCidText
+          txParams = EvmTxParams evmTxParams; caip2Id; keyVersion
+          path = fullPath; algo; dest; params
           outputDeserializationSchema; respondSerializationSchema
 
-        (signEventCid, newNonceCid) <- exercise signerCid SignBidirectional with
-          signRequestCid = signReqCid; nonceCid; requester
+        signEventCid <- exercise signerCid SignBidirectional with
+          signRequestCid = signReqCid; requester
 
         let requestId = computeRequestId
-              predecessorId (EvmTxParams evmTxParams) caip2Id keyVersion
-              "root" algo dest params nonceCidText
+              sender (EvmTxParams evmTxParams) caip2Id keyVersion
+              fullPath algo dest params
 
         pendingCid <- create PendingWithdrawal with
           operators; requester; sigNetwork; requestId; evmTxParams
           erc20Address = holding.erc20Address
           amount = holding.amount
 
-        pure (signEventCid, pendingCid, newNonceCid)
+        pure (signEventCid, pendingCid)
 
     nonconsuming choice CompleteWithdrawal : Optional (ContractId Erc20Holding)
       with

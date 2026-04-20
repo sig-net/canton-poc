@@ -21,12 +21,8 @@ The Vault layer — e.g. [`daml-vault`](../daml-vault/README.md) — is the doma
 ```
 Signer (singleton)                    ← sigNetwork deploys, shares blob via disclosed contracts
   │
-  ├── IssueNonce                      ← requester self-serves the first SigningNonce
-  │     controller: requester
-  │
   ├── SignBidirectional               ← requester exercises (via Vault);
-  │     controller: requester           archives SigningNonce, delegates to SignRequest.Execute,
-  │                                     rotates nonce atomically
+  │     controller: requester           delegates to SignRequest.Execute
   │
   ├── Respond                         ← sigNetwork publishes ECDSA signature for the underlying tx
   │     controller: sigNetwork
@@ -34,12 +30,19 @@ Signer (singleton)                    ← sigNetwork deploys, shares blob via di
   └── RespondBidirectional            ← sigNetwork publishes outcome signature after confirmation
         controller: sigNetwork
 
-SigningNonce                          ← replay-prevention nonce (signatory: sigNetwork)
 SignRequest (transient)               ← created by Vault body, consumed via Execute in same tx
+                                        Execute computes `sender = computeOperatorsHash(operators)`
+                                        from the on-ledger signatory set (NOT user-supplied)
 SignBidirectionalEvent                ← what the MPC watches (signatory: operators, requester)
 SignatureRespondedEvent               ← ECDSA signature evidence (signatory: sigNetwork)
 RespondBidirectionalEvent             ← outcome signature evidence (signatory: sigNetwork)
 ```
+
+The Signer layer no longer enforces signing uniqueness via a Canton-side nonce.
+Replay protection is the **Vault's** responsibility — implemented via single-use
+`Pending*` archives (Canton side) and the EVM transaction nonce (chain side).
+The Signer's only job is to enforce that distinct operator sets cannot share a
+key namespace.
 
 ## Templates
 
@@ -54,26 +57,13 @@ template Signer
   where
     signatory sigNetwork
 
-    nonconsuming choice IssueNonce : ContractId SigningNonce
-      with requester : Party
-      controller requester
-      do create SigningNonce with sigNetwork; requester
-
-    nonconsuming choice SignBidirectional
-      : (ContractId SignBidirectionalEvent, ContractId SigningNonce)
+    nonconsuming choice SignBidirectional : ContractId SignBidirectionalEvent
       with
         signRequestCid : ContractId SignRequest
-        nonceCid       : ContractId SigningNonce
         requester      : Party
       controller requester
       do
-        nonce <- fetch nonceCid
-        assertMsg "Nonce sigNetwork mismatch" (nonce.sigNetwork == sigNetwork)
-        assertMsg "Nonce requester mismatch" (nonce.requester == requester)
-        archive nonceCid
-        eventCid <- exercise signRequestCid Execute
-        newNonceCid <- create SigningNonce with sigNetwork; requester
-        pure (eventCid, newNonceCid)
+        exercise signRequestCid Execute
 
     nonconsuming choice Respond : ContractId SignatureRespondedEvent
       with
@@ -101,33 +91,13 @@ template Signer
           responder = sigNetwork; serializedOutput; signature
 ```
 
-### `SigningNonce`
-
-Replay-prevention nonce with atomic rotation. The requester issues the first nonce via `Signer.IssueNonce`; each `SignBidirectional` call archives the old nonce and creates a fresh one — so the requester always has a nonce ready for the next request without an extra transaction.
-
-`sigNetwork` is the sole signatory so the MPC observes the archive in the sign transaction without needing observer rights on domain contracts. Pure Signer-layer infrastructure — no domain semantics.
-
-**Nonce binding is validated off-chain, by design.** The `nonceCidText` field carried in `SignRequest` / `SignBidirectionalEvent` is the text form of the consumed `SigningNonce` contract ID, hashed into `requestId` for replay prevention. An on-chain check like `assertMsg "..." (nonceCidText == show nonceCid)` is architecturally impossible: Daml's `Show` instance for `ContractId` returns the placeholder string `"<contract-id>"` inside ledger code, and the underlying Daml-LF `CONTRACT_ID_TO_TEXT` builtin always returns `None` on-ledger (it is only defined for off-ledger code). Binding enforcement therefore lives in the MPC service, which cross-checks `nonceCidText` against the `ArchivedEvent` (templateId suffix `SigningNonce`) observed in the same transaction tree — see [MPC Service Flow](#mpc-service-flow) step 3. This split is intentional, not a gap: the ledger cannot express the check, so it is enforced at the observer layer instead.
-
-```daml
-template SigningNonce
-  with
-    sigNetwork : Party
-    requester  : Party
-  where
-    signatory sigNetwork
-    observer requester
-
-    choice Consume_SigningNonce : ()
-      controller requester
-      do pure ()
-```
-
 ### `SignRequest` (transient)
 
 Transient authority bridge (Vault → Signer, the Daml equivalent of Solana CPI). Created inside a Vault choice body — where operator authority is available as a signatory — and consumed in the same transaction by `Signer.SignBidirectional` → `Execute`.
 
 The MPC never sees this template. The `Execute` choice is the authority bridge: its body runs with `operators` (signatory) + `requester` (controller) — exactly the authority needed to create `SignBidirectionalEvent`.
+
+`sender` (the KDF predecessorId) is **not** an argument — it is computed inside `Execute` from the on-ledger `operators` signatory list as `computeOperatorsHash (map partyToText operators)`. This guarantees that a Vault cannot supply a forged `sender` to claim another operator set's key namespace, since the Daml authorization model only allows the Vault to sign with its own operator set.
 
 ```daml
 template SignRequest
@@ -135,16 +105,13 @@ template SignRequest
     operators                   : [Party]
     requester                   : Party
     sigNetwork                  : Party
-    sender                      : Text      -- predecessorId = vaultId <> keccak256(sort(operators))
     txParams                    : TxParams
     caip2Id                     : Text
     keyVersion                  : Int
-    path                        : Text
+    path                        : Text   -- Vault namespaces here; e.g. prefix with vaultId
     algo                        : Text
     dest                        : Text
     params                      : Text
-    nonceCidText                : Text      -- text representation of consumed SigningNonce ID;
-                                            -- hashed into requestId for replay prevention
     outputDeserializationSchema : Text
     respondSerializationSchema  : Text
   where
@@ -155,10 +122,10 @@ template SignRequest
     choice Execute : ContractId SignBidirectionalEvent
       controller requester
       do
+        let sender = computeOperatorsHash (map partyToText operators)
         create SignBidirectionalEvent with
           operators; requester; sigNetwork; sender
           txParams; caip2Id; keyVersion; path; algo; dest; params
-          nonceCidText
           outputDeserializationSchema; respondSerializationSchema
 ```
 
@@ -174,7 +141,7 @@ template SignBidirectionalEvent
     operators                   : [Party]
     requester                   : Party
     sigNetwork                  : Party
-    sender                      : Text
+    sender                      : BytesHex   -- operatorsHash, set by SignRequest.Execute
     txParams                    : TxParams
     caip2Id                     : Text
     keyVersion                  : Int
@@ -182,7 +149,6 @@ template SignBidirectionalEvent
     algo                        : Text
     dest                        : Text
     params                      : Text
-    nonceCidText                : Text
     outputDeserializationSchema : Text
     respondSerializationSchema  : Text
   where
@@ -332,31 +298,40 @@ Key points:
 
 No re-signing happens per transaction. Operator authority established at Vault creation propagates through the entire chain via nonconsuming choices.
 
-## Cross-Vault Isolation
+## Cross-Operator-Set Isolation
 
-`requestId` is bound to all operator parties via `sender = vaultId <> operatorsHash`. Since Canton party IDs are globally unique (`hint::sha256(namespace_key)`), two different operator sets can never produce the same `requestId` even with identical `txParams`. The operators list is sorted before hashing.
+`sender` (the KDF predecessorId) is computed in `SignRequest.Execute` as `computeOperatorsHash (map partyToText operators)` — directly from the on-ledger `operators` signatory list. Since Canton party IDs are globally unique (`hint::sha256(namespace_key)`), two different operator sets can never produce the same `sender` even with identical `txParams`. The operators list is sorted before hashing.
 
 ```
-sender = predecessorId = vaultId <> computeOperatorsHash(map partyToText operators)
+sender = computeOperatorsHash(map partyToText operators)
 computeOperatorsHash = keccak256(concat(map (keccak256 . toHex) (sort operatorTexts)))
 ```
 
-The Vault computes `predecessorId` on-chain and passes it to the Signer as `sender`. The MPC's KDF and the `requestId` hash both depend on `sender`, so the MPC signature is transitively bound to the full operator set — stripping or reordering operators breaks verification.
+The Vault never supplies `sender`; it is derived from authority that the Vault provably holds. The MPC's KDF and the `requestId` hash both depend on `sender`, so the MPC signature is transitively bound to the full operator set — stripping or reordering operators breaks verification.
+
+### Vault-side namespacing via `path`
+
+The Signer **only** isolates operator sets, not vaults. Two `Vault` contracts that share the same operator set will share the same `sender`, and so the same key namespace, unless the Vault layer namespaces its requests via `path`. By convention, `daml-vault` prepends `vaultId`:
+
+- Deposit: `path = vaultId <> "," <> partyToText requester <> "," <> userPath`
+- Withdrawal: `path = vaultId <> ",root"`
+
+Since `path` feeds both the KDF and `requestId`, this gives different EVM keys per `vaultId` even with identical operators. **Any new Vault implementation that reuses operator sets must follow the same convention** — the Signer cannot enforce it.
 
 ## MPC Service Flow
 
 The MPC service is fully generic — it has no knowledge of deposits, withdrawals, or ERC-20 concepts. It only watches `SignBidirectionalEvent` and exercises `Signer.Respond` / `Signer.RespondBidirectional`.
 
-1. Watch `SignBidirectionalEvent` via Canton `/v2/updates` WebSocket stream in `LEDGER_EFFECTS` mode — the `ExercisedEvent` nodes let the MPC assert the `SignBidirectional` choice directly and see nonce archival as a consuming exercise (under `ACS_DELTA` it would only see an `ArchivedEvent`). The TS reference client in `ts-packages/canton-sig` subscribes in `ACS_DELTA` and binds the nonce via `ArchivedEvent` instead.
+1. Watch `SignBidirectionalEvent` via Canton `/v2/updates` WebSocket stream.
 2. Validate transaction metadata: `CreatedEvent.signatories` must include all operators and the requester (defense-in-depth against API-layer forgery).
-3. Verify an `ExercisedEvent` with choice `SignBidirectional` on the pinned `Signer` contract exists in the same transaction — proves the event came through the correct Daml code path, not fabricated.
-4. Verify `nonceCidText` matches the `contractId` of a **consuming** `ExercisedEvent` in the same transaction, and that its `templateId` suffix is `SigningNonce`. Skipped during catch-up (`getActiveContracts`) where transaction context is unavailable.
-5. Re-compute `requestId` with the TS mirror of `RequestId.daml` and log it for traceability.
-6. Derive the child private key with `derive_epsilon_canton()` using `predecessorId` (= `sender`) and `path`.
-7. Threshold-sign the transaction hash.
-8. Exercise `Signer.Respond` → creates `SignatureRespondedEvent`.
-9. Poll the destination chain for confirmation; re-simulate the call at `blockNumber - 1` to extract ABI-encoded return data (or encode `0xdeadbeef` + error payload on failure).
-10. Sign `responseHash = keccak256(requestId <> mpcOutput)` with the **root** private key (not the child) and exercise `Signer.RespondBidirectional` → creates `RespondBidirectionalEvent`.
+3. Re-compute `requestId` with the TS mirror of `RequestId.daml` and log it for traceability.
+4. Derive the child private key with `derive_epsilon_canton()` using `predecessorId` (= `sender` = operatorsHash) and `path`.
+5. Threshold-sign the transaction hash.
+6. Exercise `Signer.Respond` → creates `SignatureRespondedEvent`.
+7. Poll the destination chain for confirmation; re-simulate the call at `blockNumber - 1` to extract ABI-encoded return data (or encode `0xdeadbeef` + error payload on failure).
+8. Sign `responseHash = keccak256(requestId <> mpcOutput)` with the **root** private key (not the child) and exercise `Signer.RespondBidirectional` → creates `RespondBidirectionalEvent`.
+
+The MPC service does not enforce a Canton-side replay nonce. The Vault enforces single-use via `Pending*` archives, and the destination EVM chain enforces transaction-nonce uniqueness. The MPC may safely receive a duplicate `SignBidirectionalEvent` with an identical `requestId`: signing is idempotent (RFC6979 deterministic ECDSA) and only one EVM tx will ever land.
 
 ### KDF chain ID
 
@@ -373,9 +348,9 @@ The KDF always uses the source chain (where the request originates), not the des
 `computeRequestId` produces a `keccak256` over the concatenation of EIP-712-encoded fields. The Daml implementation (`RequestId.daml`), the Rust implementation in `indexer_canton`, and the TS oracle (`ts-packages/canton-sig/src/mpc/crypto.ts`) must all produce byte-identical hashes.
 
 ```daml
-computeRequestId sender txParams caip2Id keyVersion path algo dest params nonceCidText =
+computeRequestId sender txParams caip2Id keyVersion path algo dest params =
   keccak256 $
-       eip712EncodeString sender                -- predecessorId = vaultId <> operatorsHash
+       eip712EncodeString sender                -- operatorsHash, set in SignRequest.Execute
     <> hashTxParams       txParams
     <> eip712EncodeString caip2Id
     <> eip712EncodeUint256 (toHex keyVersion)
@@ -383,13 +358,12 @@ computeRequestId sender txParams caip2Id keyVersion path algo dest params nonceC
     <> eip712EncodeString algo
     <> eip712EncodeString dest
     <> eip712EncodeString params
-    <> eip712EncodeString nonceCidText
 
 computeResponseHash requestId output =
   keccak256 (assertBytes32 requestId <> output)
 ```
 
-The `responseHash` is what the MPC signs with the root key. Since `sender` already encodes `operatorsHash`, the MPC signature transitively binds the outcome to the full operator set.
+The `responseHash` is what the MPC signs with the root key. Since `sender` is the `operatorsHash`, the MPC signature transitively binds the outcome to the full operator set.
 
 ## Security Model
 
@@ -401,7 +375,7 @@ The `responseHash` is what the MPC signs with the root key. Since `sender` alrea
 
 The multi-signatory model protects the ledger but not the API. The MPC service reads from SigNetwork's JSON Ledger API via WebSocket — analogous to an off-chain service trusting a single Ethereum RPC endpoint. A malicious SigNetwork participant could patch its API to inject fake `CreatedEvent` entries into the stream.
 
-The MPC service validates `CreatedEvent.signatories`, the presence of an `ExercisedEvent` for choice `SignBidirectional` on the pinned `Signer`, and the `nonceCidText → consuming ExercisedEvent(SigningNonce)` binding as defense-in-depth. In **single-participant** mode, a malicious participant can forge metadata too, so these checks only close the gap when combined with **multi-participant** deployment, where metadata is populated from the actual confirmation protocol.
+The MPC service validates `CreatedEvent.signatories` as defense-in-depth. In **single-participant** mode, a malicious participant can forge metadata too, so this check only closes the gap when combined with **multi-participant** deployment, where metadata is populated from the actual confirmation protocol.
 
 Canton has no light-client proof protocol — no Merkle proofs against a global state root — so the only robust mitigation is distributing MPC reads across multiple participants.
 
@@ -414,7 +388,7 @@ Canton has no light-client proof protocol — no Merkle proofs against a global 
 ## Design Decisions
 
 - **Separate DARs.** `daml-signer` and `daml-vault` are separate packages. `daml-signer` depends only on `daml-eip712` (for primitive encoders). `daml-vault` depends on `daml-signer` via `data-dependencies`. Shared byte types (`BytesHex`, `SignatureHex`) come from `DA.Crypto.Text` (stdlib) — no cross-DAR type sharing needed. Enables independent versioning and reuse across multiple vault implementations.
-- **Signer-layer nonce.** Replay prevention uses `SigningNonce` (signatory: `sigNetwork`), issued via `Signer.IssueNonce` and atomically rotated in `Signer.SignBidirectional`. Domain contracts don't need `sigNetwork` as observer. Authorization (who may use a Vault) is the integrator's concern, not the Signer's.
+- **No Signer-layer nonce.** Replay prevention is the **Vault's** responsibility. Domain contracts already enforce single-use via `Pending*` archives (Canton side) and the EVM transaction nonce (chain side). The Signer only enforces that distinct operator sets cannot share a key namespace — which it does by computing `sender = operatorsHash` from on-ledger signatories inside `SignRequest.Execute`, not by trusting Vault input.
 
 ## Dependencies
 

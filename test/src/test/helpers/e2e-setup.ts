@@ -3,7 +3,6 @@ import {
   type CreatedEvent,
   MpcServer,
   findCreated,
-  firstCreated,
   chainIdHexToCaip2,
   deriveDepositAddress,
   computeRequestId,
@@ -96,7 +95,10 @@ export interface VaultSetup {
   vaultDisclosure: Awaited<ReturnType<CantonClient["getDisclosedContract"]>>;
   vaultAddress: `0x${string}`;
   vaultAddressPadded: string;
+  /** operatorsHash — the on-chain `sender` field, used as the KDF predecessorId */
   predecessorId: string;
+  /** vaultId namespace — the Vault folds this into `path` when building requests */
+  vaultId: string;
   userId: string;
 }
 
@@ -112,10 +114,16 @@ export async function setupVault(
   const requester = await canton.allocateParty(`${partyPrefix}Requester`);
   await canton.createUser(userId, sigNetwork, [operator, requester]);
 
-  const operatorsHash = computeOperatorsHash([operator]);
-  const predecessorId = `${env.VAULT_ID}${operatorsHash}`;
+  // predecessorId is operatorsHash only — derived on-ledger from the SignRequest's signatory operators.
+  // vaultId is folded into `path` by the Vault to keep different vaults with the same operator set isolated.
+  const predecessorId = computeOperatorsHash([operator]);
+  const vaultId = env.VAULT_ID;
 
-  const vaultAddress = deriveDepositAddress(env.MPC_ROOT_PUBLIC_KEY, predecessorId, "root");
+  const vaultAddress = deriveDepositAddress(
+    env.MPC_ROOT_PUBLIC_KEY,
+    predecessorId,
+    `${vaultId},root`,
+  );
   const vaultAddressPadded = vaultAddress.slice(2).toLowerCase().padStart(64, "0");
 
   // Create Signer contract (signatory: sigNetwork)
@@ -137,7 +145,7 @@ export async function setupVault(
     sigNetwork,
     evmVaultAddress: vaultAddressPadded,
     evmMpcPublicKey: mpcPubKeySpki,
-    vaultId: env.VAULT_ID,
+    vaultId,
   });
   const vaultEvent = findCreated(vaultResult.transaction.events, "Vault");
   const vaultCid = vaultEvent.contractId;
@@ -167,6 +175,7 @@ export async function setupVault(
     vaultAddress,
     vaultAddressPadded,
     predecessorId,
+    vaultId,
     userId,
   };
 }
@@ -216,15 +225,14 @@ export async function executeDepositFlow(
     vaultDisclosure,
     vaultAddress,
     predecessorId,
+    vaultId,
     userId,
   } = setup;
 
   const requesterPath = requester;
-  const depositAddress = deriveDepositAddress(
-    env.MPC_ROOT_PUBLIC_KEY,
-    predecessorId,
-    `${requester},${requesterPath}`,
-  );
+  // path mirrors the Vault: vaultId namespace + requester + user-supplied subpath
+  const fullPath = `${vaultId},${requester},${requesterPath}`;
+  const depositAddress = deriveDepositAddress(env.MPC_ROOT_PUBLIC_KEY, predecessorId, fullPath);
   console.log(`${logPrefix} Deposit address derived: ${depositAddress}`);
 
   await fundFromFaucet(
@@ -256,20 +264,6 @@ export async function executeDepositFlow(
     chainId: toCantonHex(BigInt(SEPOLIA_CHAIN_ID), 32),
   };
 
-  // ── Issue nonce (controller: requester) ──
-  console.log(`${logPrefix} IssueNonce`);
-  const nonceResult = await canton.exerciseChoice(
-    userId,
-    [requester],
-    SIGNER_TEMPLATE,
-    signerCid,
-    "IssueNonce",
-    { requester },
-    undefined,
-    [signerDisclosure],
-  );
-  const nonceCid = firstCreated(nonceResult.transaction.events).contractId;
-
   // ── Request deposit ──
   console.log(`${logPrefix} RequestDeposit`);
   const depositResult = await canton.exerciseChoice(
@@ -283,8 +277,6 @@ export async function executeDepositFlow(
       signerCid,
       path: requesterPath,
       evmTxParams,
-      nonceCid,
-      nonceCidText: nonceCid,
       keyVersion: KEY_VERSION,
       algo: ALGO,
       dest: DEST,
@@ -302,7 +294,6 @@ export async function executeDepositFlow(
 
   // Cross-language requestId invariant
   const caip2Id = chainIdHexToCaip2(evmTxParams.chainId);
-  const fullPath = `${requester},${requesterPath}`;
   const tsRequestId = computeRequestId(
     predecessorId,
     { tag: "EvmTxParams" as const, value: evmTxParams },
@@ -312,7 +303,6 @@ export async function executeDepositFlow(
     ALGO,
     DEST,
     "",
-    nonceCid,
   );
   if (tsRequestId.slice(2) !== requestId) {
     throw new Error(

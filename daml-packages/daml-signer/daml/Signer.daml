@@ -4,6 +4,7 @@ import DA.List (unique)
 import DA.Crypto.Text (BytesHex, SignatureHex)
 
 import TxParams (TxParams)
+import RequestId (computeOperatorsHash)
 
 -- ---------------------------------------------------------------------------
 -- Signature types
@@ -36,23 +37,6 @@ signatureDer : Signature -> SignatureHex
 signatureDer (EcdsaSig d) = d.der
 
 -- ---------------------------------------------------------------------------
--- SigningNonce — replay-prevention nonce (Signer-layer infrastructure)
--- ---------------------------------------------------------------------------
-
-template SigningNonce
-  with
-    sigNetwork : Party
-    requester  : Party
-  where
-    -- sole signatory so MPC observes the archive without needing observer rights on domain contracts
-    signatory sigNetwork
-    observer requester
-
-    choice Consume_SigningNonce : ()
-      controller requester
-      do pure ()
-
--- ---------------------------------------------------------------------------
 -- Signer singleton — MPC infrastructure
 -- ---------------------------------------------------------------------------
 
@@ -62,29 +46,14 @@ template Signer
   where
     signatory sigNetwork
 
-    nonconsuming choice IssueNonce : ContractId SigningNonce
-      with
-        requester : Party
-      controller requester
-      do
-        create SigningNonce with sigNetwork; requester
-
-    -- authority bridge: archives nonce, delegates to SignRequest.Execute for operators+requester authority, rotates nonce atomically
-    nonconsuming choice SignBidirectional
-      : (ContractId SignBidirectionalEvent, ContractId SigningNonce)
+    -- authority bridge: delegates to SignRequest.Execute for operators+requester authority
+    nonconsuming choice SignBidirectional : ContractId SignBidirectionalEvent
       with
         signRequestCid : ContractId SignRequest
-        nonceCid       : ContractId SigningNonce
         requester      : Party
       controller requester
       do
-        nonce <- fetch nonceCid
-        assertMsg "Nonce sigNetwork mismatch" (nonce.sigNetwork == sigNetwork)
-        assertMsg "Nonce requester mismatch" (nonce.requester == requester)
-        archive nonceCid
-        eventCid <- exercise signRequestCid Execute
-        newNonceCid <- create SigningNonce with sigNetwork; requester
-        pure (eventCid, newNonceCid)
+        exercise signRequestCid Execute
 
     nonconsuming choice Respond : ContractId SignatureRespondedEvent
       with
@@ -120,18 +89,13 @@ template SignRequest
     operators                  : [Party]
     requester                  : Party
     sigNetwork                 : Party
-    sender                     : Text   -- predecessorId = vaultId <> keccak256(sort(operators)), for KDF
-    txParams                : TxParams
+    txParams                   : TxParams
     caip2Id                    : Text
     keyVersion                 : Int
-    path                       : Text
+    path                       : Text   -- Vault is responsible for namespacing (e.g. prefix with vaultId) when same operator set is reused across vaults
     algo                       : Text
     dest                       : Text
     params                     : Text
-    nonceCidText               : Text   -- text representation of the consumed SigningNonce contract
-                                        -- ID; hashed into requestId for replay prevention. MPC
-                                        -- verifies this matches an archived SigningNonce in the
-                                        -- same transaction.
     outputDeserializationSchema : Text
     respondSerializationSchema  : Text
   where
@@ -140,13 +104,14 @@ template SignRequest
     ensure not (null operators) && unique operators
 
     -- body authority = operators (signatory) + requester (controller) — exactly SignBidirectionalEvent's signatories
+    -- predecessorId (`sender`) is derived from on-ledger operators here so it cannot be Vault-supplied
     choice Execute : ContractId SignBidirectionalEvent
       controller requester
       do
+        let sender = computeOperatorsHash (map partyToText operators)
         create SignBidirectionalEvent with
           operators; requester; sigNetwork; sender
           txParams; caip2Id; keyVersion; path; algo; dest; params
-          nonceCidText
           outputDeserializationSchema; respondSerializationSchema
 
 -- ---------------------------------------------------------------------------
@@ -158,7 +123,7 @@ template SignBidirectionalEvent
     operators                  : [Party]
     requester                  : Party
     sigNetwork                 : Party
-    sender                     : Text   -- predecessorId = vaultId <> keccak256(sort(operators)), for KDF
+    sender                     : BytesHex   -- operatorsHash, set by SignRequest.Execute (NOT user-supplied) — feeds KDF + requestId, isolates key namespace per operator set
     txParams                : TxParams
     caip2Id                    : Text
     keyVersion                 : Int
@@ -166,7 +131,6 @@ template SignBidirectionalEvent
     algo                       : Text
     dest                       : Text
     params                     : Text
-    nonceCidText               : Text   -- same as SignRequest.nonceCidText; propagated from Vault
     outputDeserializationSchema : Text
     respondSerializationSchema  : Text
   where

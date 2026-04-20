@@ -74,7 +74,7 @@ function hashEvmParams(p: EvmTransactionParams): Hex {
  * Three-way consistency required: must match Daml RequestId.daml and Rust indexer_canton::generate_request_id() byte-for-byte.
  */
 export function computeRequestId(
-  sender: string, // predecessorId = vaultId <> operatorsHash — encodes the full operator set
+  sender: string, // operatorsHash, set on-ledger by SignRequest.Execute (NOT user-supplied)
   txParams: TxParams,
   caip2Id: string,
   keyVersion: number,
@@ -82,7 +82,6 @@ export function computeRequestId(
   algo: string,
   dest: string,
   params: string,
-  nonceCidText: string, // consumed SigningNonce contract ID (replay prevention, archived in same tx)
 ): Hex {
   return keccak256(
     concat([
@@ -94,7 +93,6 @@ export function computeRequestId(
       eip712EncodeString(algo),
       eip712EncodeString(dest),
       eip712EncodeString(params),
-      eip712EncodeString(nonceCidText),
     ]),
   );
 }

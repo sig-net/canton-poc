@@ -43,7 +43,6 @@ export type { CantonEvmParams } from "./evm/tx-builder.js";
 // Daml template types (re-exported for consumer convenience)
 export {
   Signer,
-  SigningNonce,
   SignBidirectionalEvent,
   SignatureRespondedEvent,
   RespondBidirectionalEvent,

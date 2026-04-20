@@ -2348,7 +2348,6 @@ snapshots:
 
   '@daml.js/daml-signer-0.0.1@file:ts-packages/canton-sig/generated/model/daml-signer-0.0.1':
     dependencies:
-      '@daml.js/daml-prim-DA-Types-1.0.0': file:ts-packages/canton-sig/generated/model/daml-prim-DA-Types-1.0.0
       '@daml.js/ghc-stdlib-DA-Internal-Template-1.0.0': file:ts-packages/canton-sig/generated/model/ghc-stdlib-DA-Internal-Template-1.0.0
       '@mojotech/json-type-validation': 3.1.0
 

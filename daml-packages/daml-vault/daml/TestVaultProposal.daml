@@ -221,7 +221,7 @@ testSigningOrderIndependence = do
     Left _ -> abort "Expected Right (Vault), got Left (proposal)"
 
 ------------------------------------------------------------------------
--- Full lifecycle: VaultProposal → Vault → nonce → deposit
+-- Full lifecycle: VaultProposal → Vault → deposit
 -- Proves the Vault created via proposal is fully functional.
 ------------------------------------------------------------------------
 
@@ -258,16 +258,11 @@ testProposalToDepositLifecycle = do
   assertMsg "vault operators" (v.operators == [op1, op2])
   assertMsg "sigNetwork" (v.sigNetwork == sigNetwork)
 
-  -- Step 4: Issue a nonce via the Signer (controller: requester)
-  nonceCid <- submit (actAs requester <> readAs sigNetwork) do
-    exerciseCmd signerCid IssueNonce with requester
-
-  -- Step 5: RequestDeposit through the proposal-created vault
-  (signEventCid, pendingCid, _newNonceCid) <- submit (actAs requester <> readAs op1 <> readAs op2 <> readAs sigNetwork) do
+  -- Step 4: RequestDeposit through the proposal-created vault
+  (signEventCid, pendingCid) <- submit (actAs requester <> readAs op1 <> readAs op2 <> readAs sigNetwork) do
     exerciseCmd vaultCid RequestDeposit with
       requester; signerCid; path = partyToText requester
       evmTxParams = sampleEvmParams
-      nonceCid; nonceCidText = "lifecycle-nonce"
       keyVersion = 1; algo = "ECDSA"; dest = "ethereum"; params = ""
       outputDeserializationSchema = erc20BoolSchema
       respondSerializationSchema = erc20BoolSchema

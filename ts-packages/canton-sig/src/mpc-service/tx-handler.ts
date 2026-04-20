@@ -20,7 +20,6 @@ import { deriveChildPrivateKey, signEvmTxHash, signMpcResponse } from "./signer.
 import {
   CantonClient,
   type CreatedEvent,
-  type Event,
   type TransactionResponse,
 } from "../infra/canton-client.js";
 import { computeRequestId, type TxParams as CryptoTxParams } from "../mpc/crypto.js";
@@ -28,7 +27,6 @@ import { chainIdHexToCaip2 } from "../mpc/address-derivation.js";
 import {
   type SignBidirectionalEvent,
   Signer,
-  SigningNonce,
 } from "@daml.js/daml-signer-0.0.1/lib/Signer/module";
 
 // ---------------------------------------------------------------------------
@@ -36,14 +34,6 @@ import {
 // ---------------------------------------------------------------------------
 
 const SIGNER_TEMPLATE = Signer.templateId;
-
-/** Extract "Module:Template" suffix, ignoring package hash vs name prefix. */
-function templateSuffix(templateId: string): string {
-  const parts = templateId.split(":");
-  return parts.slice(-2).join(":");
-}
-
-const SIGNING_NONCE_SUFFIX = templateSuffix(SigningNonce.templateId);
 
 export interface MpcServiceConfig {
   canton: CantonClient;
@@ -130,7 +120,6 @@ async function exerciseChoiceWithRetry(
 export async function signAndEnqueue(
   config: MpcServiceConfig,
   event: CreatedEvent,
-  txEvents?: Event[],
 ): Promise<PendingTx> {
   const { canton, signerCid, userId, actAs, rootPrivateKey } = config;
   const arg = event.createArgument as SignBidirectionalEvent;
@@ -139,7 +128,6 @@ export async function signAndEnqueue(
     sender,
     operators,
     txParams,
-    nonceCidText,
     keyVersion,
     algo,
     dest,
@@ -154,7 +142,7 @@ export async function signAndEnqueue(
   }
   const evmTxParams = txParams.value;
 
-  // sender was precomputed by the Vault as vaultId <> operatorsHash — already encodes the operator set for KDF + requestId
+  // sender is operatorsHash, computed on-ledger by SignRequest.Execute from the actual operator signatories — feeds KDF + requestId
   const predecessorId = sender;
 
   // ---------------------------------------------------------------------------
@@ -184,35 +172,7 @@ export async function signAndEnqueue(
     throw new Error(`Requester ${requester} is not in CreatedEvent.signatories — possible forgery`);
   }
 
-  // 3. Verify nonceCidText corresponds to an archived SigningNonce in the same
-  //    transaction. SigningNonce is a Signer-layer nonce (signatory: sigNetwork),
-  //    archived by Signer.SignBidirectional. This ensures: (a) the nonce was
-  //    actually consumed (replay prevention), and (b) it's a SigningNonce — not
-  //    an arbitrary string or a different contract type.
-  //    During catch-up (no txEvents), we skip this check — catch-up trusts the ledger.
-  if (txEvents) {
-    const archivedEvents = txEvents
-      .filter((e): e is Event & { ArchivedEvent: unknown } => "ArchivedEvent" in e)
-      .map(
-        (e) => (e as { ArchivedEvent: { contractId: string; templateId: string } }).ArchivedEvent,
-      );
-
-    const nonceEvent = archivedEvents.find((a) => a.contractId === nonceCidText);
-    if (!nonceEvent) {
-      throw new Error(
-        `nonceCidText ${nonceCidText} does not match any ArchivedEvent in the transaction — ` +
-          `possible replay or forged nonce`,
-      );
-    }
-
-    if (templateSuffix(nonceEvent.templateId) !== SIGNING_NONCE_SUFFIX) {
-      throw new Error(
-        `nonceCidText ${nonceCidText} was archived but its template is not SigningNonce`,
-      );
-    }
-  }
-
-  // Validate requestId via EIP-712 re-computation
+  // Validate requestId via re-computation
   // caip2Id is the DESTINATION chain (used in requestId); KDF uses SOURCE (canton:global) — they differ
   const caip2Id = chainIdHexToCaip2(evmTxParams.chainId);
   const computedRequestId = computeRequestId(
@@ -224,7 +184,6 @@ export async function signAndEnqueue(
     algo,
     dest,
     params,
-    nonceCidText,
   );
 
   console.log(`[MPC] Processing SignBidirectionalEvent requestId=${computedRequestId.slice(2)}`);

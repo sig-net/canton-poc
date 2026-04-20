@@ -11,7 +11,6 @@ import {
   toSpkiPublicKey,
   DAR_PATH,
   Signer,
-  SigningNonce,
   Vault,
   PendingDeposit,
   SignatureRespondedEvent,
@@ -24,7 +23,6 @@ const VAULT_ID = "test-vault";
 const canton = new CantonClient();
 
 const SIGNER_TEMPLATE = Signer.templateId;
-const SIGNING_NONCE_TEMPLATE = SigningNonce.templateId;
 const VAULT_TEMPLATE = Vault.templateId;
 const PENDING_DEPOSIT_TEMPLATE = PendingDeposit.templateId;
 const SIG_RESPONDED_TEMPLATE = SignatureRespondedEvent.templateId;
@@ -109,9 +107,13 @@ describe("ledger visibility + permission model", () => {
     await canton.createUser(OPERATOR_USER, operator);
     await canton.createUser(REQUESTER_USER, requester);
 
-    const operatorsHash = computeOperatorsHash([operator]);
-    predecessorId = `${VAULT_ID}${operatorsHash}`;
-    vaultAddress = deriveDepositAddress(MPC_ROOT_PUBLIC_KEY, predecessorId, "root");
+    // predecessorId is operatorsHash; vaultId is folded into path by the Vault.
+    predecessorId = computeOperatorsHash([operator]);
+    vaultAddress = deriveDepositAddress(
+      MPC_ROOT_PUBLIC_KEY,
+      predecessorId,
+      `${VAULT_ID},root`,
+    );
 
     // Create Signer (signatory: sigNetwork)
     const signerResult = await canton.createContract(
@@ -154,8 +156,6 @@ describe("ledger visibility + permission model", () => {
           signerCid,
           path: requester,
           evmTxParams: buildSampleEvmParams(vaultAddress),
-          nonceCid: "fake-nonce",
-          nonceCidText: "fake-nonce",
           keyVersion: KEY_VERSION,
           algo: ALGO,
           dest: DEST,
@@ -166,34 +166,33 @@ describe("ledger visibility + permission model", () => {
       ),
     ).rejects.toThrow();
 
-    // Disclosure does NOT grant authorization — sigNetwork cannot issue nonce on behalf of requester
-    // IssueNonce is controlled by requester
-    await expect(
-      canton.exerciseChoice(
-        SIGNETWORK_USER,
-        [sigNetwork],
-        SIGNER_TEMPLATE,
-        signerCid,
-        "IssueNonce",
-        { requester },
-      ),
-    ).rejects.toThrow();
-
-    // requester can issue nonces via disclosed Signer (controller: requester)
-    const nonceResult = await canton.exerciseChoice(
+    // With disclosure, requester can exercise RequestDeposit via the disclosed Vault.
+    // (Vault contract is the disclosed entity; SignBidirectionalEvent is created internally
+    //  through Signer.SignBidirectional → SignRequest.Execute, which the disclosed Signer
+    //  enables. Both disclosures are required.)
+    const depositResult = await canton.exerciseChoice(
       REQUESTER_USER,
       [requester],
-      SIGNER_TEMPLATE,
-      signerCid,
-      "IssueNonce",
-      { requester },
+      VAULT_TEMPLATE,
+      vaultCid,
+      "RequestDeposit",
+      {
+        requester,
+        signerCid,
+        path: requester,
+        evmTxParams: buildSampleEvmParams(vaultAddress),
+        keyVersion: KEY_VERSION,
+        algo: ALGO,
+        dest: DEST,
+        params: "",
+        outputDeserializationSchema: '[{"name":"","type":"bool"}]',
+        respondSerializationSchema: '[{"name":"","type":"bool"}]',
+      },
       undefined,
-      [signerDisclosure],
+      [vaultDisclosure, signerDisclosure],
     );
-    const nonceCid = firstCreated(nonceResult.transaction.events).contractId;
-
-    // SigningNonce: signatory=sigNetwork, observer=requester
-    await assertVisibility(SIGNING_NONCE_TEMPLATE, nonceCid, [sigNetwork, requester], [operator]);
+    const pendingDeposit = findCreated(depositResult.transaction.events, "PendingDeposit");
+    expect(pendingDeposit.contractId).toBeDefined();
   });
 
   it("full lifecycle: controller permissions and observer visibility", async () => {
@@ -203,20 +202,7 @@ describe("ledger visibility + permission model", () => {
     // -- Vault visibility: signatory=operators, observer=sigNetwork
     await assertVisibility(VAULT_TEMPLATE, vaultCid, [operator, sigNetwork], [requester]);
 
-    // -- Step 1: IssueNonce (controller=requester, via disclosed Signer)
-    const nonceResult = await canton.exerciseChoice(
-      REQUESTER_USER,
-      [requester],
-      SIGNER_TEMPLATE,
-      signerCid,
-      "IssueNonce",
-      { requester },
-      undefined,
-      [signerDisclosure],
-    );
-    const nonceCid = firstCreated(nonceResult.transaction.events).contractId;
-
-    // -- Step 2: RequestDeposit (controller=requester)
+    // -- Step 1: RequestDeposit (controller=requester)
     const evmTxParams = buildSampleEvmParams(vaultAddress);
     const pendingResult = await canton.exerciseChoice(
       REQUESTER_USER,
@@ -229,8 +215,6 @@ describe("ledger visibility + permission model", () => {
         signerCid,
         path: requester,
         evmTxParams,
-        nonceCid,
-        nonceCidText: nonceCid,
         keyVersion: KEY_VERSION,
         algo: ALGO,
         dest: DEST,
@@ -253,16 +237,7 @@ describe("ledger visibility + permission model", () => {
       [],
     );
 
-    // SigningNonce must be archived after RequestDeposit, and a new one issued
-    const newNonce = findCreated(pendingResult.transaction.events, "SigningNonce");
-    expect(newNonce.contractId).toBeDefined();
-    expect(newNonce.contractId).not.toBe(nonceCid);
-
-    const remainingNonces = await canton.getActiveContracts([sigNetwork], SIGNING_NONCE_TEMPLATE);
-    expect(hasContract(remainingNonces, nonceCid)).toBe(false);
-    expect(hasContract(remainingNonces, newNonce.contractId)).toBe(true);
-
-    // -- Step 3: Respond (controller=sigNetwork) — creates SignatureRespondedEvent
+    // -- Step 2: Respond (controller=sigNetwork) — creates SignatureRespondedEvent
     // Requester cannot exercise sigNetwork-controlled choices
     await expect(
       canton.exerciseChoice(
@@ -308,7 +283,7 @@ describe("ledger visibility + permission model", () => {
       [],
     );
 
-    // -- Step 4: RespondBidirectional (controller=sigNetwork) — creates RespondBidirectionalEvent
+    // -- Step 3: RespondBidirectional (controller=sigNetwork) — creates RespondBidirectionalEvent
     await expect(
       canton.exerciseChoice(
         REQUESTER_USER,
@@ -357,7 +332,7 @@ describe("ledger visibility + permission model", () => {
       [],
     );
 
-    // -- Step 5: ClaimDeposit (controller=requester)
+    // -- Step 4: ClaimDeposit (controller=requester)
     // Operator cannot claim (controller is requester, not operator)
     await expect(
       canton.exerciseChoice(OPERATOR_USER, [operator], VAULT_TEMPLATE, vaultCid, "ClaimDeposit", {

@@ -46,9 +46,9 @@ computeOperatorsHash operatorTexts =
 -- Request ID and response hash
 -- ---------------------------------------------------------------------------
 
--- must match Rust generate_request_id() and TS mpc/crypto.ts byte-for-byte; `sender` already encodes operatorsHash (vaultId <> operatorsHash)
-computeRequestId : Text -> TxParams -> Text -> Int -> Text -> Text -> Text -> Text -> Text -> BytesHex
-computeRequestId sender txParams caip2Id keyVersion path algo dest params nonceCidText =
+-- must match Rust generate_request_id() and TS mpc/crypto.ts byte-for-byte; `sender` is operatorsHash, computed in SignRequest.Execute from on-ledger operators
+computeRequestId : Text -> TxParams -> Text -> Int -> Text -> Text -> Text -> Text -> BytesHex
+computeRequestId sender txParams caip2Id keyVersion path algo dest params =
   keccak256 $
        eip712EncodeString sender
     <> hashTxParams txParams
@@ -58,7 +58,6 @@ computeRequestId sender txParams caip2Id keyVersion path algo dest params nonceC
     <> eip712EncodeString algo
     <> eip712EncodeString dest
     <> eip712EncodeString params
-    <> eip712EncodeString nonceCidText
 
 -- keccak256(requestId ‖ rawOutput) — matches MPC (respond_bidirectional.rs) and Solana (erc20_vault.rs); no inner keccak on `output`
 computeResponseHash : BytesHex -> BytesHex -> BytesHex

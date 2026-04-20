@@ -40,12 +40,6 @@ setupWithKey pubKey = do
 
   pure (sigNetwork, operator, requester, signerCid, vaultCid)
 
--- Issue a SigningNonce via the Signer (controller: requester)
-issueNonce : Party -> Party -> ContractId Signer -> Script (ContractId SigningNonce)
-issueNonce sigNetwork requester signerCid =
-  submit (actAs requester <> readAs sigNetwork) do
-    exerciseCmd signerCid IssueNonce with requester
-
 ------------------------------------------------------------------------
 -- Deposit lifecycle
 ------------------------------------------------------------------------
@@ -54,13 +48,11 @@ issueNonce sigNetwork requester signerCid =
 testDepositLifecycle : Script ()
 testDepositLifecycle = do
   (sigNetwork, operator, requester, signerCid, vaultCid) <- setup
-  nonceCid <- issueNonce sigNetwork requester signerCid
 
   let depositPath = partyToText requester
-  (signEventCid, pendingCid, _newNonceCid) <- submit (actAs requester <> readAs operator <> readAs sigNetwork) do
+  (signEventCid, pendingCid) <- submit (actAs requester <> readAs operator <> readAs sigNetwork) do
     exerciseCmd vaultCid RequestDeposit with
       requester; signerCid; path = depositPath; evmTxParams = sampleEvmParams
-      nonceCid; nonceCidText = "test-nonce"
       keyVersion = 1; algo = "ECDSA"; dest = "ethereum"; params = ""
       outputDeserializationSchema = erc20BoolSchema
       respondSerializationSchema = erc20BoolSchema
@@ -262,7 +254,7 @@ testClaimRejectsBoolFalse = do
 -- requester cannot exercise Signer.Respond (controller is sigNetwork)
 testRespondWrongController : Script ()
 testRespondWrongController = do
-  (sigNetwork, operator, requester, signerCid, _vaultCid) <- setup
+  (_sigNetwork, operator, requester, signerCid, _vaultCid) <- setup
 
   -- requester tries to exercise Respond (controller is sigNetwork)
   submitMustFail requester do
@@ -273,13 +265,11 @@ testRespondWrongController = do
 testWrongFunctionSignature : Script ()
 testWrongFunctionSignature = do
   (sigNetwork, operator, requester, signerCid, vaultCid) <- setup
-  nonceCid <- issueNonce sigNetwork requester signerCid
 
   let badParams = sampleEvmParams with functionSignature = "approve(address,uint256)"
   submitMustFail (actAs requester <> readAs operator <> readAs sigNetwork) do
     exerciseCmd vaultCid RequestDeposit with
       requester; signerCid; path = "test"; evmTxParams = badParams
-      nonceCid; nonceCidText = "test-nonce"
       keyVersion = 1; algo = "ECDSA"; dest = "ethereum"; params = ""
       outputDeserializationSchema = erc20BoolSchema
       respondSerializationSchema = erc20BoolSchema
@@ -288,7 +278,6 @@ testWrongFunctionSignature = do
 testWrongRecipient : Script ()
 testWrongRecipient = do
   (sigNetwork, operator, requester, signerCid, vaultCid) <- setup
-  nonceCid <- issueNonce sigNetwork requester signerCid
 
   let badParams = sampleEvmParams with
         encodedArgs = "0000000000000000000000001111111111111111111111111111111111111111"
@@ -296,7 +285,6 @@ testWrongRecipient = do
   submitMustFail (actAs requester <> readAs operator <> readAs sigNetwork) do
     exerciseCmd vaultCid RequestDeposit with
       requester; signerCid; path = "test"; evmTxParams = badParams
-      nonceCid; nonceCidText = "test-nonce"
       keyVersion = 1; algo = "ECDSA"; dest = "ethereum"; params = ""
       outputDeserializationSchema = erc20BoolSchema
       respondSerializationSchema = erc20BoolSchema
@@ -309,18 +297,16 @@ testWrongRecipient = do
 testWithdrawalLifecycle : Script ()
 testWithdrawalLifecycle = do
   (sigNetwork, operator, requester, signerCid, vaultCid) <- setup
-  nonceCid <- issueNonce sigNetwork requester signerCid
 
   holdingCid <- submit operator do
     createCmd Erc20Holding with
       operators = [operator]; owner = requester
       erc20Address = sampleErc20Address; amount = sampleHoldingAmount
 
-  (signEventCid, pendingCid, _newNonceCid) <- submit (actAs requester <> readAs operator <> readAs sigNetwork) do
+  (signEventCid, pendingCid) <- submit (actAs requester <> readAs operator <> readAs sigNetwork) do
     exerciseCmd vaultCid RequestWithdrawal with
       requester; signerCid; evmTxParams = sampleWithdrawalEvmParams
       recipientAddress = sampleRecipientAddress; balanceCid = holdingCid
-      nonceCid; nonceCidText = "holding-nonce"
       keyVersion = 1; algo = "ECDSA"; dest = "ethereum"; params = ""
       outputDeserializationSchema = erc20BoolSchema
       respondSerializationSchema = erc20BoolSchema
@@ -330,6 +316,10 @@ testWithdrawalLifecycle = do
   assertMsg "requestId must be 32 bytes" (byteCount pw.requestId == 32)
   assertMsg "evmTxParams must match" (pw.evmTxParams == sampleWithdrawalEvmParams)
   assertMsg "requester must match" (pw.requester == requester)
+
+  -- sign event must exist
+  signEvent <- queryContractId requester signEventCid
+  assertMsg "sign event must exist" (isSome signEvent)
 
   -- Holding must be archived
   oldHolding <- queryContractId requester holdingCid
@@ -425,7 +415,6 @@ testWithdrawalRejectsWrongOwner : Script ()
 testWithdrawalRejectsWrongOwner = do
   (sigNetwork, operator, requester, signerCid, vaultCid) <- setup
   userB <- allocateParty "UserB"
-  nonceCid <- issueNonce sigNetwork userB signerCid
 
   holdingCid <- submit operator do
     createCmd Erc20Holding with
@@ -436,7 +425,6 @@ testWithdrawalRejectsWrongOwner = do
     exerciseCmd vaultCid RequestWithdrawal with
       requester = userB; signerCid; evmTxParams = sampleWithdrawalEvmParams
       recipientAddress = sampleRecipientAddress; balanceCid = holdingCid
-      nonceCid; nonceCidText = "holding-nonce"
       keyVersion = 1; algo = "ECDSA"; dest = "ethereum"; params = ""
       outputDeserializationSchema = erc20BoolSchema
       respondSerializationSchema = erc20BoolSchema
@@ -445,7 +433,6 @@ testWithdrawalRejectsWrongOwner = do
 testWithdrawalRejectsWrongErc20 : Script ()
 testWithdrawalRejectsWrongErc20 = do
   (sigNetwork, operator, requester, signerCid, vaultCid) <- setup
-  nonceCid <- issueNonce sigNetwork requester signerCid
 
   holdingCid <- submit operator do
     createCmd Erc20Holding with
@@ -457,7 +444,6 @@ testWithdrawalRejectsWrongErc20 = do
     exerciseCmd vaultCid RequestWithdrawal with
       requester; signerCid; evmTxParams = sampleWithdrawalEvmParams
       recipientAddress = sampleRecipientAddress; balanceCid = holdingCid
-      nonceCid; nonceCidText = "holding-nonce"
       keyVersion = 1; algo = "ECDSA"; dest = "ethereum"; params = ""
       outputDeserializationSchema = erc20BoolSchema
       respondSerializationSchema = erc20BoolSchema
@@ -466,7 +452,6 @@ testWithdrawalRejectsWrongErc20 = do
 testWithdrawalRejectsAmountMismatch : Script ()
 testWithdrawalRejectsAmountMismatch = do
   (sigNetwork, operator, requester, signerCid, vaultCid) <- setup
-  nonceCid <- issueNonce sigNetwork requester signerCid
 
   holdingCid <- submit operator do
     createCmd Erc20Holding with
@@ -478,7 +463,6 @@ testWithdrawalRejectsAmountMismatch = do
     exerciseCmd vaultCid RequestWithdrawal with
       requester; signerCid; evmTxParams = sampleWithdrawalEvmParams
       recipientAddress = sampleRecipientAddress; balanceCid = holdingCid
-      nonceCid; nonceCidText = "holding-nonce"
       keyVersion = 1; algo = "ECDSA"; dest = "ethereum"; params = ""
       outputDeserializationSchema = erc20BoolSchema
       respondSerializationSchema = erc20BoolSchema
@@ -487,7 +471,6 @@ testWithdrawalRejectsAmountMismatch = do
 testWithdrawalRejectsWrongRecipient : Script ()
 testWithdrawalRejectsWrongRecipient = do
   (sigNetwork, operator, requester, signerCid, vaultCid) <- setup
-  nonceCid <- issueNonce sigNetwork requester signerCid
 
   holdingCid <- submit operator do
     createCmd Erc20Holding with
@@ -498,7 +481,7 @@ testWithdrawalRejectsWrongRecipient = do
     exerciseCmd vaultCid RequestWithdrawal with
       requester; signerCid; evmTxParams = sampleWithdrawalEvmParams
       recipientAddress = "0000000000000000000000002222222222222222222222222222222222222222"
-      balanceCid = holdingCid; nonceCid; nonceCidText = "holding-nonce"
+      balanceCid = holdingCid
       keyVersion = 1; algo = "ECDSA"; dest = "ethereum"; params = ""
       outputDeserializationSchema = erc20BoolSchema
       respondSerializationSchema = erc20BoolSchema
@@ -593,7 +576,6 @@ testPendingDepositDoubleClaimFails = do
 testWithdrawalRejectsWrongFunctionSignature : Script ()
 testWithdrawalRejectsWrongFunctionSignature = do
   (sigNetwork, operator, requester, signerCid, vaultCid) <- setup
-  nonceCid <- issueNonce sigNetwork requester signerCid
 
   holdingCid <- submit operator do
     createCmd Erc20Holding with
@@ -605,7 +587,6 @@ testWithdrawalRejectsWrongFunctionSignature = do
     exerciseCmd vaultCid RequestWithdrawal with
       requester; signerCid; evmTxParams = badParams
       recipientAddress = sampleRecipientAddress; balanceCid = holdingCid
-      nonceCid; nonceCidText = "holding-nonce"
       keyVersion = 1; algo = "ECDSA"; dest = "ethereum"; params = ""
       outputDeserializationSchema = erc20BoolSchema
       respondSerializationSchema = erc20BoolSchema
@@ -619,7 +600,6 @@ testWithdrawalRejectsHoldingOperatorsMismatch : Script ()
 testWithdrawalRejectsHoldingOperatorsMismatch = do
   (sigNetwork, operator, requester, signerCid, vaultCid) <- setup
   rogue <- allocateParty "Rogue"
-  nonceCid <- issueNonce sigNetwork requester signerCid
 
   holdingCid <- submit rogue do
     createCmd Erc20Holding with
@@ -630,7 +610,6 @@ testWithdrawalRejectsHoldingOperatorsMismatch = do
     exerciseCmd vaultCid RequestWithdrawal with
       requester; signerCid; evmTxParams = sampleWithdrawalEvmParams
       recipientAddress = sampleRecipientAddress; balanceCid = holdingCid
-      nonceCid; nonceCidText = "holding-nonce"
       keyVersion = 1; algo = "ECDSA"; dest = "ethereum"; params = ""
       outputDeserializationSchema = erc20BoolSchema
       respondSerializationSchema = erc20BoolSchema
