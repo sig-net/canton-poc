@@ -109,11 +109,7 @@ describe("ledger visibility + permission model", () => {
 
     // predecessorId is operatorsHash; vaultId is folded into path by the Vault.
     predecessorId = computeOperatorsHash([operator]);
-    vaultAddress = deriveDepositAddress(
-      MPC_ROOT_PUBLIC_KEY,
-      predecessorId,
-      `${VAULT_ID},root`,
-    );
+    vaultAddress = deriveDepositAddress(MPC_ROOT_PUBLIC_KEY, predecessorId, `${VAULT_ID},root`);
 
     // Create Signer (signatory: sigNetwork)
     const signerResult = await canton.createContract(

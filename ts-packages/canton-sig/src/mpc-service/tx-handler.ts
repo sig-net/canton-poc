@@ -24,10 +24,7 @@ import {
 } from "../infra/canton-client.js";
 import { computeRequestId, type TxParams as CryptoTxParams } from "../mpc/crypto.js";
 import { chainIdHexToCaip2 } from "../mpc/address-derivation.js";
-import {
-  type SignBidirectionalEvent,
-  Signer,
-} from "@daml.js/daml-signer-0.0.1/lib/Signer/module";
+import { type SignBidirectionalEvent, Signer } from "@daml.js/daml-signer-0.0.1/lib/Signer/module";
 
 // ---------------------------------------------------------------------------
 // Types
