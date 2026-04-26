@@ -344,6 +344,17 @@ testAbiSlotCount = do
   assertMsg "5-slot dynamic = 5" (abiSlotCount vec_uint_string_uint == 5)
   assertMsg "empty data = 0" (abiSlotCount "" == 0)
 
+testAbiHasExactSlotCount : Script ()
+testAbiHasExactSlotCount = do
+  assertMsg "empty data is exactly 0 slots" (abiHasExactSlotCount 0 "")
+  assertMsg "single uint is exactly 1 slot" (abiHasExactSlotCount 1 vec_uint256_1000)
+  assertMsg "2-slot tuple is exactly 2 slots" (abiHasExactSlotCount 2 vec_tuple_uint_uint)
+  assertMsg "2-slot tuple is not exactly 1 slot" (not (abiHasExactSlotCount 1 vec_tuple_uint_uint))
+  assertMsg "2 slots plus trailing byte is not exactly 2 slots"
+    (not (abiHasExactSlotCount 2 (vec_tuple_uint_uint <> "00")))
+  assertMsg "negative expected slot count is rejected"
+    (not (abiHasExactSlotCount (-1) ""))
+
 -- ---------------------------------------------------------------------------
 -- Tests: abiDecodeUint
 -- ---------------------------------------------------------------------------
@@ -388,6 +399,23 @@ testAbiDecodeAddress = do
   assertMsg "address from tuple slot 1" (abiDecodeAddress vec_tuple_uint_addr_bool 1 == expected)
   assertMsg "address is 40 hex chars" (DA.Text.length (abiDecodeAddress vec_address_vitalik 0) == 40)
   assertMsg "zero address" (abiDecodeAddress vec_address_zero 0 == "0000000000000000000000000000000000000000")
+
+testAbiAddressSlotHelpers : Script ()
+testAbiAddressSlotHelpers = do
+  let expected = "d8da6bf26964af9d7eed9e03e53415d37aa96045"
+  assertMsg "address padding is 12 zero bytes"
+    (abiAddressPadding == "000000000000000000000000")
+  assertMsg "canonical address slot accepted" (isAbiAddressSlot vec_address_vitalik)
+  assertMsg "canonical address slot extracts payload"
+    (abiAddressSlotToAddress vec_address_vitalik == expected)
+  assertMsg "short address payload is not an ABI address slot"
+    (not (isAbiAddressSlot expected))
+  let dirtyPadded = "ffffffffffffffffffffffff" <> expected
+  assertMsg "dirty address padding is not canonical"
+    (not (isAbiAddressSlot dirtyPadded))
+  caught <- try (pure (abiAddressSlotToAddress dirtyPadded))
+    catch (GeneralError _) -> pure "caught"
+  assertMsg "dirty address slot extraction errors" (caught == "caught")
 
 -- ---------------------------------------------------------------------------
 -- Tests: abiDecodeBytesN
@@ -1067,6 +1095,13 @@ testAbiDecodeFixedArrayDynElemRequiresAlignedOffset = do
     catch (GeneralError _) -> pure (-1)
   assertMsg "unaligned offset rejected" (caught == (-1))
 
+testAbiDecodeFixedArrayDynElemRejectsNegativeIndex : Script ()
+testAbiDecodeFixedArrayDynElemRejectsNegativeIndex = do
+  let innerOffset = abiReadOffset vec_string_fixed_array 0
+  caught <- try (pure (abiDecodeFixedArrayDynElem vec_string_fixed_array innerOffset (-1)))
+    catch (GeneralError _) -> pure (-1)
+  assertMsg "negative fixed-array dynamic index rejected" (caught == (-1))
+
 testAbiDecodeTupleDynMemberRequiresAlignedOffset : Script ()
 testAbiDecodeTupleDynMemberRequiresAlignedOffset = do
   -- Sanity: aligned base offset=0 works for (uint256, string, bool)
@@ -1080,6 +1115,13 @@ testAbiDecodeTupleDynMemberRequiresAlignedOffset = do
   caught2 <- try (pure (abiDecodeTupleDynMember vec_dynamic_tuple (-32) 1))
     catch (GeneralError _) -> pure (-1)
   assertMsg "negative base rejected" (caught2 == (-1))
+
+testAbiDecodeTupleDynMemberRejectsNegativeMemberIndex : Script ()
+testAbiDecodeTupleDynMemberRejectsNegativeMemberIndex = do
+  let shifted = "0000000000000000000000000000000000000000000000000000000000000000" <> vec_uint_string_uint
+  caught <- try (pure (abiDecodeTupleDynMember shifted 32 (-1)))
+    catch (GeneralError _) -> pure (-1)
+  assertMsg "negative tuple member index rejected" (caught == (-1))
 
 -- ---------------------------------------------------------------------------
 -- Tests: regression — hex case-insensitivity does NOT break bool/address.

@@ -126,20 +126,21 @@ testDomainSeparation = do
 
 testCrossLanguageVectors : Script ()
 testCrossLanguageVectors = do
-  -- NOTE: EvmParams-derived golden vectors were invalidated when EvmTransactionParams
-  -- switched from `args : [BytesHex]` to `encodedArgs : BytesHex`. The TS oracle must
-  -- be regenerated and these assertions re-added. Structural checks are retained.
-  assertMsg "hashEvmParams is 32 bytes" (byteCount (hashEvmParams sampleEvmParams) == 32)
+  assertMsg "hashEvmParams(sampleEvmParams) matches TS"
+    (hashEvmParams sampleEvmParams
+      == "61745a0f9bf98212e3663e78ecbf8d3424e6a3b220924fee314cd17cbda7f349")
 
   let predecessorId = computeOperatorsHash ["Operator1::1220aa", "Operator2::1220bb"]
   let caip2Id = "eip155:11155111"
   let path = "m/44/60/0/0"
 
   let rid1 = computeRequestId predecessorId (EvmTxParams sampleEvmParams) caip2Id 1 path "ECDSA" "ethereum" ""
-  assertMsg "requestId(kv=1) is 32 bytes" (byteCount rid1 == 32)
+  assertMsg "requestId(kv=1) matches TS"
+    (rid1 == "dd07e1832901b393e7da1065997c972d269f5d137fc5fcbe23c6e5bb5eccf5d5")
 
   let rid256 = computeRequestId predecessorId (EvmTxParams sampleEvmParams) caip2Id 256 path "ECDSA" "ethereum" ""
-  assertMsg "requestId(kv=256) differs from kv=1" (rid256 /= rid1)
+  assertMsg "requestId(kv=256) matches TS"
+    (rid256 == "347d4b8465b7ca5de4622c4d64c6f6ec8230bdb6286aadd55443765d05088854")
 
   let knownId = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   assertMsg "computeResponseHash(knownId, 01) matches TS"
@@ -151,12 +152,13 @@ testCrossLanguageVectors = do
       == "20ee8f1366f06926e9e8771d8fb9007a8537c8dfdb6a3f8c2cfd64db19d2ec90")
 
   let rid0 = computeRequestId predecessorId (EvmTxParams sampleEvmParams) caip2Id 0 path "ECDSA" "ethereum" ""
-  assertMsg "requestId(kv=0) differs from kv=1" (rid0 /= rid1)
+  assertMsg "requestId(kv=0) matches TS"
+    (rid0 == "12bfaa34afe3f201000cd8e210621b3fa59d2347910227f0c65e9ea78ae4e1e2")
 
   let emptyArgsParams = sampleEvmParams with encodedArgs = ""
   let hEmpty = hashEvmParams emptyArgsParams
-  assertMsg "hashEvmParams(emptyArgs) is 32 bytes" (byteCount hEmpty == 32)
+  assertMsg "hashEvmParams(emptyArgs) matches TS"
+    (hEmpty == "4ec7535f4daabb4f6d1c4f573817c5263ef84fb7272c715f54dccbcc31d43318")
   let ridEmpty = computeRequestId predecessorId (EvmTxParams emptyArgsParams) caip2Id 1 path "ECDSA" "ethereum" ""
-  assertMsg "requestId(emptyArgs) is 32 bytes" (byteCount ridEmpty == 32)
-  assertMsg "requestId(emptyArgs) differs from sampleEvmParams requestId"
-    (ridEmpty /= rid1)
+  assertMsg "requestId(emptyArgs) matches TS"
+    (ridEmpty == "3eced208c8066b60562bc2b9be41cf675aa82e20a2110f83309b07ecf1395538")

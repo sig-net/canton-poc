@@ -5,6 +5,7 @@ import DA.Crypto.Text
   ( BytesHex
   , byteCount
   , fromHex
+  , isHex
   )
 
 -- ---------------------------------------------------------------------------
@@ -31,6 +32,10 @@ addressPadHexChars = 24
 zeroSlot : BytesHex
 zeroSlot = "0000000000000000000000000000000000000000000000000000000000000000"
 
+-- | 12-byte zero-padding prefix used by canonical ABI address slots.
+abiAddressPadding : BytesHex
+abiAddressPadding = DA.Text.take addressPadHexChars zeroSlot
+
 -- ---------------------------------------------------------------------------
 -- Core — slot access
 -- ---------------------------------------------------------------------------
@@ -48,6 +53,14 @@ abiSlot hex i =
 -- | Number of 32-byte slots in the ABI-encoded data.
 abiSlotCount : BytesHex -> Int
 abiSlotCount hex = byteCount hex / slotBytes
+
+-- | True when the payload is valid hex and contains exactly n complete ABI slots.
+-- Unlike abiSlotCount, this rejects partial trailing data.
+abiHasExactSlotCount : Int -> BytesHex -> Bool
+abiHasExactSlotCount expected hex =
+  expected >= 0
+    && DA.Text.length hex == expected * slotHexChars
+    && (hex == "" || isHex hex)
 
 -- ---------------------------------------------------------------------------
 -- Calldata helpers
@@ -94,10 +107,24 @@ abiDecodeBool hex i =
 abiDecodeAddress : BytesHex -> Int -> BytesHex
 abiDecodeAddress hex i =
   let slot = abiSlot hex i
-      pad = DA.Text.take addressPadHexChars slot
-  in if pad /= DA.Text.take addressPadHexChars zeroSlot
+  in if not (isAbiAddressSlot slot)
      then error ("abiDecodeAddress: non-zero padding at slot " <> show i)
-     else DA.Text.drop addressPadHexChars slot
+     else abiAddressSlotToAddress slot
+
+-- | True when the value is exactly one canonical ABI-encoded address slot.
+-- ABI addresses occupy the low 20 bytes of a 32-byte slot, with zero high bytes.
+isAbiAddressSlot : BytesHex -> Bool
+isAbiAddressSlot value =
+  DA.Text.length value == slotHexChars
+    && isHex value
+    && DA.Text.take addressPadHexChars value == abiAddressPadding
+
+-- | Extract the 20-byte address payload from a canonical ABI address slot.
+abiAddressSlotToAddress : BytesHex -> BytesHex
+abiAddressSlotToAddress value =
+  if isAbiAddressSlot value
+  then DA.Text.drop addressPadHexChars value
+  else error "abiAddressSlotToAddress: expected canonical ABI address slot"
 
 -- | Decode bytesN at slot i. bytesN is left-aligned (right-padded).
 -- Returns the first n bytes of the slot.
@@ -213,9 +240,12 @@ abiDecodeArrayDynElem hex byteOffset j =
 abiDecodeFixedArrayDynElem : BytesHex -> Int -> Int -> Int
 abiDecodeFixedArrayDynElem hex byteOffset j =
   let off = requireAlignedOffset "abiDecodeFixedArrayDynElem" byteOffset
-      elemOffsetSlot = off / slotBytes + j
-      relativeOffset = abiSlotToInt hex elemOffsetSlot
-  in off + relativeOffset
+  in if j < 0
+     then error ("abiDecodeFixedArrayDynElem: negative index " <> show j)
+     else
+       let elemOffsetSlot = off / slotBytes + j
+           relativeOffset = abiSlotToInt hex elemOffsetSlot
+       in off + relativeOffset
 
 -- ---------------------------------------------------------------------------
 -- Dynamic tuple decoders
@@ -234,8 +264,11 @@ abiDecodeFixedArrayDynElem hex byteOffset j =
 abiDecodeTupleDynMember : BytesHex -> Int -> Int -> Int
 abiDecodeTupleDynMember hex tupleBaseOffset memberSlotIndex =
   let off = requireAlignedOffset "abiDecodeTupleDynMember" tupleBaseOffset
-      relativeOffset = abiSlotToInt hex (off / slotBytes + memberSlotIndex)
-  in off + relativeOffset
+  in if memberSlotIndex < 0
+     then error ("abiDecodeTupleDynMember: negative member index " <> show memberSlotIndex)
+     else
+       let relativeOffset = abiSlotToInt hex (off / slotBytes + memberSlotIndex)
+       in off + relativeOffset
 
 -- ---------------------------------------------------------------------------
 -- Multi-dimensional array patterns (documentation)

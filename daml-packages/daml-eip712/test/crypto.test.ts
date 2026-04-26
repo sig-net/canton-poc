@@ -15,18 +15,19 @@ const sampleEvmParams: EvmTransactionParams = {
   chainId: "0000000000000000000000000000000000000000000000000000000000aa36a7",
 };
 
-const SENDER = "Issuer::1220abcdef";
+const SENDER = "df60843384dea829feee6d7abe7e9dfef996ad71e536ee73c1af8d23e0b4070a";
 const CAIP2_ID = "eip155:11155111";
 const KEY_VERSION = 1;
 const PATH = "m/44/60/0/0";
 
 // ---------------------------------------------------------------------------
 // Cross-language vectors (must match Daml TestRequestId.daml)
-// computeResponseHash is the exact-value cross-check; computeRequestId is
-// verified structurally + via the e2e tests, since both sides use the same
-// concat-keccak256 formulation.
 // ---------------------------------------------------------------------------
 const VECTORS = {
+  requestIdKv0: "0x12bfaa34afe3f201000cd8e210621b3fa59d2347910227f0c65e9ea78ae4e1e2",
+  requestIdKv1: "0xdd07e1832901b393e7da1065997c972d269f5d137fc5fcbe23c6e5bb5eccf5d5",
+  requestIdKv256: "0x347d4b8465b7ca5de4622c4d64c6f6ec8230bdb6286aadd55443765d05088854",
+  requestIdEmptyArgs: "0x3eced208c8066b60562bc2b9be41cf675aa82e20a2110f83309b07ecf1395538",
   responseHash01: "0x0344a8df5db02fe0579ff283081b60d9e6f3956594facfc6ea2befd5890366f4",
   responseHashEmpty: "0x20ee8f1366f06926e9e8771d8fb9007a8537c8dfdb6a3f8c2cfd64db19d2ec90",
 };
@@ -37,6 +38,21 @@ const KNOWN_REQUEST_ID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 // computeRequestId
 // ---------------------------------------------------------------------------
 describe("computeRequestId", () => {
+  it("matches cross-language vector for keyVersion=1", () => {
+    expect(
+      computeRequestId(
+        SENDER,
+        { tag: "EvmTxParams", value: sampleEvmParams },
+        CAIP2_ID,
+        KEY_VERSION,
+        PATH,
+        "ECDSA",
+        "ethereum",
+        "",
+      ),
+    ).toBe(VECTORS.requestIdKv1);
+  });
+
   it("returns a 32-byte hex hash", () => {
     const rid = computeRequestId(
       SENDER,
@@ -145,6 +161,23 @@ describe("computeRequestId", () => {
       "",
     );
     expect(a).not.toBe(b);
+    expect(a).toBe(VECTORS.requestIdKv1);
+    expect(b).toBe(VECTORS.requestIdKv256);
+  });
+
+  it("matches cross-language vector for keyVersion=0", () => {
+    expect(
+      computeRequestId(
+        SENDER,
+        { tag: "EvmTxParams", value: sampleEvmParams },
+        CAIP2_ID,
+        0,
+        PATH,
+        "ECDSA",
+        "ethereum",
+        "",
+      ),
+    ).toBe(VECTORS.requestIdKv0);
   });
 
   it("changes with empty encodedArgs", () => {
@@ -170,6 +203,7 @@ describe("computeRequestId", () => {
       "",
     );
     expect(a).not.toBe(b);
+    expect(b).toBe(VECTORS.requestIdEmptyArgs);
   });
 });
 

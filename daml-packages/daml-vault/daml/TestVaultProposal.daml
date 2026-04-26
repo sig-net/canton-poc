@@ -1,12 +1,15 @@
 module TestVaultProposal where
 
 import DA.Optional (fromSome, isSome)
-import DA.Crypto.Text (byteCount)
+import DA.Crypto.Text (BytesHex, byteCount)
 import Daml.Script
 
 import Signer
 import Erc20Vault
 import TestFixtures (testPubKeyHex, sampleVaultAddress, sampleEvmParams, erc20BoolSchema)
+
+dirtyVaultAddress : BytesHex
+dirtyVaultAddress = "ffffffffffffffffffffffffd8da6bf26964af9d7eed9e03e53415d37aa96045"
 
 ------------------------------------------------------------------------
 -- One remaining sign completes the proposal → Right (Vault)
@@ -175,6 +178,25 @@ testDuplicateOperatorsFails = do
       evmVaultAddress = sampleVaultAddress
       evmMpcPublicKey = testPubKeyHex
       vaultId = "dup-ops"
+
+  pure ()
+
+------------------------------------------------------------------------
+-- Dirty vault address padding fails ensure
+------------------------------------------------------------------------
+
+-- VaultProposal rejects ABI address slots whose high 12 bytes are not zero.
+testDirtyVaultAddressPaddingFails : Script ()
+testDirtyVaultAddressPaddingFails = do
+  sigNetwork <- allocateParty "SigNetwork"
+  op1        <- allocateParty "Op1"
+
+  submitMustFail op1 do
+    createCmd VaultProposal with
+      allOperators = [op1]; alreadySigned = [op1]; sigNetwork
+      evmVaultAddress = dirtyVaultAddress
+      evmMpcPublicKey = testPubKeyHex
+      vaultId = "dirty-address-proposal"
 
   pure ()
 

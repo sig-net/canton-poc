@@ -1,13 +1,14 @@
 module Erc20Vault where
 
 import DA.List (sort, unique)
-import DA.Crypto.Text (BytesHex, PublicKeyHex, byteCount, secp256k1WithEcdsaOnly)
+import DA.Crypto.Text (BytesHex, PublicKeyHex, secp256k1WithEcdsaOnly)
 
 import EvmTypes (EvmTransactionParams, isBytesN, validEvmTransactionParams)
 import TxParams (TxParams(..))
 import Eip712 (chainIdToDecimalText)
 import RequestId (computeResponseHash)
-import Abi (abiHasErrorPrefix, abiDecodeBool, abiDecodeUint, abiSlot, abiSlotCount)
+import Abi (abiHasErrorPrefix, abiDecodeAddress, abiDecodeBool, abiDecodeUint,
+            isAbiAddressSlot, abiAddressSlotToAddress, abiHasExactSlotCount)
 import Signer (Signer, SignRequest(..), SignBidirectionalEvent(..),
                SignatureRespondedEvent(..), RespondBidirectionalEvent(..),
                SignBidirectional(..),
@@ -16,6 +17,9 @@ import Signer (Signer, SignRequest(..), SignBidirectionalEvent(..),
 
 sameOperatorSet : [Party] -> [Party] -> Bool
 sameOperatorSet lhs rhs = sort lhs == sort rhs
+
+erc20TransferArgSlots : Int
+erc20TransferArgSlots = 2
 
 validateRespondBidirectionalEvent : Text
   -> [Party]
@@ -112,7 +116,7 @@ template VaultProposal
     signatory alreadySigned
     observer allOperators
     ensure not (null allOperators) && unique allOperators && unique alreadySigned
-      && byteCount evmVaultAddress == 32
+      && isAbiAddressSlot evmVaultAddress
 
     choice SignVault : Either (ContractId VaultProposal) (ContractId Vault)
       with signer : Party
@@ -141,7 +145,7 @@ template Vault
     signatory operators
     observer sigNetwork
     ensure not (null operators) && unique operators
-      && byteCount evmVaultAddress == 32
+      && isAbiAddressSlot evmVaultAddress
 
     -- Deposit flow
     -- atomic create+exercise: Vault body (operators + requester) creates SignRequest, requester exercises Signer.SignBidirectional → Execute → SignBidirectionalEvent — all in one tx
@@ -162,11 +166,11 @@ template Vault
       do
         assertMsg "Only ERC20 transfer allowed"
           (evmTxParams.functionSignature == "transfer(address,uint256)")
-        assertMsg "encodedArgs must be exactly 2 slots"
-          (abiSlotCount evmTxParams.encodedArgs == 2)
-        let recipientArg = abiSlot evmTxParams.encodedArgs 0
+        assertMsg "encodedArgs must be exactly 2 ABI slots"
+          (abiHasExactSlotCount erc20TransferArgSlots evmTxParams.encodedArgs)
+        let recipientAddress = abiDecodeAddress evmTxParams.encodedArgs 0
         assertMsg "Transfer recipient must be vault address"
-          (recipientArg == evmVaultAddress)
+          (recipientAddress == abiAddressSlotToAddress evmVaultAddress)
 
         -- Vault namespaces its key derivation via path so two vaults sharing the same operator set still get distinct EVM keys
         let fullPath = vaultId <> "," <> partyToText requester <> "," <> path
@@ -245,21 +249,22 @@ template Vault
         respondSerializationSchema  : Text
       controller requester
       do
-        assertMsg "recipientAddress must be 32 bytes" (isBytesN 32 recipientAddress)
+        assertMsg "recipientAddress must be a canonical ABI address slot"
+          (isAbiAddressSlot recipientAddress)
         holding <- fetch balanceCid
         assertMsg "Holding operators mismatch" (sameOperatorSet holding.operators operators)
         assertMsg "Holding owner mismatch" (holding.owner == requester)
 
         assertMsg "Only ERC20 transfer allowed"
           (evmTxParams.functionSignature == "transfer(address,uint256)")
-        assertMsg "encodedArgs must be exactly 2 slots"
-          (abiSlotCount evmTxParams.encodedArgs == 2)
-        let recipientArg = abiSlot evmTxParams.encodedArgs 0
+        assertMsg "encodedArgs must be exactly 2 ABI slots"
+          (abiHasExactSlotCount erc20TransferArgSlots evmTxParams.encodedArgs)
+        let recipientArg = abiDecodeAddress evmTxParams.encodedArgs 0
         let amountArg = abiDecodeUint evmTxParams.encodedArgs 1
         assertMsg "ERC20 contract must match holding"
           (evmTxParams.to == holding.erc20Address)
         assertMsg "Transfer recipient must match"
-          (recipientArg == recipientAddress)
+          (recipientArg == abiAddressSlotToAddress recipientAddress)
         assertMsg "Withdraw amount must match holding"
           (amountArg == holding.amount)
 

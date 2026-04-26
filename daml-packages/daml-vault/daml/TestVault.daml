@@ -29,6 +29,12 @@ otherRequestIdA = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 otherRequestIdB : BytesHex
 otherRequestIdB = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
 
+dirtyVaultAddress : BytesHex
+dirtyVaultAddress = "ffffffffffffffffffffffffd8da6bf26964af9d7eed9e03e53415d37aa96045"
+
+dirtyRecipientAddress : BytesHex
+dirtyRecipientAddress = "ffffffffffffffffffffffff1111111111111111111111111111111111111111"
+
 setupWithKey : Text -> Script (Party, Party, Party, ContractId Signer, ContractId Vault)
 setupWithKey pubKey = do
   sigNetwork <- allocateParty "SigNetwork"
@@ -293,6 +299,19 @@ testHoldingRejectsWrongAddressLength = do
       operators = [operator]; owner = requester
       erc20Address = "aa"; amount = sampleHoldingAmount
 
+-- Vault rejects ABI address slots whose high 12 bytes are not zero.
+testVaultRejectsDirtyAddressPadding : Script ()
+testVaultRejectsDirtyAddressPadding = do
+  sigNetwork <- allocateParty "SigNetwork"
+  operator <- allocateParty "Operator"
+
+  submitMustFail operator do
+    createCmd Vault with
+      operators = [operator]; sigNetwork
+      evmVaultAddress = dirtyVaultAddress
+      evmMpcPublicKey = testPubKeyHex
+      vaultId = "dirty-address-vault"
+
 -- PendingDeposit rejects malformed request ids at the ledger boundary
 testPendingDepositRejectsWrongRequestIdLength : Script ()
 testPendingDepositRejectsWrongRequestIdLength = do
@@ -343,6 +362,19 @@ testWrongRecipient = do
   let badParams = sampleEvmParams with
         encodedArgs = "0000000000000000000000001111111111111111111111111111111111111111"
                    <> "0000000000000000000000000000000000000000000000000000000005f5e100"
+  submitMustFail (actAs requester <> readAs operator <> readAs sigNetwork) do
+    exerciseCmd vaultCid RequestDeposit with
+      requester; signerCid; path = "test"; evmTxParams = badParams
+      keyVersion = 1; algo = "ECDSA"; dest = "ethereum"; params = ""
+      outputDeserializationSchema = erc20BoolSchema
+      respondSerializationSchema = erc20BoolSchema
+
+-- RequestDeposit rejects trailing calldata beyond transfer(address,uint256)'s two ABI slots
+testDepositRejectsTrailingEncodedArgs : Script ()
+testDepositRejectsTrailingEncodedArgs = do
+  (sigNetwork, operator, requester, signerCid, vaultCid) <- setup
+
+  let badParams = sampleEvmParams with encodedArgs = sampleEvmParams.encodedArgs <> "00"
   submitMustFail (actAs requester <> readAs operator <> readAs sigNetwork) do
     exerciseCmd vaultCid RequestDeposit with
       requester; signerCid; path = "test"; evmTxParams = badParams
@@ -543,6 +575,27 @@ testWithdrawalRejectsWrongRecipient = do
       outputDeserializationSchema = erc20BoolSchema
       respondSerializationSchema = erc20BoolSchema
 
+-- RequestWithdrawal rejects recipient address slots whose high 12 bytes are not zero.
+testWithdrawalRejectsDirtyRecipientPadding : Script ()
+testWithdrawalRejectsDirtyRecipientPadding = do
+  (sigNetwork, operator, requester, signerCid, vaultCid) <- setup
+
+  holdingCid <- submit operator do
+    createCmd Erc20Holding with
+      operators = [operator]; owner = requester
+      erc20Address = sampleErc20Address; amount = sampleHoldingAmount
+
+  let badParams = sampleWithdrawalEvmParams with
+        encodedArgs = dirtyRecipientAddress <> sampleHoldingAmount
+  submitMustFail (actAs requester <> readAs operator <> readAs sigNetwork) do
+    exerciseCmd vaultCid RequestWithdrawal with
+      requester; signerCid; evmTxParams = badParams
+      recipientAddress = dirtyRecipientAddress
+      balanceCid = holdingCid
+      keyVersion = 1; algo = "ECDSA"; dest = "ethereum"; params = ""
+      outputDeserializationSchema = erc20BoolSchema
+      respondSerializationSchema = erc20BoolSchema
+
 -- CompleteWithdrawal rejects when requester differs from PendingWithdrawal.requester
 testCompleteWithdrawalRejectsWrongRequester : Script ()
 testCompleteWithdrawalRejectsWrongRequester = do
@@ -635,6 +688,26 @@ testWithdrawalRejectsWrongFunctionSignature = do
       erc20Address = sampleErc20Address; amount = sampleHoldingAmount
 
   let badParams = sampleWithdrawalEvmParams with functionSignature = "approve(address,uint256)"
+  submitMustFail (actAs requester <> readAs operator <> readAs sigNetwork) do
+    exerciseCmd vaultCid RequestWithdrawal with
+      requester; signerCid; evmTxParams = badParams
+      recipientAddress = sampleRecipientAddress; balanceCid = holdingCid
+      keyVersion = 1; algo = "ECDSA"; dest = "ethereum"; params = ""
+      outputDeserializationSchema = erc20BoolSchema
+      respondSerializationSchema = erc20BoolSchema
+
+-- RequestWithdrawal rejects trailing calldata beyond transfer(address,uint256)'s two ABI slots
+testWithdrawalRejectsTrailingEncodedArgs : Script ()
+testWithdrawalRejectsTrailingEncodedArgs = do
+  (sigNetwork, operator, requester, signerCid, vaultCid) <- setup
+
+  holdingCid <- submit operator do
+    createCmd Erc20Holding with
+      operators = [operator]; owner = requester
+      erc20Address = sampleErc20Address; amount = sampleHoldingAmount
+
+  let badParams = sampleWithdrawalEvmParams with
+        encodedArgs = sampleWithdrawalEvmParams.encodedArgs <> "00"
   submitMustFail (actAs requester <> readAs operator <> readAs sigNetwork) do
     exerciseCmd vaultCid RequestWithdrawal with
       requester; signerCid; evmTxParams = badParams
