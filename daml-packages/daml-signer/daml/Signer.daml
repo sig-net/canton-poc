@@ -3,7 +3,8 @@ module Signer where
 import DA.List (unique)
 import DA.Crypto.Text (BytesHex, SignatureHex)
 
-import TxParams (TxParams)
+import EvmTypes (isBytesN, isCanonicalHex)
+import TxParams (TxParams, validTxParams)
 import RequestId (computeOperatorsHash, computeRequestId)
 
 -- ---------------------------------------------------------------------------
@@ -31,6 +32,10 @@ data Signature
   = EcdsaSig EcdsaSigData
   -- Future: EddsaSig EddsaSigData, SchnorrSig SchnorrSigData
   deriving (Eq, Show)
+
+validSignature : Signature -> Bool
+validSignature (EcdsaSig sig) =
+  sig.recoveryId >= 0 && sig.recoveryId <= 1 && isCanonicalHex sig.der && sig.der /= ""
 
 -- | Extract DER-encoded signature for secp256k1 verification.
 signatureDer : Signature -> SignatureHex
@@ -114,7 +119,7 @@ template SignRequest
   where
     signatory operators, requester
     observer sigNetwork
-    ensure not (null operators) && unique operators
+    ensure not (null operators) && unique operators && validTxParams txParams
 
     -- body authority = operators (signatory) + requester (controller) — exactly SignBidirectionalEvent's signatories
     -- predecessorId (`sender`) is derived from on-ledger operators here so it cannot be Vault-supplied
@@ -152,6 +157,7 @@ template SignBidirectionalEvent
     observer sigNetwork
     ensure not (null operators) && unique operators
       && sender == computeOperatorsHash (map partyToText operators)
+      && validTxParams txParams
 
 requestIdFromSignEvent : SignBidirectionalEvent -> BytesHex
 requestIdFromSignEvent event =
@@ -180,6 +186,7 @@ template SignatureRespondedEvent
   where
     signatory sigNetwork
     observer operators, requester
+    ensure isBytesN 32 requestId && validSignature signature
 
     -- Vault claim path cannot `archive` directly (lacks sigNetwork authority) — this choice delegates cleanup
     choice Consume_SignatureResponded : ()
@@ -202,6 +209,7 @@ template RespondBidirectionalEvent
   where
     signatory sigNetwork
     observer operators, requester
+    ensure isBytesN 32 requestId && isCanonicalHex serializedOutput && validSignature signature
 
     choice Consume_RespondBidirectional : ()
       with actor : Party

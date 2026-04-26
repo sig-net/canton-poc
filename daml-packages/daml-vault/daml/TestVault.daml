@@ -23,6 +23,12 @@ import TestFixtures
 setup : Script (Party, Party, Party, ContractId Signer, ContractId Vault)
 setup = setupWithKey testPubKeyHex
 
+otherRequestIdA : BytesHex
+otherRequestIdA = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+
+otherRequestIdB : BytesHex
+otherRequestIdB = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+
 setupWithKey : Text -> Script (Party, Party, Party, ContractId Signer, ContractId Vault)
 setupWithKey pubKey = do
   sigNetwork <- allocateParty "SigNetwork"
@@ -195,20 +201,20 @@ testClaimRejectsRequestIdMismatch : Script ()
 testClaimRejectsRequestIdMismatch = do
   (sigNetwork, operator, requester, _signerCid, vaultCid) <- setupWithKey claimTestPubKey
 
-  pendingCid <- mkPendingDeposit operator requester sigNetwork "aa" sampleEvmParams
+  pendingCid <- mkPendingDeposit operator requester sigNetwork otherRequestIdA sampleEvmParams
 
   -- Outcome has a different requestId
   respondBidirectionalEventCid <- submit sigNetwork do
     createCmd RespondBidirectionalEvent with
       sigNetwork; operators = [operator]; requester
-      requestId = "bb"
+      requestId = otherRequestIdB
       responder = sigNetwork; serializedOutput = boolTrueMpcOutput
       signature = claimTestSignature
 
   signatureRespondedEventCid <- submit sigNetwork do
     createCmd SignatureRespondedEvent with
       sigNetwork; operators = [operator]; requester
-      requestId = "bb"
+      requestId = otherRequestIdB
       responder = sigNetwork; signature = claimTestSignature
 
   submitMustFail (actAs requester <> readAs operator <> readAs sigNetwork) do
@@ -234,7 +240,7 @@ testClaimRejectsSignatureRespondedRequestIdMismatch = do
   signatureRespondedEventCid <- submit sigNetwork do
     createCmd SignatureRespondedEvent with
       sigNetwork; operators = [operator]; requester
-      requestId = "bb"
+      requestId = otherRequestIdB
       responder = sigNetwork; signature = claimTestSignature
 
   submitMustFail (actAs requester <> readAs operator <> readAs sigNetwork) do
@@ -276,6 +282,26 @@ testClaimRejectsBoolFalse = do
 ------------------------------------------------------------------------
 -- Controller / validation negative tests
 ------------------------------------------------------------------------
+
+-- Erc20Holding rejects token addresses that are not canonical 20-byte EVM addresses
+testHoldingRejectsWrongAddressLength : Script ()
+testHoldingRejectsWrongAddressLength = do
+  (_sigNetwork, operator, requester, _signerCid, _vaultCid) <- setup
+
+  submitMustFail operator do
+    createCmd Erc20Holding with
+      operators = [operator]; owner = requester
+      erc20Address = "aa"; amount = sampleHoldingAmount
+
+-- PendingDeposit rejects malformed request ids at the ledger boundary
+testPendingDepositRejectsWrongRequestIdLength : Script ()
+testPendingDepositRejectsWrongRequestIdLength = do
+  (sigNetwork, operator, requester, _signerCid, _vaultCid) <- setup
+
+  submitMustFail operator do
+    createCmd PendingDeposit with
+      operators = [operator]; requester; sigNetwork
+      requestId = "aa"; evmTxParams = sampleEvmParams
 
 -- requester cannot exercise Signer.Respond (controller is sigNetwork)
 testRespondWrongController : Script ()
@@ -650,20 +676,20 @@ testCompleteWithdrawalRejectsRequestIdMismatch = do
   (sigNetwork, operator, requester, _signerCid, vaultCid) <- setupWithKey claimTestPubKey
 
   pendingCid <- mkPendingWithdrawal
-    operator requester sigNetwork "aa" sampleWithdrawalEvmParams
+    operator requester sigNetwork otherRequestIdA sampleWithdrawalEvmParams
     sampleErc20Address sampleHoldingAmount
 
   respondBidirectionalEventCid <- submit sigNetwork do
     createCmd RespondBidirectionalEvent with
       sigNetwork; operators = [operator]; requester
-      requestId = "bb"
+      requestId = otherRequestIdB
       responder = sigNetwork; serializedOutput = boolTrueMpcOutput
       signature = claimTestSignature
 
   signatureRespondedEventCid <- submit sigNetwork do
     createCmd SignatureRespondedEvent with
       sigNetwork; operators = [operator]; requester
-      requestId = "bb"
+      requestId = otherRequestIdB
       responder = sigNetwork; signature = claimTestSignature
 
   submitMustFail (actAs requester <> readAs operator <> readAs sigNetwork) do
@@ -691,7 +717,7 @@ testCompleteWithdrawalRejectsSignatureRespondedRequestIdMismatch = do
   signatureRespondedEventCid <- submit sigNetwork do
     createCmd SignatureRespondedEvent with
       sigNetwork; operators = [operator]; requester
-      requestId = "bb"
+      requestId = otherRequestIdB
       responder = sigNetwork; signature = claimTestSignature
 
   submitMustFail (actAs requester <> readAs operator <> readAs sigNetwork) do

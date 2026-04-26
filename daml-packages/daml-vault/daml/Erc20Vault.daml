@@ -3,7 +3,7 @@ module Erc20Vault where
 import DA.List (sort, unique)
 import DA.Crypto.Text (BytesHex, PublicKeyHex, byteCount, secp256k1WithEcdsaOnly)
 
-import EvmTypes (EvmTransactionParams)
+import EvmTypes (EvmTransactionParams, isBytesN, validEvmTransactionParams)
 import TxParams (TxParams(..))
 import Eip712 (chainIdToDecimalText)
 import RequestId (computeResponseHash)
@@ -56,6 +56,7 @@ template Erc20Holding
   where
     signatory operators
     observer owner  -- sigNetwork intentionally NOT an observer — domain contracts decoupled from MPC layer
+    ensure isBytesN 20 erc20Address && isBytesN 32 amount
 
 -- ---------------------------------------------------------------------------
 -- Pending anchors (single-use via archive)
@@ -71,7 +72,7 @@ template PendingDeposit
   where
     signatory operators
     observer requester, sigNetwork
-    ensure not (null operators)
+    ensure not (null operators) && isBytesN 32 requestId && validEvmTransactionParams evmTxParams
 
 template PendingWithdrawal
   with
@@ -86,6 +87,10 @@ template PendingWithdrawal
     signatory operators
     observer requester, sigNetwork
     ensure not (null operators)
+      && isBytesN 32 requestId
+      && validEvmTransactionParams evmTxParams
+      && isBytesN 20 erc20Address
+      && isBytesN 32 amount
 
 -- ---------------------------------------------------------------------------
 -- VaultProposal — multi-party agreement for Vault creation
@@ -240,6 +245,7 @@ template Vault
         respondSerializationSchema  : Text
       controller requester
       do
+        assertMsg "recipientAddress must be 32 bytes" (isBytesN 32 recipientAddress)
         holding <- fetch balanceCid
         assertMsg "Holding operators mismatch" (sameOperatorSet holding.operators operators)
         assertMsg "Holding owner mismatch" (holding.owner == requester)
