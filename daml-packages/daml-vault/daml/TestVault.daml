@@ -339,6 +339,7 @@ testRespondWrongController = do
   submitMustFail requester do
     exerciseCmd signerCid Respond with
       signEventCid
+      requestId = pending.requestId
       signature = ecdsaTestSig "00"
 
 -- RequestDeposit rejects EVM call with function other than transfer(address,uint256)

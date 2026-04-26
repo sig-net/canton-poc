@@ -246,6 +246,7 @@ describe("ledger visibility + permission model", () => {
         "Respond",
         {
           signEventCid,
+          requestId,
           signature: { tag: "EcdsaSig", value: { der: "00", recoveryId: 0 } },
         },
         undefined,
@@ -261,6 +262,7 @@ describe("ledger visibility + permission model", () => {
       "Respond",
       {
         signEventCid,
+        requestId,
         signature: { tag: "EcdsaSig", value: { der: "00", recoveryId: 0 } },
       },
     );
@@ -287,6 +289,7 @@ describe("ledger visibility + permission model", () => {
         "RespondBidirectional",
         {
           signEventCid,
+          requestId,
           signature: { tag: "EcdsaSig", value: { der: "00", recoveryId: 0 } },
           serializedOutput: "0000000000000000000000000000000000000000000000000000000000000001",
         },
@@ -305,6 +308,7 @@ describe("ledger visibility + permission model", () => {
       "RespondBidirectional",
       {
         signEventCid,
+        requestId,
         serializedOutput: mpcOutput,
         signature: mpcSignature,
       },

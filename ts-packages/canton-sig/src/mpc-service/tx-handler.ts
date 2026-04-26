@@ -203,6 +203,7 @@ export async function signAndEnqueue(
   console.log(`[MPC] Signing EVM tx, exercising Respond`);
   await exerciseChoiceWithRetry(canton, userId, actAs, SIGNER_TEMPLATE, signerCid, "Respond", {
     signEventCid: event.contractId,
+    requestId,
     signature: { tag: "EcdsaSig", value: { der: derSignature, recoveryId: v } },
   });
   console.log(`[MPC] Respond exercised`);
@@ -319,6 +320,7 @@ async function reportOutcome(
       "RespondBidirectional",
       {
         signEventCid: tx.signEventCid,
+        requestId: tx.requestId,
         serializedOutput: mpcOutput,
         signature,
       },

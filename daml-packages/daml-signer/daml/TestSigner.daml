@@ -101,6 +101,7 @@ testRespondHappyPath = do
   evtCid <- submit sigNetwork do
     exerciseCmd signerCid Respond with
       signEventCid
+      requestId
       signature = testSig "bb"
 
   evt <- queryContractId sigNetwork evtCid
@@ -116,23 +117,37 @@ testRespondHappyPath = do
 testRespondByRequesterFails : Script ()
 testRespondByRequesterFails = do
   (sigNetwork, operator, requester, signerCid) <- setup
-  (signEventCid, _requestId) <- mkSignEvent operator requester sigNetwork signerCid
+  (signEventCid, requestId) <- mkSignEvent operator requester sigNetwork signerCid
 
   submitMustFail requester do
     exerciseCmd signerCid Respond with
       signEventCid
+      requestId
       signature = testSig "bb"
 
 -- Respond rejects non-canonical signature hex before creating evidence
 testRespondRejectsNonCanonicalSignatureHex : Script ()
 testRespondRejectsNonCanonicalSignatureHex = do
   (sigNetwork, operator, requester, signerCid) <- setup
+  (signEventCid, requestId) <- mkSignEvent operator requester sigNetwork signerCid
+
+  submitMustFail sigNetwork do
+    exerciseCmd signerCid Respond with
+      signEventCid
+      requestId
+      signature = testSig "0xbb"
+
+-- Respond rejects when caller-supplied requestId does not match signEventCid
+testRespondRejectsRequestIdMismatch : Script ()
+testRespondRejectsRequestIdMismatch = do
+  (sigNetwork, operator, requester, signerCid) <- setup
   (signEventCid, _requestId) <- mkSignEvent operator requester sigNetwork signerCid
 
   submitMustFail sigNetwork do
     exerciseCmd signerCid Respond with
       signEventCid
-      signature = testSig "0xbb"
+      requestId = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      signature = testSig "bb"
 
 -- sigNetwork exercises RespondBidirectional; verify all fields including serializedOutput
 testRespondBidirectionalHappyPath : Script ()
@@ -143,6 +158,7 @@ testRespondBidirectionalHappyPath = do
   evtCid <- submit sigNetwork do
     exerciseCmd signerCid RespondBidirectional with
       signEventCid
+      requestId
       serializedOutput = "cc"
       signature = testSig "dd"
 
@@ -160,11 +176,12 @@ testRespondBidirectionalHappyPath = do
 testRespondBidirectionalByRequesterFails : Script ()
 testRespondBidirectionalByRequesterFails = do
   (sigNetwork, operator, requester, signerCid) <- setup
-  (signEventCid, _requestId) <- mkSignEvent operator requester sigNetwork signerCid
+  (signEventCid, requestId) <- mkSignEvent operator requester sigNetwork signerCid
 
   submitMustFail requester do
     exerciseCmd signerCid RespondBidirectional with
       signEventCid
+      requestId
       serializedOutput = "cc"
       signature = testSig "dd"
 
@@ -172,12 +189,26 @@ testRespondBidirectionalByRequesterFails = do
 testRespondBidirectionalRejectsNonCanonicalSerializedOutput : Script ()
 testRespondBidirectionalRejectsNonCanonicalSerializedOutput = do
   (sigNetwork, operator, requester, signerCid) <- setup
+  (signEventCid, requestId) <- mkSignEvent operator requester sigNetwork signerCid
+
+  submitMustFail sigNetwork do
+    exerciseCmd signerCid RespondBidirectional with
+      signEventCid
+      requestId
+      serializedOutput = "0xcc"
+      signature = testSig "dd"
+
+-- RespondBidirectional rejects when caller-supplied requestId does not match signEventCid
+testRespondBidirectionalRejectsRequestIdMismatch : Script ()
+testRespondBidirectionalRejectsRequestIdMismatch = do
+  (sigNetwork, operator, requester, signerCid) <- setup
   (signEventCid, _requestId) <- mkSignEvent operator requester sigNetwork signerCid
 
   submitMustFail sigNetwork do
     exerciseCmd signerCid RespondBidirectional with
       signEventCid
-      serializedOutput = "0xcc"
+      requestId = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      serializedOutput = "cc"
       signature = testSig "dd"
 
 ------------------------------------------------------------------------
@@ -307,11 +338,12 @@ testSignRequestRejectsWrongEvmByteLength = do
 testConsumeSignatureRespondedByOperator : Script ()
 testConsumeSignatureRespondedByOperator = do
   (sigNetwork, operator, requester, signerCid) <- setup
-  (signEventCid, _requestId) <- mkSignEvent operator requester sigNetwork signerCid
+  (signEventCid, requestId) <- mkSignEvent operator requester sigNetwork signerCid
 
   evtCid <- submit sigNetwork do
     exerciseCmd signerCid Respond with
       signEventCid
+      requestId
       signature = testSig "bb"
 
   submit operator do
@@ -323,11 +355,12 @@ testConsumeSignatureRespondedByOperator = do
 testConsumeSignatureRespondedByRequester : Script ()
 testConsumeSignatureRespondedByRequester = do
   (sigNetwork, operator, requester, signerCid) <- setup
-  (signEventCid, _requestId) <- mkSignEvent operator requester sigNetwork signerCid
+  (signEventCid, requestId) <- mkSignEvent operator requester sigNetwork signerCid
 
   evtCid <- submit sigNetwork do
     exerciseCmd signerCid Respond with
       signEventCid
+      requestId
       signature = testSig "bb"
 
   submit requester do
@@ -340,11 +373,12 @@ testConsumeSignatureRespondedByRogueFails : Script ()
 testConsumeSignatureRespondedByRogueFails = do
   (sigNetwork, operator, requester, signerCid) <- setup
   rogue <- allocateParty "Rogue"
-  (signEventCid, _requestId) <- mkSignEvent operator requester sigNetwork signerCid
+  (signEventCid, requestId) <- mkSignEvent operator requester sigNetwork signerCid
 
   evtCid <- submit sigNetwork do
     exerciseCmd signerCid Respond with
       signEventCid
+      requestId
       signature = testSig "bb"
 
   -- rogue has visibility (readAs sigNetwork) but fails on assertMsg authorization
@@ -357,11 +391,12 @@ testConsumeSignatureRespondedByRogueFails = do
 testConsumeRespondBidirectionalByRequester : Script ()
 testConsumeRespondBidirectionalByRequester = do
   (sigNetwork, operator, requester, signerCid) <- setup
-  (signEventCid, _requestId) <- mkSignEvent operator requester sigNetwork signerCid
+  (signEventCid, requestId) <- mkSignEvent operator requester sigNetwork signerCid
 
   evtCid <- submit sigNetwork do
     exerciseCmd signerCid RespondBidirectional with
       signEventCid
+      requestId
       serializedOutput = "cc"
       signature = testSig "dd"
 
@@ -374,11 +409,12 @@ testConsumeRespondBidirectionalByRequester = do
 testConsumeRespondBidirectionalByOperator : Script ()
 testConsumeRespondBidirectionalByOperator = do
   (sigNetwork, operator, requester, signerCid) <- setup
-  (signEventCid, _requestId) <- mkSignEvent operator requester sigNetwork signerCid
+  (signEventCid, requestId) <- mkSignEvent operator requester sigNetwork signerCid
 
   evtCid <- submit sigNetwork do
     exerciseCmd signerCid RespondBidirectional with
       signEventCid
+      requestId
       serializedOutput = "cc"
       signature = testSig "dd"
 
@@ -392,11 +428,12 @@ testConsumeRespondBidirectionalByRogueFails : Script ()
 testConsumeRespondBidirectionalByRogueFails = do
   (sigNetwork, operator, requester, signerCid) <- setup
   rogue <- allocateParty "Rogue"
-  (signEventCid, _requestId) <- mkSignEvent operator requester sigNetwork signerCid
+  (signEventCid, requestId) <- mkSignEvent operator requester sigNetwork signerCid
 
   evtCid <- submit sigNetwork do
     exerciseCmd signerCid RespondBidirectional with
       signEventCid
+      requestId
       serializedOutput = "cc"
       signature = testSig "dd"
 

@@ -63,13 +63,15 @@ template Signer
     nonconsuming choice Respond : ContractId SignatureRespondedEvent
       with
         signEventCid : ContractId SignBidirectionalEvent
+        requestId    : BytesHex
         signature    : Signature
       controller sigNetwork
       do
         signEvent <- fetch signEventCid
         assertMsg "Sign event belongs to a different sigNetwork"
           (signEvent.sigNetwork == sigNetwork)
-        let requestId = requestIdFromSignEvent signEvent
+        assertMsg "requestId does not match sign event"
+          (requestId == requestIdFromSignEvent signEvent)
         create SignatureRespondedEvent with
           sigNetwork
           operators = signEvent.operators
@@ -81,6 +83,7 @@ template Signer
     nonconsuming choice RespondBidirectional : ContractId RespondBidirectionalEvent
       with
         signEventCid     : ContractId SignBidirectionalEvent
+        requestId        : BytesHex
         serializedOutput : BytesHex
         signature        : Signature
       controller sigNetwork
@@ -88,7 +91,8 @@ template Signer
         signEvent <- fetch signEventCid
         assertMsg "Sign event belongs to a different sigNetwork"
           (signEvent.sigNetwork == sigNetwork)
-        let requestId = requestIdFromSignEvent signEvent
+        assertMsg "requestId does not match sign event"
+          (requestId == requestIdFromSignEvent signEvent)
         create RespondBidirectionalEvent with
           sigNetwork
           operators = signEvent.operators
