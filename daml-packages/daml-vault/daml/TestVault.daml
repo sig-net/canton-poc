@@ -1,11 +1,12 @@
 module TestVault where
 
 import DA.Optional (fromSome, isSome, isNone)
-import DA.Crypto.Text (byteCount)
+import DA.Crypto.Text (BytesHex, byteCount)
 import Daml.Script
 
 import Signer
 import Erc20Vault
+import EvmTypes (EvmTransactionParams)
 import TestFixtures
   ( testPubKeyHex, claimTestPubKey, claimTestSignature, claimTestRequestId
   , refundTestSignature, boolFalseTestSignature, ecdsaTestSig
@@ -39,6 +40,20 @@ setupWithKey pubKey = do
       vaultId = "test-vault"
 
   pure (sigNetwork, operator, requester, signerCid, vaultCid)
+
+mkPendingDeposit : Party -> Party -> Party -> BytesHex -> EvmTransactionParams -> Script (ContractId PendingDeposit)
+mkPendingDeposit operator requester sigNetwork requestId evmTxParams =
+  submit operator do
+    createCmd PendingDeposit with
+      operators = [operator]; requester; sigNetwork
+      requestId; evmTxParams
+
+mkPendingWithdrawal : Party -> Party -> Party -> BytesHex -> EvmTransactionParams -> BytesHex -> BytesHex -> Script (ContractId PendingWithdrawal)
+mkPendingWithdrawal operator requester sigNetwork requestId evmTxParams erc20Address amount =
+  submit operator do
+    createCmd PendingWithdrawal with
+      operators = [operator]; requester; sigNetwork
+      requestId; evmTxParams; erc20Address; amount
 
 ------------------------------------------------------------------------
 -- Deposit lifecycle
@@ -76,10 +91,7 @@ testClaimHappyPath = do
   (sigNetwork, operator, requester, _signerCid, vaultCid) <- setupWithKey claimTestPubKey
 
   -- Create evidence contracts directly
-  pendingCid <- submit operator do
-    createCmd PendingDeposit with
-      operators = [operator]; requester; sigNetwork
-      requestId = claimTestRequestId; evmTxParams = sampleEvmParams
+  pendingCid <- mkPendingDeposit operator requester sigNetwork claimTestRequestId sampleEvmParams
 
   respondBidirectionalEventCid <- submit sigNetwork do
     createCmd RespondBidirectionalEvent with
@@ -123,10 +135,7 @@ testClaimRequesterMismatchFails = do
   (sigNetwork, operator, requester, _signerCid, vaultCid) <- setupWithKey claimTestPubKey
   wrongUser <- allocateParty "WrongUser"
 
-  pendingCid <- submit operator do
-    createCmd PendingDeposit with
-      operators = [operator]; requester; sigNetwork
-      requestId = claimTestRequestId; evmTxParams = sampleEvmParams
+  pendingCid <- mkPendingDeposit operator requester sigNetwork claimTestRequestId sampleEvmParams
 
   respondBidirectionalEventCid <- submit sigNetwork do
     createCmd RespondBidirectionalEvent with
@@ -156,10 +165,7 @@ testClaimRejectsMpcFailure : Script ()
 testClaimRejectsMpcFailure = do
   (sigNetwork, operator, requester, _signerCid, vaultCid) <- setupWithKey claimTestPubKey
 
-  pendingCid <- submit operator do
-    createCmd PendingDeposit with
-      operators = [operator]; requester; sigNetwork
-      requestId = claimTestRequestId; evmTxParams = sampleEvmParams
+  pendingCid <- mkPendingDeposit operator requester sigNetwork claimTestRequestId sampleEvmParams
 
   respondBidirectionalEventCid <- submit sigNetwork do
     createCmd RespondBidirectionalEvent with
@@ -189,16 +195,39 @@ testClaimRejectsRequestIdMismatch : Script ()
 testClaimRejectsRequestIdMismatch = do
   (sigNetwork, operator, requester, _signerCid, vaultCid) <- setupWithKey claimTestPubKey
 
-  pendingCid <- submit operator do
-    createCmd PendingDeposit with
-      operators = [operator]; requester; sigNetwork
-      requestId = "aa"; evmTxParams = sampleEvmParams
+  pendingCid <- mkPendingDeposit operator requester sigNetwork "aa" sampleEvmParams
 
   -- Outcome has a different requestId
   respondBidirectionalEventCid <- submit sigNetwork do
     createCmd RespondBidirectionalEvent with
       sigNetwork; operators = [operator]; requester
       requestId = "bb"
+      responder = sigNetwork; serializedOutput = boolTrueMpcOutput
+      signature = claimTestSignature
+
+  signatureRespondedEventCid <- submit sigNetwork do
+    createCmd SignatureRespondedEvent with
+      sigNetwork; operators = [operator]; requester
+      requestId = "bb"
+      responder = sigNetwork; signature = claimTestSignature
+
+  submitMustFail (actAs requester <> readAs operator <> readAs sigNetwork) do
+    exerciseCmd vaultCid ClaimDeposit with
+      requester; pendingDepositCid = pendingCid; respondBidirectionalEventCid; signatureRespondedEventCid
+
+  pure ()
+
+-- ClaimDeposit rejects when SignatureRespondedEvent does not belong to pending.requestId
+testClaimRejectsSignatureRespondedRequestIdMismatch : Script ()
+testClaimRejectsSignatureRespondedRequestIdMismatch = do
+  (sigNetwork, operator, requester, _signerCid, vaultCid) <- setupWithKey claimTestPubKey
+
+  pendingCid <- mkPendingDeposit operator requester sigNetwork claimTestRequestId sampleEvmParams
+
+  respondBidirectionalEventCid <- submit sigNetwork do
+    createCmd RespondBidirectionalEvent with
+      sigNetwork; operators = [operator]; requester
+      requestId = claimTestRequestId
       responder = sigNetwork; serializedOutput = boolTrueMpcOutput
       signature = claimTestSignature
 
@@ -223,10 +252,7 @@ testClaimRejectsBoolFalse : Script ()
 testClaimRejectsBoolFalse = do
   (sigNetwork, operator, requester, _signerCid, vaultCid) <- setupWithKey claimTestPubKey
 
-  pendingCid <- submit operator do
-    createCmd PendingDeposit with
-      operators = [operator]; requester; sigNetwork
-      requestId = claimTestRequestId; evmTxParams = sampleEvmParams
+  pendingCid <- mkPendingDeposit operator requester sigNetwork claimTestRequestId sampleEvmParams
 
   respondBidirectionalEventCid <- submit sigNetwork do
     createCmd RespondBidirectionalEvent with
@@ -254,12 +280,21 @@ testClaimRejectsBoolFalse = do
 -- requester cannot exercise Signer.Respond (controller is sigNetwork)
 testRespondWrongController : Script ()
 testRespondWrongController = do
-  (_sigNetwork, operator, requester, signerCid, _vaultCid) <- setup
+  (sigNetwork, operator, requester, signerCid, vaultCid) <- setup
+  let depositPath = partyToText requester
+  (signEventCid, pendingCid) <- submit (actAs requester <> readAs operator <> readAs sigNetwork) do
+    exerciseCmd vaultCid RequestDeposit with
+      requester; signerCid; path = depositPath; evmTxParams = sampleEvmParams
+      keyVersion = 1; algo = "ECDSA"; dest = "ethereum"; params = ""
+      outputDeserializationSchema = erc20BoolSchema
+      respondSerializationSchema = erc20BoolSchema
+  Some pending <- queryContractId requester pendingCid
 
   -- requester tries to exercise Respond (controller is sigNetwork)
   submitMustFail requester do
     exerciseCmd signerCid Respond with
-      operators = [operator]; requester; requestId = "aa"; signature = ecdsaTestSig "00"
+      signEventCid
+      signature = ecdsaTestSig "00"
 
 -- RequestDeposit rejects EVM call with function other than transfer(address,uint256)
 testWrongFunctionSignature : Script ()
@@ -334,11 +369,9 @@ testWithdrawalCompleteSuccess : Script ()
 testWithdrawalCompleteSuccess = do
   (sigNetwork, operator, requester, _signerCid, vaultCid) <- setupWithKey claimTestPubKey
 
-  pendingCid <- submit operator do
-    createCmd PendingWithdrawal with
-      operators = [operator]; requester; sigNetwork
-      requestId = claimTestRequestId; evmTxParams = sampleWithdrawalEvmParams
-      erc20Address = sampleErc20Address; amount = sampleHoldingAmount
+  pendingCid <- mkPendingWithdrawal
+    operator requester sigNetwork claimTestRequestId sampleWithdrawalEvmParams
+    sampleErc20Address sampleHoldingAmount
 
   respondBidirectionalEventCid <- submit sigNetwork do
     createCmd RespondBidirectionalEvent with
@@ -371,11 +404,9 @@ testWithdrawalCompleteFailureRefund : Script ()
 testWithdrawalCompleteFailureRefund = do
   (sigNetwork, operator, requester, _signerCid, vaultCid) <- setupWithKey claimTestPubKey
 
-  pendingCid <- submit operator do
-    createCmd PendingWithdrawal with
-      operators = [operator]; requester; sigNetwork
-      requestId = claimTestRequestId; evmTxParams = sampleWithdrawalEvmParams
-      erc20Address = sampleErc20Address; amount = sampleHoldingAmount
+  pendingCid <- mkPendingWithdrawal
+    operator requester sigNetwork claimTestRequestId sampleWithdrawalEvmParams
+    sampleErc20Address sampleHoldingAmount
 
   respondBidirectionalEventCid <- submit sigNetwork do
     createCmd RespondBidirectionalEvent with
@@ -492,11 +523,9 @@ testCompleteWithdrawalRejectsWrongRequester = do
   (sigNetwork, operator, requester, _signerCid, vaultCid) <- setupWithKey claimTestPubKey
   userB <- allocateParty "UserB"
 
-  pendingCid <- submit operator do
-    createCmd PendingWithdrawal with
-      operators = [operator]; requester; sigNetwork
-      requestId = claimTestRequestId; evmTxParams = sampleWithdrawalEvmParams
-      erc20Address = sampleErc20Address; amount = sampleHoldingAmount
+  pendingCid <- mkPendingWithdrawal
+    operator requester sigNetwork claimTestRequestId sampleWithdrawalEvmParams
+    sampleErc20Address sampleHoldingAmount
 
   respondBidirectionalEventCid <- submit sigNetwork do
     createCmd RespondBidirectionalEvent with
@@ -524,10 +553,7 @@ testPendingDepositDoubleClaimFails : Script ()
 testPendingDepositDoubleClaimFails = do
   (sigNetwork, operator, requester, _signerCid, vaultCid) <- setupWithKey claimTestPubKey
 
-  pendingCid <- submit operator do
-    createCmd PendingDeposit with
-      operators = [operator]; requester; sigNetwork
-      requestId = claimTestRequestId; evmTxParams = sampleEvmParams
+  pendingCid <- mkPendingDeposit operator requester sigNetwork claimTestRequestId sampleEvmParams
 
   respondBidirectionalEventCid1 <- submit sigNetwork do
     createCmd RespondBidirectionalEvent with
@@ -623,16 +649,42 @@ testCompleteWithdrawalRejectsRequestIdMismatch : Script ()
 testCompleteWithdrawalRejectsRequestIdMismatch = do
   (sigNetwork, operator, requester, _signerCid, vaultCid) <- setupWithKey claimTestPubKey
 
-  pendingCid <- submit operator do
-    createCmd PendingWithdrawal with
-      operators = [operator]; requester; sigNetwork
-      requestId = "aa"; evmTxParams = sampleWithdrawalEvmParams
-      erc20Address = sampleErc20Address; amount = sampleHoldingAmount
+  pendingCid <- mkPendingWithdrawal
+    operator requester sigNetwork "aa" sampleWithdrawalEvmParams
+    sampleErc20Address sampleHoldingAmount
 
   respondBidirectionalEventCid <- submit sigNetwork do
     createCmd RespondBidirectionalEvent with
       sigNetwork; operators = [operator]; requester
       requestId = "bb"
+      responder = sigNetwork; serializedOutput = boolTrueMpcOutput
+      signature = claimTestSignature
+
+  signatureRespondedEventCid <- submit sigNetwork do
+    createCmd SignatureRespondedEvent with
+      sigNetwork; operators = [operator]; requester
+      requestId = "bb"
+      responder = sigNetwork; signature = claimTestSignature
+
+  submitMustFail (actAs requester <> readAs operator <> readAs sigNetwork) do
+    exerciseCmd vaultCid CompleteWithdrawal with
+      requester; pendingWithdrawalCid = pendingCid; respondBidirectionalEventCid; signatureRespondedEventCid
+
+  pure ()
+
+-- CompleteWithdrawal rejects when SignatureRespondedEvent does not belong to pending.requestId
+testCompleteWithdrawalRejectsSignatureRespondedRequestIdMismatch : Script ()
+testCompleteWithdrawalRejectsSignatureRespondedRequestIdMismatch = do
+  (sigNetwork, operator, requester, _signerCid, vaultCid) <- setupWithKey claimTestPubKey
+
+  pendingCid <- mkPendingWithdrawal
+    operator requester sigNetwork claimTestRequestId sampleWithdrawalEvmParams
+    sampleErc20Address sampleHoldingAmount
+
+  respondBidirectionalEventCid <- submit sigNetwork do
+    createCmd RespondBidirectionalEvent with
+      sigNetwork; operators = [operator]; requester
+      requestId = claimTestRequestId
       responder = sigNetwork; serializedOutput = boolTrueMpcOutput
       signature = claimTestSignature
 
@@ -657,11 +709,9 @@ testCompleteWithdrawalBoolFalseRefunds : Script ()
 testCompleteWithdrawalBoolFalseRefunds = do
   (sigNetwork, operator, requester, _signerCid, vaultCid) <- setupWithKey claimTestPubKey
 
-  pendingCid <- submit operator do
-    createCmd PendingWithdrawal with
-      operators = [operator]; requester; sigNetwork
-      requestId = claimTestRequestId; evmTxParams = sampleWithdrawalEvmParams
-      erc20Address = sampleErc20Address; amount = sampleHoldingAmount
+  pendingCid <- mkPendingWithdrawal
+    operator requester sigNetwork claimTestRequestId sampleWithdrawalEvmParams
+    sampleErc20Address sampleHoldingAmount
 
   respondBidirectionalEventCid <- submit sigNetwork do
     createCmd RespondBidirectionalEvent with

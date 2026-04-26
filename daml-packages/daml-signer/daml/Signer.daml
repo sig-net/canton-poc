@@ -4,7 +4,7 @@ import DA.List (unique)
 import DA.Crypto.Text (BytesHex, SignatureHex)
 
 import TxParams (TxParams)
-import RequestId (computeOperatorsHash)
+import RequestId (computeOperatorsHash, computeRequestId)
 
 -- ---------------------------------------------------------------------------
 -- Signature types
@@ -57,28 +57,41 @@ template Signer
 
     nonconsuming choice Respond : ContractId SignatureRespondedEvent
       with
-        operators : [Party]
-        requester    : Party
-        requestId : BytesHex
-        signature : Signature
+        signEventCid : ContractId SignBidirectionalEvent
+        signature    : Signature
       controller sigNetwork
       do
+        signEvent <- fetch signEventCid
+        assertMsg "Sign event belongs to a different sigNetwork"
+          (signEvent.sigNetwork == sigNetwork)
+        let requestId = requestIdFromSignEvent signEvent
         create SignatureRespondedEvent with
-          sigNetwork; operators; requester; requestId
-          responder = sigNetwork; signature
+          sigNetwork
+          operators = signEvent.operators
+          requester = signEvent.requester
+          requestId
+          responder = sigNetwork
+          signature
 
     nonconsuming choice RespondBidirectional : ContractId RespondBidirectionalEvent
       with
-        operators        : [Party]
-        requester           : Party
-        requestId        : BytesHex
+        signEventCid     : ContractId SignBidirectionalEvent
         serializedOutput : BytesHex
         signature        : Signature
       controller sigNetwork
       do
+        signEvent <- fetch signEventCid
+        assertMsg "Sign event belongs to a different sigNetwork"
+          (signEvent.sigNetwork == sigNetwork)
+        let requestId = requestIdFromSignEvent signEvent
         create RespondBidirectionalEvent with
-          sigNetwork; operators; requester; requestId
-          responder = sigNetwork; serializedOutput; signature
+          sigNetwork
+          operators = signEvent.operators
+          requester = signEvent.requester
+          requestId
+          responder = sigNetwork
+          serializedOutput
+          signature
 
 -- ---------------------------------------------------------------------------
 -- SignRequest — transient authority bridge (Vault → Signer CPI)
@@ -138,14 +151,19 @@ template SignBidirectionalEvent
     signatory operators, requester
     observer sigNetwork
     ensure not (null operators) && unique operators
+      && sender == computeOperatorsHash (map partyToText operators)
 
-    choice Consume_SignBidirectional : ()
-      with actor : Party
-      controller actor
-      do
-        assertMsg "Not authorized"
-          (actor `elem` operators || actor == requester)
-        pure ()
+requestIdFromSignEvent : SignBidirectionalEvent -> BytesHex
+requestIdFromSignEvent event =
+  computeRequestId
+    event.sender
+    event.txParams
+    event.caip2Id
+    event.keyVersion
+    event.path
+    event.algo
+    event.dest
+    event.params
 
 -- ---------------------------------------------------------------------------
 -- Evidence contracts — MPC response delivery

@@ -222,6 +222,8 @@ describe("ledger visibility + permission model", () => {
       [vaultDisclosure, signerDisclosure],
     );
     const pending = findCreated(pendingResult.transaction.events, "PendingDeposit");
+    const signEvent = findCreated(pendingResult.transaction.events, "SignBidirectionalEvent");
+    const signEventCid = signEvent.contractId;
     const pendingCid = pending.contractId;
     const { requestId } = pending.createArgument as PendingDeposit;
 
@@ -243,9 +245,7 @@ describe("ledger visibility + permission model", () => {
         signerCid,
         "Respond",
         {
-          operators: [operator],
-          requester,
-          requestId,
+          signEventCid,
           signature: { tag: "EcdsaSig", value: { der: "00", recoveryId: 0 } },
         },
         undefined,
@@ -260,9 +260,7 @@ describe("ledger visibility + permission model", () => {
       signerCid,
       "Respond",
       {
-        operators: [operator],
-        requester,
-        requestId,
+        signEventCid,
         signature: { tag: "EcdsaSig", value: { der: "00", recoveryId: 0 } },
       },
     );
@@ -288,9 +286,7 @@ describe("ledger visibility + permission model", () => {
         signerCid,
         "RespondBidirectional",
         {
-          operators: [operator],
-          requester,
-          requestId,
+          signEventCid,
           signature: { tag: "EcdsaSig", value: { der: "00", recoveryId: 0 } },
           serializedOutput: "0000000000000000000000000000000000000000000000000000000000000001",
         },
@@ -308,9 +304,7 @@ describe("ledger visibility + permission model", () => {
       signerCid,
       "RespondBidirectional",
       {
-        operators: [operator],
-        requester,
-        requestId,
+        signEventCid,
         serializedOutput: mpcOutput,
         signature: mpcSignature,
       },

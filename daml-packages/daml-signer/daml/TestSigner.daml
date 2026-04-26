@@ -3,7 +3,7 @@ module TestSigner where
 import DA.Optional (fromSome)
 import Daml.Script
 
-import Signer (Signer(..), SignBidirectional(..), Respond(..), RespondBidirectional(..), SignRequest(..), Consume_SignBidirectional(..), Consume_SignatureResponded(..), Consume_RespondBidirectional(..), Signature(..), EcdsaSigData(..))
+import Signer (Signer(..), SignBidirectional(..), Respond(..), RespondBidirectional(..), SignRequest(..), SignBidirectionalEvent(..), Consume_SignatureResponded(..), Consume_RespondBidirectional(..), Signature(..), EcdsaSigData(..), requestIdFromSignEvent)
 import RequestId (computeOperatorsHash)
 import TxParams (TxParams(..))
 import TestFixtures (sampleEvmParams, erc20BoolSchema)
@@ -43,6 +43,15 @@ mkSignRequest operator requester sigNetwork =
       outputDeserializationSchema = erc20BoolSchema
       respondSerializationSchema = erc20BoolSchema
 
+mkSignEvent : Party -> Party -> Party -> ContractId Signer -> Script (ContractId SignBidirectionalEvent, Text)
+mkSignEvent operator requester sigNetwork signerCid = do
+  signReqCid <- mkSignRequest operator requester sigNetwork
+  signEventCid <- submit (actAs requester <> readAs operator <> readAs sigNetwork) do
+    exerciseCmd signerCid SignBidirectional with
+      signRequestCid = signReqCid; requester
+  Some signEvent <- queryContractId requester signEventCid
+  pure (signEventCid, requestIdFromSignEvent signEvent)
+
 ------------------------------------------------------------------------
 -- Respond / RespondBidirectional
 ------------------------------------------------------------------------
@@ -51,47 +60,51 @@ mkSignRequest operator requester sigNetwork =
 testRespondHappyPath : Script ()
 testRespondHappyPath = do
   (sigNetwork, operator, requester, signerCid) <- setup
+  (signEventCid, requestId) <- mkSignEvent operator requester sigNetwork signerCid
 
   evtCid <- submit sigNetwork do
     exerciseCmd signerCid Respond with
-      operators = [operator]; requester
-      requestId = "aa"; signature = testSig "bb"
+      signEventCid
+      signature = testSig "bb"
 
   evt <- queryContractId sigNetwork evtCid
   let e = fromSome evt
   assertMsg "sigNetwork" (e.sigNetwork == sigNetwork)
   assertMsg "operators"  (e.operators  == [operator])
   assertMsg "requester"  (e.requester  == requester)
-  assertMsg "requestId"  (e.requestId  == "aa")
+  assertMsg "requestId"  (e.requestId  == requestId)
   assertMsg "responder"  (e.responder  == sigNetwork)
   assertMsg "signature"  (e.signature  == testSig "bb")
 
 -- requester cannot exercise Respond (controller is sigNetwork)
 testRespondByRequesterFails : Script ()
 testRespondByRequesterFails = do
-  (_sigNetwork, operator, requester, signerCid) <- setup
+  (sigNetwork, operator, requester, signerCid) <- setup
+  (signEventCid, _requestId) <- mkSignEvent operator requester sigNetwork signerCid
 
   submitMustFail requester do
     exerciseCmd signerCid Respond with
-      operators = [operator]; requester
-      requestId = "aa"; signature = testSig "bb"
+      signEventCid
+      signature = testSig "bb"
 
 -- sigNetwork exercises RespondBidirectional; verify all fields including serializedOutput
 testRespondBidirectionalHappyPath : Script ()
 testRespondBidirectionalHappyPath = do
   (sigNetwork, operator, requester, signerCid) <- setup
+  (signEventCid, requestId) <- mkSignEvent operator requester sigNetwork signerCid
 
   evtCid <- submit sigNetwork do
     exerciseCmd signerCid RespondBidirectional with
-      operators = [operator]; requester
-      requestId = "aa"; serializedOutput = "cc"; signature = testSig "dd"
+      signEventCid
+      serializedOutput = "cc"
+      signature = testSig "dd"
 
   evt <- queryContractId sigNetwork evtCid
   let e = fromSome evt
   assertMsg "sigNetwork"       (e.sigNetwork       == sigNetwork)
   assertMsg "operators"        (e.operators         == [operator])
   assertMsg "requester"        (e.requester         == requester)
-  assertMsg "requestId"        (e.requestId         == "aa")
+  assertMsg "requestId"        (e.requestId         == requestId)
   assertMsg "responder"        (e.responder         == sigNetwork)
   assertMsg "serializedOutput" (e.serializedOutput  == "cc")
   assertMsg "signature"        (e.signature         == testSig "dd")
@@ -99,12 +112,14 @@ testRespondBidirectionalHappyPath = do
 -- requester cannot exercise RespondBidirectional (controller is sigNetwork)
 testRespondBidirectionalByRequesterFails : Script ()
 testRespondBidirectionalByRequesterFails = do
-  (_sigNetwork, operator, requester, signerCid) <- setup
+  (sigNetwork, operator, requester, signerCid) <- setup
+  (signEventCid, _requestId) <- mkSignEvent operator requester sigNetwork signerCid
 
   submitMustFail requester do
     exerciseCmd signerCid RespondBidirectional with
-      operators = [operator]; requester
-      requestId = "aa"; serializedOutput = "cc"; signature = testSig "dd"
+      signEventCid
+      serializedOutput = "cc"
+      signature = testSig "dd"
 
 ------------------------------------------------------------------------
 -- SignBidirectional
@@ -189,68 +204,18 @@ testSignRequestDuplicateOperatorsFails = do
       outputDeserializationSchema = erc20BoolSchema
       respondSerializationSchema = erc20BoolSchema
 
-------------------------------------------------------------------------
--- Consume choice authorization
-------------------------------------------------------------------------
-
--- SignBidirectionalEvent: signatory operators, requester
-
--- operator can archive SignBidirectionalEvent via Consume (actor elem operators)
-testConsumeSignBidirectionalByOperator : Script ()
-testConsumeSignBidirectionalByOperator = do
-  (sigNetwork, operator, requester, signerCid) <- setup
-  signReqCid <- mkSignRequest operator requester sigNetwork
-
-  evtCid <- submit (actAs requester <> readAs operator <> readAs sigNetwork) do
-    exerciseCmd signerCid SignBidirectional with
-      signRequestCid = signReqCid; requester
-
-  submit (actAs operator <> actAs requester) do
-    exerciseCmd evtCid Consume_SignBidirectional with actor = operator
-
-  pure ()
-
--- requester can archive SignBidirectionalEvent via Consume (actor == requester)
-testConsumeSignBidirectionalByRequester : Script ()
-testConsumeSignBidirectionalByRequester = do
-  (sigNetwork, operator, requester, signerCid) <- setup
-  signReqCid <- mkSignRequest operator requester sigNetwork
-
-  evtCid <- submit (actAs requester <> readAs operator <> readAs sigNetwork) do
-    exerciseCmd signerCid SignBidirectional with
-      signRequestCid = signReqCid; requester
-
-  submit (actAs requester <> actAs operator) do
-    exerciseCmd evtCid Consume_SignBidirectional with actor = requester
-
-  pure ()
-
--- rogue party cannot archive SignBidirectionalEvent (not in operators, not requester)
-testConsumeSignBidirectionalByRogueFails : Script ()
-testConsumeSignBidirectionalByRogueFails = do
-  (sigNetwork, operator, requester, signerCid) <- setup
-  rogue <- allocateParty "Rogue"
-  signReqCid <- mkSignRequest operator requester sigNetwork
-
-  evtCid <- submit (actAs requester <> readAs operator <> readAs sigNetwork) do
-    exerciseCmd signerCid SignBidirectional with
-      signRequestCid = signReqCid; requester
-
-  -- rogue has visibility (readAs operator + requester) but fails on assertMsg authorization
-  submitMustFail (actAs rogue <> readAs operator <> readAs requester) do
-    exerciseCmd evtCid Consume_SignBidirectional with actor = rogue
-
 -- SignatureRespondedEvent: signatory sigNetwork; observer operators, requester
 
 -- operator can archive SignatureRespondedEvent via Consume (actor elem operators)
 testConsumeSignatureRespondedByOperator : Script ()
 testConsumeSignatureRespondedByOperator = do
   (sigNetwork, operator, requester, signerCid) <- setup
+  (signEventCid, _requestId) <- mkSignEvent operator requester sigNetwork signerCid
 
   evtCid <- submit sigNetwork do
     exerciseCmd signerCid Respond with
-      operators = [operator]; requester
-      requestId = "aa"; signature = testSig "bb"
+      signEventCid
+      signature = testSig "bb"
 
   submit operator do
     exerciseCmd evtCid Consume_SignatureResponded with actor = operator
@@ -261,11 +226,12 @@ testConsumeSignatureRespondedByOperator = do
 testConsumeSignatureRespondedByRequester : Script ()
 testConsumeSignatureRespondedByRequester = do
   (sigNetwork, operator, requester, signerCid) <- setup
+  (signEventCid, _requestId) <- mkSignEvent operator requester sigNetwork signerCid
 
   evtCid <- submit sigNetwork do
     exerciseCmd signerCid Respond with
-      operators = [operator]; requester
-      requestId = "aa"; signature = testSig "bb"
+      signEventCid
+      signature = testSig "bb"
 
   submit requester do
     exerciseCmd evtCid Consume_SignatureResponded with actor = requester
@@ -277,11 +243,12 @@ testConsumeSignatureRespondedByRogueFails : Script ()
 testConsumeSignatureRespondedByRogueFails = do
   (sigNetwork, operator, requester, signerCid) <- setup
   rogue <- allocateParty "Rogue"
+  (signEventCid, _requestId) <- mkSignEvent operator requester sigNetwork signerCid
 
   evtCid <- submit sigNetwork do
     exerciseCmd signerCid Respond with
-      operators = [operator]; requester
-      requestId = "aa"; signature = testSig "bb"
+      signEventCid
+      signature = testSig "bb"
 
   -- rogue has visibility (readAs sigNetwork) but fails on assertMsg authorization
   submitMustFail (actAs rogue <> readAs sigNetwork) do
@@ -293,11 +260,13 @@ testConsumeSignatureRespondedByRogueFails = do
 testConsumeRespondBidirectionalByRequester : Script ()
 testConsumeRespondBidirectionalByRequester = do
   (sigNetwork, operator, requester, signerCid) <- setup
+  (signEventCid, _requestId) <- mkSignEvent operator requester sigNetwork signerCid
 
   evtCid <- submit sigNetwork do
     exerciseCmd signerCid RespondBidirectional with
-      operators = [operator]; requester
-      requestId = "aa"; serializedOutput = "cc"; signature = testSig "dd"
+      signEventCid
+      serializedOutput = "cc"
+      signature = testSig "dd"
 
   submit requester do
     exerciseCmd evtCid Consume_RespondBidirectional with actor = requester
@@ -308,11 +277,13 @@ testConsumeRespondBidirectionalByRequester = do
 testConsumeRespondBidirectionalByOperator : Script ()
 testConsumeRespondBidirectionalByOperator = do
   (sigNetwork, operator, requester, signerCid) <- setup
+  (signEventCid, _requestId) <- mkSignEvent operator requester sigNetwork signerCid
 
   evtCid <- submit sigNetwork do
     exerciseCmd signerCid RespondBidirectional with
-      operators = [operator]; requester
-      requestId = "aa"; serializedOutput = "cc"; signature = testSig "dd"
+      signEventCid
+      serializedOutput = "cc"
+      signature = testSig "dd"
 
   submit operator do
     exerciseCmd evtCid Consume_RespondBidirectional with actor = operator
@@ -324,11 +295,13 @@ testConsumeRespondBidirectionalByRogueFails : Script ()
 testConsumeRespondBidirectionalByRogueFails = do
   (sigNetwork, operator, requester, signerCid) <- setup
   rogue <- allocateParty "Rogue"
+  (signEventCid, _requestId) <- mkSignEvent operator requester sigNetwork signerCid
 
   evtCid <- submit sigNetwork do
     exerciseCmd signerCid RespondBidirectional with
-      operators = [operator]; requester
-      requestId = "aa"; serializedOutput = "cc"; signature = testSig "dd"
+      signEventCid
+      serializedOutput = "cc"
+      signature = testSig "dd"
 
   -- rogue has visibility (readAs sigNetwork) but fails on assertMsg authorization
   submitMustFail (actAs rogue <> readAs sigNetwork) do
@@ -381,3 +354,23 @@ testSenderIsOperatorsHash = do
   assertMsg "sender for [op1] matches operatorsHash" (a.sender == computeOperatorsHash [partyToText op1])
   assertMsg "sender for [op1, op2] matches operatorsHash" (b.sender == computeOperatorsHash [partyToText op1, partyToText op2])
   assertMsg "different operator sets -> different sender" (a.sender /= b.sender)
+
+testSignBidirectionalEventRejectsSpoofedSender : Script ()
+testSignBidirectionalEventRejectsSpoofedSender = do
+  (sigNetwork, operator, requester, _signerCid) <- setup
+
+  submitMustFail (actAs operator <> actAs requester) do
+    createCmd SignBidirectionalEvent with
+      operators = [operator]
+      requester
+      sigNetwork
+      sender = "0000000000000000000000000000000000000000000000000000000000000000"
+      txParams = EvmTxParams sampleEvmParams
+      caip2Id = "eip155:11155111"
+      keyVersion = 1
+      path = "test-path"
+      algo = "ECDSA"
+      dest = "ethereum"
+      params = ""
+      outputDeserializationSchema = erc20BoolSchema
+      respondSerializationSchema = erc20BoolSchema

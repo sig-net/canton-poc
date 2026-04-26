@@ -43,8 +43,7 @@ export interface MpcServiceConfig {
 
 export interface PendingTx {
   requestId: string;
-  requester: string;
-  operators: string[];
+  signEventCid: string;
   signedTxHash: Hex;
   fromAddress: Hex;
   nonce: number;
@@ -203,9 +202,7 @@ export async function signAndEnqueue(
 
   console.log(`[MPC] Signing EVM tx, exercising Respond`);
   await exerciseChoiceWithRetry(canton, userId, actAs, SIGNER_TEMPLATE, signerCid, "Respond", {
-    operators,
-    requester,
-    requestId,
+    signEventCid: event.contractId,
     signature: { tag: "EcdsaSig", value: { der: derSignature, recoveryId: v } },
   });
   console.log(`[MPC] Respond exercised`);
@@ -220,8 +217,7 @@ export async function signAndEnqueue(
 
   return {
     requestId,
-    requester,
-    operators,
+    signEventCid: event.contractId,
     signedTxHash,
     fromAddress,
     nonce: txNonce,
@@ -322,9 +318,7 @@ async function reportOutcome(
       config.signerCid,
       "RespondBidirectional",
       {
-        operators: tx.operators,
-        requester: tx.requester,
-        requestId: tx.requestId,
+        signEventCid: tx.signEventCid,
         serializedOutput: mpcOutput,
         signature,
       },

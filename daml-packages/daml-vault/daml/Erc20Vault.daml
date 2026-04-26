@@ -6,13 +6,46 @@ import DA.Crypto.Text (BytesHex, PublicKeyHex, byteCount, secp256k1WithEcdsaOnly
 import EvmTypes (EvmTransactionParams)
 import TxParams (TxParams(..))
 import Eip712 (chainIdToDecimalText)
-import RequestId (computeRequestId, computeResponseHash, computeOperatorsHash)
+import RequestId (computeResponseHash)
 import Abi (abiHasErrorPrefix, abiDecodeBool, abiDecodeUint, abiSlot, abiSlotCount)
-import Signer (Signer, SignRequest(..), SignBidirectionalEvent,
+import Signer (Signer, SignRequest(..), SignBidirectionalEvent(..),
                SignatureRespondedEvent(..), RespondBidirectionalEvent(..),
                SignBidirectional(..),
                Consume_SignatureResponded(..), Consume_RespondBidirectional(..),
-               signatureDer)
+               requestIdFromSignEvent, signatureDer)
+
+sameOperatorSet : [Party] -> [Party] -> Bool
+sameOperatorSet lhs rhs = sort lhs == sort rhs
+
+assertSameOperatorSet : Text -> [Party] -> [Party] -> Update ()
+assertSameOperatorSet message expected actual =
+  assertMsg message (sameOperatorSet expected actual)
+
+validateRespondBidirectionalEvent : Text
+  -> [Party]
+  -> Party
+  -> Party
+  -> BytesHex
+  -> RespondBidirectionalEvent
+  -> Update ()
+validateRespondBidirectionalEvent label expectedOperators expectedRequester expectedSigNetwork expectedRequestId event = do
+  assertMsg (label <> " sigNetwork mismatch") (event.sigNetwork == expectedSigNetwork)
+  assertSameOperatorSet (label <> " operators mismatch") expectedOperators event.operators
+  assertMsg (label <> " requester mismatch") (event.requester == expectedRequester)
+  assertMsg (label <> " requestId mismatch") (event.requestId == expectedRequestId)
+
+validateSignatureRespondedEvent : Text
+  -> [Party]
+  -> Party
+  -> Party
+  -> BytesHex
+  -> SignatureRespondedEvent
+  -> Update ()
+validateSignatureRespondedEvent label expectedOperators expectedRequester expectedSigNetwork expectedRequestId event = do
+  assertMsg (label <> " sigNetwork mismatch") (event.sigNetwork == expectedSigNetwork)
+  assertSameOperatorSet (label <> " operators mismatch") expectedOperators event.operators
+  assertMsg (label <> " requester mismatch") (event.requester == expectedRequester)
+  assertMsg (label <> " requestId mismatch") (event.requestId == expectedRequestId)
 
 -- ---------------------------------------------------------------------------
 -- Holdings
@@ -86,7 +119,7 @@ template VaultProposal
       do
         assertMsg "Not an operator" (signer `elem` toSign this)
         let newSigned = signer :: alreadySigned
-        if sort newSigned == sort allOperators
+        if sameOperatorSet newSigned allOperators
           then Right <$> create Vault with
             operators = allOperators; sigNetwork
             evmVaultAddress; evmMpcPublicKey; vaultId
@@ -137,7 +170,6 @@ template Vault
         -- Vault namespaces its key derivation via path so two vaults sharing the same operator set still get distinct EVM keys
         let fullPath = vaultId <> "," <> partyToText requester <> "," <> path
         let caip2Id = "eip155:" <> chainIdToDecimalText evmTxParams.chainId
-        let sender = computeOperatorsHash (map partyToText operators)
 
         signReqCid <- create SignRequest with
           operators; requester; sigNetwork
@@ -148,9 +180,8 @@ template Vault
         signEventCid <- exercise signerCid SignBidirectional with
           signRequestCid = signReqCid; requester
 
-        let requestId = computeRequestId
-              sender (EvmTxParams evmTxParams) caip2Id keyVersion
-              fullPath algo dest params
+        signEvent <- fetch signEventCid
+        let requestId = requestIdFromSignEvent signEvent
 
         pendingCid <- create PendingDeposit with
           operators; requester; sigNetwork; requestId; evmTxParams
@@ -169,11 +200,13 @@ template Vault
         archive pendingDepositCid        -- archive first: single-use guarantee against MPC-outcome replay
 
         assertMsg "Sender mismatch" (pending.requester == requester)
-        assertMsg "Operators mismatch" (sort pending.operators == sort operators)
+        assertSameOperatorSet "Operators mismatch" pending.operators operators
 
         outcome <- fetch respondBidirectionalEventCid
-        assertMsg "Outcome requestId mismatch"
-          (outcome.requestId == pending.requestId)
+        validateRespondBidirectionalEvent "Outcome" operators requester sigNetwork pending.requestId outcome
+
+        signatureResponse <- fetch signatureRespondedEventCid
+        validateSignatureRespondedEvent "Signature response" operators requester sigNetwork pending.requestId signatureResponse
 
         let responseHash = computeResponseHash pending.requestId outcome.serializedOutput
         assertMsg "Invalid MPC signature"
@@ -212,7 +245,7 @@ template Vault
       controller requester
       do
         holding <- fetch balanceCid
-        assertMsg "Holding operators mismatch" (sort holding.operators == sort operators)
+        assertSameOperatorSet "Holding operators mismatch" holding.operators operators
         assertMsg "Holding owner mismatch" (holding.owner == requester)
 
         assertMsg "Only ERC20 transfer allowed"
@@ -231,7 +264,6 @@ template Vault
         archive balanceCid        -- optimistic debit: refunded by CompleteWithdrawal if MPC reports failure
 
         let caip2Id = "eip155:" <> chainIdToDecimalText evmTxParams.chainId
-        let sender = computeOperatorsHash (map partyToText operators)
         -- Vault namespaces its key derivation via path so two vaults sharing the same operator set still get distinct EVM keys
         let fullPath = vaultId <> ",root"
 
@@ -244,9 +276,8 @@ template Vault
         signEventCid <- exercise signerCid SignBidirectional with
           signRequestCid = signReqCid; requester
 
-        let requestId = computeRequestId
-              sender (EvmTxParams evmTxParams) caip2Id keyVersion
-              fullPath algo dest params
+        signEvent <- fetch signEventCid
+        let requestId = requestIdFromSignEvent signEvent
 
         pendingCid <- create PendingWithdrawal with
           operators; requester; sigNetwork; requestId; evmTxParams
@@ -267,11 +298,13 @@ template Vault
         archive pendingWithdrawalCid
 
         assertMsg "Sender mismatch" (pending.requester == requester)
-        assertMsg "Operators mismatch" (sort pending.operators == sort operators)
+        assertSameOperatorSet "Operators mismatch" pending.operators operators
 
         outcome <- fetch respondBidirectionalEventCid
-        assertMsg "Outcome requestId mismatch"
-          (outcome.requestId == pending.requestId)
+        validateRespondBidirectionalEvent "Outcome" operators requester sigNetwork pending.requestId outcome
+
+        signatureResponse <- fetch signatureRespondedEventCid
+        validateSignatureRespondedEvent "Signature response" operators requester sigNetwork pending.requestId signatureResponse
 
         let responseHash = computeResponseHash pending.requestId outcome.serializedOutput
         assertMsg "Invalid MPC signature"
