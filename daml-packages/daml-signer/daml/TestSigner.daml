@@ -4,6 +4,7 @@ import DA.Optional (fromSome)
 import Daml.Script
 
 import Signer (Signer(..), SignBidirectional(..), Respond(..), RespondBidirectional(..), SignRequest(..), SignBidirectionalEvent(..), Consume_SignatureResponded(..), Consume_RespondBidirectional(..), Signature(..), EcdsaSigData(..), requestIdFromSignEvent)
+import EvmTypes (isBytesN, isCanonicalHex, isEvmUInt256, validEvmTransactionParams)
 import RequestId (computeOperatorsHash)
 import TxParams (TxParams(..))
 import TestFixtures (sampleEvmParams, erc20BoolSchema)
@@ -52,6 +53,41 @@ mkSignEvent operator requester sigNetwork signerCid = do
   Some signEvent <- queryContractId requester signEventCid
   pure (signEventCid, requestIdFromSignEvent signEvent)
 
+testHexPredicatesReturnBoolForMalformedInput : Script ()
+testHexPredicatesReturnBoolForMalformedInput = do
+  assertMsg "empty variable-length bytes hex is valid" (isCanonicalHex "")
+  assertMsg "uppercase bytes hex is valid" (isCanonicalHex "AABB")
+  assertMsg "odd-length hex is not canonical bytes hex" (not (isCanonicalHex "a"))
+  assertMsg "0x-prefixed hex is not canonical bytes hex" (not (isCanonicalHex "0xbb"))
+  assertMsg "even-length non-hex is not canonical bytes hex" (not (isCanonicalHex "zz"))
+  assertMsg "isBytesN rejects malformed hex without throwing" (not (isBytesN 1 "0x"))
+
+testHexPredicatesValidateExpectedByteWidths : Script ()
+testHexPredicatesValidateExpectedByteWidths = do
+  assertMsg "20-byte address passes isBytesN 20" (isBytesN 20 sampleEvmParams.to)
+  assertMsg "32-byte uint passes isBytesN 32" (isBytesN 32 sampleEvmParams.value)
+  assertMsg "empty bytes hex is not bytes32" (not (isBytesN 32 ""))
+  assertMsg "one-byte hex is not bytes32" (not (isBytesN 32 "00"))
+  assertMsg "21-byte address fails isBytesN 20" (not (isBytesN 20 ("00" <> sampleEvmParams.to)))
+  assertMsg "32-byte uint passes isEvmUInt256" (isEvmUInt256 sampleEvmParams.nonce)
+  assertMsg "empty hex is not EVM uint256" (not (isEvmUInt256 ""))
+  assertMsg "short hex is not EVM uint256" (not (isEvmUInt256 "00"))
+  assertMsg "non-hex is not EVM uint256" (not (isEvmUInt256 "zz"))
+
+testValidEvmTransactionParamsChecksByteShapes : Script ()
+testValidEvmTransactionParamsChecksByteShapes = do
+  assertMsg "sample EVM params are valid" (validEvmTransactionParams sampleEvmParams)
+  assertMsg "empty encoded args are valid variable-length bytes"
+    (validEvmTransactionParams (sampleEvmParams with encodedArgs = ""))
+  assertMsg "non-hex encoded args are rejected"
+    (not (validEvmTransactionParams (sampleEvmParams with encodedArgs = "zz")))
+  assertMsg "wrong address length is rejected"
+    (not (validEvmTransactionParams (sampleEvmParams with to = "00" <> sampleEvmParams.to)))
+  assertMsg "empty uint256 field is rejected"
+    (not (validEvmTransactionParams (sampleEvmParams with value = "")))
+  assertMsg "short uint256 field is rejected"
+    (not (validEvmTransactionParams (sampleEvmParams with nonce = "00")))
+
 ------------------------------------------------------------------------
 -- Respond / RespondBidirectional
 ------------------------------------------------------------------------
@@ -87,6 +123,17 @@ testRespondByRequesterFails = do
       signEventCid
       signature = testSig "bb"
 
+-- Respond rejects non-canonical signature hex before creating evidence
+testRespondRejectsNonCanonicalSignatureHex : Script ()
+testRespondRejectsNonCanonicalSignatureHex = do
+  (sigNetwork, operator, requester, signerCid) <- setup
+  (signEventCid, _requestId) <- mkSignEvent operator requester sigNetwork signerCid
+
+  submitMustFail sigNetwork do
+    exerciseCmd signerCid Respond with
+      signEventCid
+      signature = testSig "0xbb"
+
 -- sigNetwork exercises RespondBidirectional; verify all fields including serializedOutput
 testRespondBidirectionalHappyPath : Script ()
 testRespondBidirectionalHappyPath = do
@@ -119,6 +166,18 @@ testRespondBidirectionalByRequesterFails = do
     exerciseCmd signerCid RespondBidirectional with
       signEventCid
       serializedOutput = "cc"
+      signature = testSig "dd"
+
+-- RespondBidirectional rejects non-canonical output hex before creating evidence
+testRespondBidirectionalRejectsNonCanonicalSerializedOutput : Script ()
+testRespondBidirectionalRejectsNonCanonicalSerializedOutput = do
+  (sigNetwork, operator, requester, signerCid) <- setup
+  (signEventCid, _requestId) <- mkSignEvent operator requester sigNetwork signerCid
+
+  submitMustFail sigNetwork do
+    exerciseCmd signerCid RespondBidirectional with
+      signEventCid
+      serializedOutput = "0xcc"
       signature = testSig "dd"
 
 ------------------------------------------------------------------------
@@ -195,6 +254,44 @@ testSignRequestDuplicateOperatorsFails = do
     createCmd SignRequest with
       operators = [operator, operator]; requester; sigNetwork
       txParams = EvmTxParams sampleEvmParams
+      caip2Id = "eip155:11155111"
+      keyVersion = 1
+      path = "test-path"
+      algo = "ECDSA"
+      dest = "ethereum"
+      params = ""
+      outputDeserializationSchema = erc20BoolSchema
+      respondSerializationSchema = erc20BoolSchema
+
+-- SignRequest rejects non-canonical hex in EVM transaction params
+testSignRequestRejectsNonCanonicalEvmHex : Script ()
+testSignRequestRejectsNonCanonicalEvmHex = do
+  (sigNetwork, operator, requester, _signerCid) <- setup
+  let badParams = sampleEvmParams with to = "0x" <> sampleEvmParams.to
+
+  submitMustFail (actAs operator <> actAs requester) do
+    createCmd SignRequest with
+      operators = [operator]; requester; sigNetwork
+      txParams = EvmTxParams badParams
+      caip2Id = "eip155:11155111"
+      keyVersion = 1
+      path = "test-path"
+      algo = "ECDSA"
+      dest = "ethereum"
+      params = ""
+      outputDeserializationSchema = erc20BoolSchema
+      respondSerializationSchema = erc20BoolSchema
+
+-- SignRequest rejects EVM transaction params with the wrong byte shape
+testSignRequestRejectsWrongEvmByteLength : Script ()
+testSignRequestRejectsWrongEvmByteLength = do
+  (sigNetwork, operator, requester, _signerCid) <- setup
+  let badParams = sampleEvmParams with nonce = "00"
+
+  submitMustFail (actAs operator <> actAs requester) do
+    createCmd SignRequest with
+      operators = [operator]; requester; sigNetwork
+      txParams = EvmTxParams badParams
       caip2Id = "eip155:11155111"
       keyVersion = 1
       path = "test-path"
