@@ -17,10 +17,6 @@ import Signer (Signer, SignRequest(..), SignBidirectionalEvent(..),
 sameOperatorSet : [Party] -> [Party] -> Bool
 sameOperatorSet lhs rhs = sort lhs == sort rhs
 
-assertSameOperatorSet : Text -> [Party] -> [Party] -> Update ()
-assertSameOperatorSet message expected actual =
-  assertMsg message (sameOperatorSet expected actual)
-
 validateRespondBidirectionalEvent : Text
   -> [Party]
   -> Party
@@ -30,7 +26,7 @@ validateRespondBidirectionalEvent : Text
   -> Update ()
 validateRespondBidirectionalEvent label expectedOperators expectedRequester expectedSigNetwork expectedRequestId event = do
   assertMsg (label <> " sigNetwork mismatch") (event.sigNetwork == expectedSigNetwork)
-  assertSameOperatorSet (label <> " operators mismatch") expectedOperators event.operators
+  assertMsg (label <> " operators mismatch") (sameOperatorSet expectedOperators event.operators)
   assertMsg (label <> " requester mismatch") (event.requester == expectedRequester)
   assertMsg (label <> " requestId mismatch") (event.requestId == expectedRequestId)
 
@@ -43,7 +39,7 @@ validateSignatureRespondedEvent : Text
   -> Update ()
 validateSignatureRespondedEvent label expectedOperators expectedRequester expectedSigNetwork expectedRequestId event = do
   assertMsg (label <> " sigNetwork mismatch") (event.sigNetwork == expectedSigNetwork)
-  assertSameOperatorSet (label <> " operators mismatch") expectedOperators event.operators
+  assertMsg (label <> " operators mismatch") (sameOperatorSet expectedOperators event.operators)
   assertMsg (label <> " requester mismatch") (event.requester == expectedRequester)
   assertMsg (label <> " requestId mismatch") (event.requestId == expectedRequestId)
 
@@ -200,7 +196,7 @@ template Vault
         archive pendingDepositCid        -- archive first: single-use guarantee against MPC-outcome replay
 
         assertMsg "Sender mismatch" (pending.requester == requester)
-        assertSameOperatorSet "Operators mismatch" pending.operators operators
+        assertMsg "Operators mismatch" (sameOperatorSet pending.operators operators)
 
         outcome <- fetch respondBidirectionalEventCid
         validateRespondBidirectionalEvent "Outcome" operators requester sigNetwork pending.requestId outcome
@@ -245,7 +241,7 @@ template Vault
       controller requester
       do
         holding <- fetch balanceCid
-        assertSameOperatorSet "Holding operators mismatch" holding.operators operators
+        assertMsg "Holding operators mismatch" (sameOperatorSet holding.operators operators)
         assertMsg "Holding owner mismatch" (holding.owner == requester)
 
         assertMsg "Only ERC20 transfer allowed"
@@ -298,7 +294,7 @@ template Vault
         archive pendingWithdrawalCid
 
         assertMsg "Sender mismatch" (pending.requester == requester)
-        assertSameOperatorSet "Operators mismatch" pending.operators operators
+        assertMsg "Operators mismatch" (sameOperatorSet pending.operators operators)
 
         outcome <- fetch respondBidirectionalEventCid
         validateRespondBidirectionalEvent "Outcome" operators requester sigNetwork pending.requestId outcome
