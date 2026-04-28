@@ -1,11 +1,4 @@
-import {
-  keccak256,
-  createPublicClient,
-  http,
-  hexToBigInt,
-  encodeAbiParameters,
-  type Hex,
-} from "viem";
+import { keccak256, createPublicClient, http, encodeAbiParameters, type Hex } from "viem";
 import { DER } from "@noble/curves/abstract/weierstrass.js";
 import { privateKeyToAddress } from "viem/accounts";
 import { sepolia } from "viem/chains";
@@ -14,15 +7,19 @@ import {
   reconstructSignedTx,
   type CantonEvmType2Params,
 } from "../evm/tx-builder.js";
+import { cantonHexToHex } from "../evm/hex.js";
 import { deriveChildPrivateKey, signEvmTxHash, signMpcResponse } from "./signer.js";
 import {
   CantonClient,
   type CreatedEvent,
   type TransactionResponse,
 } from "../infra/canton-client.js";
-import { computeRequestId, type TxParams as CryptoTxParams } from "../mpc/crypto.js";
+import { computeRequestId } from "../mpc/crypto.js";
 import { chainIdHexToCaip2 } from "../mpc/address-derivation.js";
 import { type SignBidirectionalEvent, Signer } from "@daml.js/daml-signer-0.0.1/lib/Signer/module";
+
+const sepoliaClient = (rpcUrl: string) =>
+  createPublicClient({ chain: sepolia, transport: http(rpcUrl) });
 
 // ---------------------------------------------------------------------------
 // Types
@@ -171,7 +168,7 @@ export async function signAndEnqueue(
   const caip2Id = chainIdHexToCaip2(evmTxParams.chainId);
   const computedRequestId = computeRequestId(
     sender,
-    txParams as CryptoTxParams,
+    txParams,
     caip2Id,
     Number(keyVersion),
     requestPath,
@@ -186,17 +183,15 @@ export async function signAndEnqueue(
   // Derive child key and sender address
   const childPrivateKey = deriveChildPrivateKey(rootPrivateKey, predecessorId, requestPath);
   const fromAddress = privateKeyToAddress(childPrivateKey);
-  const txNonce = hexToBigInt(`0x${evmTxParams.nonce}`);
+  const txNonce = BigInt(`0x${evmTxParams.nonce}`);
 
   // Sign EVM transaction
-  const serializedUnsigned = serializeUnsignedTx(evmTxParams as CantonEvmType2Params);
+  const serializedUnsigned = serializeUnsignedTx(evmTxParams);
   const txHash = keccak256(serializedUnsigned);
-  const { r, s, v } = signEvmTxHash(childPrivateKey, txHash);
+  const { r, s, v } = await signEvmTxHash(childPrivateKey, txHash);
 
   // DER-encode the ECDSA signature for the Respond choice
-  const rBigInt = hexToBigInt(`0x${r}`);
-  const sBigInt = hexToBigInt(`0x${s}`);
-  const derSignature = DER.hexFromSig({ r: rBigInt, s: sBigInt });
+  const derSignature = DER.hexFromSig({ r: BigInt(`0x${r}`), s: BigInt(`0x${s}`) });
 
   console.log(`[MPC] Signing EVM tx, exercising Respond`);
   await exerciseChoiceWithRetry(canton, userId, actAs, SIGNER_TEMPLATE, signerCid, "Respond", {
@@ -207,11 +202,7 @@ export async function signAndEnqueue(
   console.log(`[MPC] Respond exercised`);
 
   // Compute signed tx hash for monitoring
-  const signedTx = reconstructSignedTx(evmTxParams as CantonEvmType2Params, {
-    r: `0x${r}`,
-    s: `0x${s}`,
-    v,
-  });
+  const signedTx = reconstructSignedTx(evmTxParams, { r: `0x${r}`, s: `0x${s}`, v });
   const signedTxHash = keccak256(signedTx);
 
   return {
@@ -221,7 +212,7 @@ export async function signAndEnqueue(
     fromAddress,
     nonce: txNonce,
     checkCount: 0,
-    evmParams: evmTxParams as CantonEvmType2Params,
+    evmParams: evmTxParams,
   };
 }
 
@@ -234,12 +225,11 @@ async function extractReturnData(
   tx: PendingTx,
   receipt: { blockNumber: bigint },
 ): Promise<string> {
-  const client = createPublicClient({ chain: sepolia, transport: http(rpcUrl) });
   if (tx.evmParams.to === null) return encodeBoolOutput(true);
 
-  const result = await client.call({
+  const result = await sepoliaClient(rpcUrl).call({
     to: `0x${tx.evmParams.to}`,
-    data: tx.evmParams.calldata === "" ? "0x" : `0x${tx.evmParams.calldata}`,
+    data: cantonHexToHex(tx.evmParams.calldata),
     account: tx.fromAddress,
     blockNumber: receipt.blockNumber - 1n,
   });
@@ -263,7 +253,7 @@ export async function checkPendingTx(
   config: MpcServiceConfig,
   tx: PendingTx,
 ): Promise<CheckResult> {
-  const client = createPublicClient({ chain: sepolia, transport: http(config.rpcUrl) });
+  const client = sepoliaClient(config.rpcUrl);
 
   let mpcOutput: string | null = null;
 
@@ -311,7 +301,7 @@ async function reportOutcome(
   tx: PendingTx,
   mpcOutput: string,
 ): Promise<CheckResult> {
-  const signature = signMpcResponse(config.rootPrivateKey, tx.requestId, mpcOutput);
+  const signature = await signMpcResponse(config.rootPrivateKey, tx.requestId, mpcOutput);
 
   try {
     console.log(`[MPC] Exercising RespondBidirectional for requestId=${tx.requestId}`);

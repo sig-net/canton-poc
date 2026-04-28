@@ -28,7 +28,7 @@ export {
   toSpkiPublicKey,
   derivePublicKey,
 } from "./mpc/crypto.js";
-export type { EvmAccessListEntry, EvmType2TransactionParams, TxParams } from "./mpc/crypto.js";
+export type { TxParams } from "./mpc/crypto.js";
 export { deriveDepositAddress, chainIdHexToCaip2, KEY_VERSION } from "./mpc/address-derivation.js";
 
 // EVM transaction building
@@ -43,6 +43,7 @@ export type {
   CantonEvmType2Params,
   Eip1559TxFields,
 } from "./evm/tx-builder.js";
+export { cantonHexToHex, toCantonHex } from "./evm/hex.js";
 
 // Daml template types (re-exported for consumer convenience)
 export {

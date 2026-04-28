@@ -15,8 +15,8 @@ const TEST_PRIVATE_KEY =
 const TEST_TX_HASH = keccak256(toBytes("test-transaction"));
 
 describe("signEvmTxHash", () => {
-  it("returns r, s, v with correct formats", () => {
-    const { r, s, v } = signEvmTxHash(TEST_PRIVATE_KEY, TEST_TX_HASH);
+  it("returns r, s, v with correct formats", async () => {
+    const { r, s, v } = await signEvmTxHash(TEST_PRIVATE_KEY, TEST_TX_HASH);
 
     // r and s are 64 hex chars (32 bytes), bare hex without 0x
     expect(r).toMatch(/^[0-9a-f]{64}$/);
@@ -25,15 +25,15 @@ describe("signEvmTxHash", () => {
     expect([0, 1]).toContain(v);
   });
 
-  it("is deterministic", () => {
-    const sig1 = signEvmTxHash(TEST_PRIVATE_KEY, TEST_TX_HASH);
-    const sig2 = signEvmTxHash(TEST_PRIVATE_KEY, TEST_TX_HASH);
+  it("is deterministic", async () => {
+    const sig1 = await signEvmTxHash(TEST_PRIVATE_KEY, TEST_TX_HASH);
+    const sig2 = await signEvmTxHash(TEST_PRIVATE_KEY, TEST_TX_HASH);
 
     expect(sig1).toEqual(sig2);
   });
 
   it("recovers to the correct address", async () => {
-    const sig = signEvmTxHash(TEST_PRIVATE_KEY, TEST_TX_HASH);
+    const sig = await signEvmTxHash(TEST_PRIVATE_KEY, TEST_TX_HASH);
     const expectedAddress = privateKeyToAddress(TEST_PRIVATE_KEY);
     const recovered = await recoverAddress({
       hash: TEST_TX_HASH,
@@ -52,8 +52,8 @@ describe("signMpcResponse", () => {
   const requestId = "abcd".padStart(64, "0");
   const mpcOutput = "deadbeef";
 
-  it("returns CantonSignature with DER-encoded hex starting with '30'", () => {
-    const sig = signMpcResponse(TEST_PRIVATE_KEY, requestId, mpcOutput);
+  it("returns CantonSignature with DER-encoded hex starting with '30'", async () => {
+    const sig = await signMpcResponse(TEST_PRIVATE_KEY, requestId, mpcOutput);
 
     expect(sig.tag).toBe("EcdsaSig");
     // DER-encoded ECDSA signature starts with SEQUENCE tag 0x30
@@ -66,15 +66,15 @@ describe("signMpcResponse", () => {
     expect([0, 1]).toContain(sig.value.recoveryId);
   });
 
-  it("is deterministic", () => {
-    const sig1 = signMpcResponse(TEST_PRIVATE_KEY, requestId, mpcOutput);
-    const sig2 = signMpcResponse(TEST_PRIVATE_KEY, requestId, mpcOutput);
+  it("is deterministic", async () => {
+    const sig1 = await signMpcResponse(TEST_PRIVATE_KEY, requestId, mpcOutput);
+    const sig2 = await signMpcResponse(TEST_PRIVATE_KEY, requestId, mpcOutput);
 
     expect(sig1).toEqual(sig2);
   });
 
-  it("verifies against the root public key", () => {
-    const sig = signMpcResponse(TEST_PRIVATE_KEY, requestId, mpcOutput);
+  it("verifies against the root public key", async () => {
+    const sig = await signMpcResponse(TEST_PRIVATE_KEY, requestId, mpcOutput);
     const derBytes = Uint8Array.from(Buffer.from(sig.value.der, "hex"));
     // Derive uncompressed public key from the private key
     const pubKey = secp256k1.getPublicKey(toBytes(TEST_PRIVATE_KEY), false);

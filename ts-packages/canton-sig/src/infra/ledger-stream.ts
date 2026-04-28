@@ -55,13 +55,8 @@ export function createLedgerStream(opts: LedgerStreamOptions): StreamHandle {
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let hasConnectedOnce = false;
 
-  function buildFilter(): Record<string, Record<string, never>> {
-    const filtersByParty: Record<string, Record<string, never>> = {};
-    for (const party of opts.parties) {
-      filtersByParty[party] = {};
-    }
-    return filtersByParty;
-  }
+  const buildFilter = (): Record<string, Record<string, never>> =>
+    Object.fromEntries(opts.parties.map((p) => [p, {}]));
 
   function extractOffset(item: JsGetUpdatesResponse): number | undefined {
     const update = item.update;

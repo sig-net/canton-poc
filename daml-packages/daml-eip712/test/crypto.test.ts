@@ -3,10 +3,10 @@ import {
   computeRequestId,
   computeResponseHash,
   hashEvmType2Params,
-  type EvmType2TransactionParams,
+  type CantonEvmType2Params,
 } from "canton-sig";
 
-const sampleEvmType2Params: EvmType2TransactionParams = {
+const sampleEvmType2Params: CantonEvmType2Params = {
   chainId: "0000000000000000000000000000000000000000000000000000000000aa36a7",
   nonce: "0000000000000000000000000000000000000000000000000000000000000001",
   maxPriorityFeePerGas: "000000000000000000000000000000000000000000000000000000003b9aca00",
@@ -21,7 +21,7 @@ const sampleEvmType2Params: EvmType2TransactionParams = {
   accessList: [],
 };
 
-const sampleEthTransferParams: EvmType2TransactionParams = {
+const sampleEthTransferParams: CantonEvmType2Params = {
   ...sampleEvmType2Params,
   nonce: "0000000000000000000000000000000000000000000000000000000000000002",
   gasLimit: "0000000000000000000000000000000000000000000000000000000000005208",
@@ -30,7 +30,7 @@ const sampleEthTransferParams: EvmType2TransactionParams = {
   calldata: "",
 };
 
-const sampleAccessListParams: EvmType2TransactionParams = {
+const sampleAccessListParams: CantonEvmType2Params = {
   ...sampleEvmType2Params,
   accessList: [
     {
@@ -43,7 +43,7 @@ const sampleAccessListParams: EvmType2TransactionParams = {
   ],
 };
 
-const sampleContractCreationParams: EvmType2TransactionParams = {
+const sampleContractCreationParams: CantonEvmType2Params = {
   ...sampleEvmType2Params,
   nonce: "0000000000000000000000000000000000000000000000000000000000000003",
   to: null,

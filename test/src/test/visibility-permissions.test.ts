@@ -4,7 +4,7 @@ import {
   CantonClient,
   type CreatedEvent,
   type DisclosedContract,
-  type EvmType2TransactionParams,
+  type CantonEvmType2Params,
   findCreated,
   firstCreated,
   deriveDepositAddress,
@@ -40,7 +40,7 @@ const ALGO = "ECDSA";
 const DEST = "ethereum";
 const ERC20_TRANSFER_SELECTOR = "a9059cbb";
 
-function buildSampleEvmParams(vaultAddress: Hex): EvmType2TransactionParams {
+function buildSampleEvmParams(vaultAddress: Hex): CantonEvmType2Params {
   const encodedArgs = encodeAbiParameters(parseAbiParameters("address, uint256"), [
     vaultAddress,
     100_000_000n,
@@ -301,7 +301,7 @@ describe("ledger visibility + permission model", () => {
     ).rejects.toThrow();
 
     const mpcOutput = "0000000000000000000000000000000000000000000000000000000000000001";
-    const mpcSignature = signMpcResponse(MPC_ROOT_PRIVATE_KEY, requestId, mpcOutput);
+    const mpcSignature = await signMpcResponse(MPC_ROOT_PRIVATE_KEY, requestId, mpcOutput);
     const outcomeResult = await canton.exerciseChoice(
       SIGNETWORK_USER,
       [sigNetwork],

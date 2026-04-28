@@ -1,74 +1,34 @@
 import { keccak256, toHex, toBytes, pad, concat, type Hex } from "viem";
 import { secp256k1 } from "@noble/curves/secp256k1.js";
+import { cantonHexToHex } from "../evm/hex.js";
+import type { CantonEvmAccessListEntry, CantonEvmType2Params } from "../evm/tx-builder.js";
 
-export interface EvmAccessListEntry {
-  address: string;
-  storageKeys: string[];
-}
-
-export interface EvmType2TransactionParams {
-  chainId: string;
-  nonce: string;
-  maxPriorityFeePerGas: string;
-  maxFeePerGas: string;
-  gasLimit: string;
-  to: string | null;
-  value: string;
-  calldata: string;
-  accessList: EvmAccessListEntry[];
-}
-
-export type TxParams = { tag: "EvmType2TxParams"; value: EvmType2TransactionParams };
+export type TxParams = { tag: "EvmType2TxParams"; value: CantonEvmType2Params };
 
 // ---------------------------------------------------------------------------
 // EIP-712 primitive encoding — mirrors Daml's Eip712.daml
 // ---------------------------------------------------------------------------
 
-/** EIP-712 string encoding: keccak256(utf8(text)). */
-function eip712EncodeString(text: string): Hex {
-  if (text === "") return keccak256("0x");
-  return keccak256(toHex(text));
-}
+const EMPTY_BYTES_HASH = keccak256("0x");
 
-/** EIP-712 uint256 encoding: left-pad hex to 32 bytes. */
-function eip712EncodeUint256(hex: Hex): Hex {
-  return pad(hex, { size: 32 });
-}
+const eip712EncodeString = (text: string): Hex => keccak256(toHex(text));
 
-/** EIP-712 address encoding: left-pad hex to 32 bytes. */
-function eip712EncodeAddress(hex: Hex): Hex {
-  return pad(hex, { size: 32 });
-}
+/** EIP-712 word encoding: Canton-format hex (no 0x) left-padded to 32 bytes (viem's pad default). */
+const eip712EncodeWord = (cantonHex: string): Hex => pad(`0x${cantonHex}`);
 
-/** EIP-712 bytes encoding: keccak256(raw bytes). */
-function eip712EncodeBytes(data: Hex): Hex {
-  if (data === "0x") return keccak256("0x");
-  return keccak256(data);
-}
+const hashOptionalAddress = (address: string | null): Hex =>
+  address === null ? EMPTY_BYTES_HASH : eip712EncodeWord(address);
 
-function hexBytes(hex: string): Hex {
-  return hex === "" ? "0x" : `0x${hex}`;
-}
+const hashStorageKeys = (storageKeys: string[]): Hex =>
+  storageKeys.length === 0 ? EMPTY_BYTES_HASH : keccak256(concat(storageKeys.map(cantonHexToHex)));
 
-function hashOptionalAddress(address: string | null): Hex {
-  return address === null ? eip712EncodeBytes("0x") : eip712EncodeAddress(`0x${address}`);
-}
+const hashAccessListEntry = (entry: CantonEvmAccessListEntry): Hex =>
+  keccak256(concat([eip712EncodeWord(entry.address), hashStorageKeys(entry.storageKeys)]));
 
-function hashStorageKeys(storageKeys: string[]): Hex {
-  if (storageKeys.length === 0) return keccak256("0x");
-  return keccak256(concat(storageKeys.map((storageKey) => hexBytes(storageKey))));
-}
-
-function hashAccessListEntry(entry: EvmAccessListEntry): Hex {
-  return keccak256(
-    concat([eip712EncodeAddress(`0x${entry.address}`), hashStorageKeys(entry.storageKeys)]),
-  );
-}
-
-function hashAccessList(accessList: EvmAccessListEntry[]): Hex {
-  if (accessList.length === 0) return keccak256("0x");
-  return keccak256(concat(accessList.map(hashAccessListEntry)));
-}
+const hashAccessList = (accessList: CantonEvmAccessListEntry[]): Hex =>
+  accessList.length === 0
+    ? EMPTY_BYTES_HASH
+    : keccak256(concat(accessList.map(hashAccessListEntry)));
 
 // ---------------------------------------------------------------------------
 // Flat keccak256(concat(encoded fields)) — mirrors Daml's RequestId.daml
@@ -82,17 +42,17 @@ function hashTxParams(cp: TxParams): Hex {
   }
 }
 
-export function hashEvmType2Params(p: EvmType2TransactionParams): Hex {
+export function hashEvmType2Params(p: CantonEvmType2Params): Hex {
   return keccak256(
     concat([
-      eip712EncodeUint256(`0x${p.chainId}`),
-      eip712EncodeUint256(`0x${p.nonce}`),
-      eip712EncodeUint256(`0x${p.maxPriorityFeePerGas}`),
-      eip712EncodeUint256(`0x${p.maxFeePerGas}`),
-      eip712EncodeUint256(`0x${p.gasLimit}`),
+      eip712EncodeWord(p.chainId),
+      eip712EncodeWord(p.nonce),
+      eip712EncodeWord(p.maxPriorityFeePerGas),
+      eip712EncodeWord(p.maxFeePerGas),
+      eip712EncodeWord(p.gasLimit),
       hashOptionalAddress(p.to),
-      eip712EncodeUint256(`0x${p.value}`),
-      eip712EncodeBytes(hexBytes(p.calldata)),
+      eip712EncodeWord(p.value),
+      keccak256(cantonHexToHex(p.calldata)),
       hashAccessList(p.accessList),
     ]),
   );
@@ -117,7 +77,7 @@ export function computeRequestId(
       eip712EncodeString(sender),
       hashTxParams(txParams),
       eip712EncodeString(caip2Id),
-      eip712EncodeUint256(toHex(keyVersion)),
+      pad(toHex(keyVersion)),
       eip712EncodeString(path),
       eip712EncodeString(algo),
       eip712EncodeString(dest),
@@ -131,9 +91,7 @@ export function computeRequestId(
  * Matches MPC node (respond_bidirectional.rs) and Solana (erc20_vault.rs); mirrored by Daml RequestId.daml.
  */
 export function computeResponseHash(requestId: string, mpcOutput: string): Hex {
-  const requestIdBytes: Hex = `0x${requestId}`;
-  const outputBytes: Hex = mpcOutput === "" ? "0x" : `0x${mpcOutput}`;
-  return keccak256(concat([requestIdBytes, outputBytes]));
+  return keccak256(concat([cantonHexToHex(requestId), cantonHexToHex(mpcOutput)]));
 }
 
 // ---------------------------------------------------------------------------
