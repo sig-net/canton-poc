@@ -26,8 +26,11 @@ describe("package exports (ESM)", () => {
     expect(DAR_PATH).toContain("daml-vault-0.0.1.dar");
   });
 
-  // @ts-expect-error — intentionally calling without args to verify it throws
-  it("MpcServer constructor requires config", () => expect(() => new MpcServer()).toThrow());
+  it("MpcServer constructor requires config", () =>
+    expect(() => {
+      // @ts-expect-error — intentionally calling without args to verify it throws
+      return new MpcServer();
+    }).toThrow());
 
   it("CantonClient can be instantiated with default URL", () => {
     expect(new CantonClient()).toBeInstanceOf(CantonClient);

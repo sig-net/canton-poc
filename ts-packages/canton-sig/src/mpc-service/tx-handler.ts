@@ -2,7 +2,6 @@ import {
   keccak256,
   createPublicClient,
   http,
-  hexToNumber,
   hexToBigInt,
   encodeAbiParameters,
   type Hex,
@@ -13,8 +12,7 @@ import { sepolia } from "viem/chains";
 import {
   serializeUnsignedTx,
   reconstructSignedTx,
-  buildCalldata,
-  type CantonEvmParams,
+  type CantonEvmType2Params,
 } from "../evm/tx-builder.js";
 import { deriveChildPrivateKey, signEvmTxHash, signMpcResponse } from "./signer.js";
 import {
@@ -46,9 +44,9 @@ export interface PendingTx {
   signEventCid: string;
   signedTxHash: Hex;
   fromAddress: Hex;
-  nonce: number;
+  nonce: bigint;
   checkCount: number;
-  evmParams: CantonEvmParams;
+  evmParams: CantonEvmType2Params;
 }
 
 type CheckResult = "pending" | "done" | "failed";
@@ -132,7 +130,7 @@ export async function signAndEnqueue(
   } = arg;
 
   // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- guard for future BTC/SOL variants
-  if (txParams.tag !== "EvmTxParams") {
+  if (txParams.tag !== "EvmType2TxParams") {
     // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
     throw new Error(`Unsupported chain params: ${txParams.tag}`);
   }
@@ -188,10 +186,10 @@ export async function signAndEnqueue(
   // Derive child key and sender address
   const childPrivateKey = deriveChildPrivateKey(rootPrivateKey, predecessorId, requestPath);
   const fromAddress = privateKeyToAddress(childPrivateKey);
-  const txNonce = hexToNumber(`0x${evmTxParams.nonce}`);
+  const txNonce = hexToBigInt(`0x${evmTxParams.nonce}`);
 
   // Sign EVM transaction
-  const serializedUnsigned = serializeUnsignedTx(evmTxParams as CantonEvmParams);
+  const serializedUnsigned = serializeUnsignedTx(evmTxParams as CantonEvmType2Params);
   const txHash = keccak256(serializedUnsigned);
   const { r, s, v } = signEvmTxHash(childPrivateKey, txHash);
 
@@ -209,7 +207,7 @@ export async function signAndEnqueue(
   console.log(`[MPC] Respond exercised`);
 
   // Compute signed tx hash for monitoring
-  const signedTx = reconstructSignedTx(evmTxParams as CantonEvmParams, {
+  const signedTx = reconstructSignedTx(evmTxParams as CantonEvmType2Params, {
     r: `0x${r}`,
     s: `0x${s}`,
     v,
@@ -223,7 +221,7 @@ export async function signAndEnqueue(
     fromAddress,
     nonce: txNonce,
     checkCount: 0,
-    evmParams: evmTxParams as CantonEvmParams,
+    evmParams: evmTxParams as CantonEvmType2Params,
   };
 }
 
@@ -237,18 +235,24 @@ async function extractReturnData(
   receipt: { blockNumber: bigint },
 ): Promise<string> {
   const client = createPublicClient({ chain: sepolia, transport: http(rpcUrl) });
-  const calldata = buildCalldata(tx.evmParams.functionSignature, tx.evmParams.encodedArgs);
+  if (tx.evmParams.to === null) return encodeBoolOutput(true);
+
   const result = await client.call({
     to: `0x${tx.evmParams.to}`,
-    data: calldata,
+    data: tx.evmParams.calldata === "" ? "0x" : `0x${tx.evmParams.calldata}`,
     account: tx.fromAddress,
     blockNumber: receipt.blockNumber - 1n,
   });
-  return result.data!.slice(2);
+  const returnData = result.data ?? "0x";
+  return returnData === "0x" ? encodeBoolOutput(true) : returnData.slice(2);
+}
+
+function encodeBoolOutput(value: boolean): string {
+  return encodeAbiParameters([{ type: "bool" }], [value]).slice(2);
 }
 
 function encodeErrorOutput(): string {
-  return "deadbeef" + encodeAbiParameters([{ type: "bool" }], [true]).slice(2);
+  return "deadbeef" + encodeBoolOutput(true);
 }
 
 // ---------------------------------------------------------------------------
@@ -277,7 +281,7 @@ export async function checkPendingTx(
     // No receipt yet — check if nonce was consumed (tx replaced)
     try {
       const currentNonce = await client.getTransactionCount({ address: tx.fromAddress });
-      if (currentNonce > tx.nonce) {
+      if (BigInt(currentNonce) > tx.nonce) {
         // Double-check: maybe the receipt just appeared
         try {
           await client.getTransactionReceipt({ hash: tx.signedTxHash });

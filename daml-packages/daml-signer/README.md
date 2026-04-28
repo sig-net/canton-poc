@@ -218,31 +218,34 @@ template RespondBidirectionalEvent
         pure ()
 ```
 
-### `EvmTransactionParams`
+### `EvmType2TransactionParams`
 
-Generic EIP-1559 transaction parameters (`EvmTypes.daml`). The MPC is transaction-type agnostic — it signs any Type 2 transaction. The contract stores the function signature and ABI-encoded args as a single blob, giving Daml visibility into the EVM call for on-chain authorization via `abiSlot` / `abiSlotCount` (from `daml-abi`).
+Generic EIP-1559 transaction parameters (`EvmTypes.daml`). The MPC is transaction-type agnostic and signs the exact Type 2 payload represented by these fields. The contract stores raw calldata as inspectable bytes, so domain packages can authorize EVM calls by checking the selector and ABI slots with `abiSelector`, `abiStripSelector`, `abiSlot`, and `abiHasExactSlotCount` from `daml-abi`.
 
 ```daml
-data EvmTransactionParams = EvmTransactionParams
+data EvmAccessListEntry = EvmAccessListEntry
   with
-    to                   : BytesHex   -- 20 bytes, destination address
-    functionSignature    : Text       -- e.g., "transfer(address,uint256)"
-    encodedArgs          : BytesHex   -- full ABI-encoded parameter body (after selector)
-    value                : BytesHex   -- 32 bytes, ETH value (usually "00...")
-    nonce                : BytesHex   -- 32 bytes
-    gasLimit             : BytesHex   -- 32 bytes
-    maxFeePerGas         : BytesHex   -- 32 bytes
-    maxPriorityFeePerGas : BytesHex   -- 32 bytes
-    chainId              : BytesHex   -- 32 bytes
+    address     : BytesHex
+    storageKeys : [BytesHex]
+  deriving (Eq, Show)
+
+data EvmType2TransactionParams = EvmType2TransactionParams
+  with
+    chainId              : BytesHex
+    nonce                : BytesHex
+    maxPriorityFeePerGas : BytesHex
+    maxFeePerGas         : BytesHex
+    gasLimit             : BytesHex
+    to                   : Optional BytesHex
+    value                : BytesHex
+    calldata             : BytesHex
+    accessList           : [EvmAccessListEntry]
   deriving (Eq, Show)
 ```
 
-**Why split `functionSignature` and `encodedArgs` instead of storing raw calldata?** EVM calldata is a 4-byte function selector followed by the ABI-encoded parameter body. Storing the two pieces separately keeps both halves inspectable from Daml while letting any signer reconstruct byte-identical calldata:
+`to = None` represents contract creation. `calldata = ""` represents an empty data field, which covers plain ETH transfers and contract `receive()` calls. Access lists are included in the signed payload instead of being hardcoded empty.
 
-- `functionSignature : Text` is the canonical signature string, e.g. `"transfer(address,uint256)"`. The 4-byte selector is recomputable off-chain as `keccak256(functionSignature)[0..4]` (→ `0xa9059cbb` for `transfer`). Keeping it as `Text` — not a pre-hashed constant — means Daml can compare and display it directly, and the selector is always provably derived from a human-readable name.
-- `encodedArgs : BytesHex` is the ABI-encoded parameter body _after_ the selector. For `transfer(address,uint256)` this is exactly two 32-byte slots: slot 0 = recipient (address left-padded to 32 bytes), slot 1 = amount (uint256). Vault code authorizes the call on-chain by reading these slots — e.g. `daml-vault`'s `Erc20Vault` asserts `abiSlotCount encodedArgs == 2`, extracts the recipient with `abiSlot encodedArgs 0`, and the amount with `abiDecodeUint encodedArgs 1`.
-
-The MPC (and any other signer) reconstructs canonical calldata deterministically as `keccak256(functionSignature)[0..4] <> encodedArgs` — see `buildCalldata` in `ts-packages/canton-sig/src/evm/tx-builder.ts`. Every byte that goes on the wire is therefore a pure function of fields the ledger already sees.
+The MPC does not reconstruct calldata from a function signature. Domain contracts authorize directly from `calldata`: for example, `daml-vault` checks that the first four bytes match `functionSelector "transfer(address,uint256)"`, strips the selector, verifies exactly two ABI slots, and decodes recipient and amount from those slots.
 
 ### `TxParams`
 
@@ -250,7 +253,7 @@ Chain-agnostic transaction parameter wrapper (`TxParams.daml`). Currently EVM-on
 
 ```daml
 data TxParams
-  = EvmTxParams EvmTransactionParams
+  = EvmType2TxParams EvmType2TransactionParams
   deriving (Eq, Show)
 ```
 

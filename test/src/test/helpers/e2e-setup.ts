@@ -47,6 +47,7 @@ export function computeOperatorsHash(operators: string[]): string {
 
 export const SEPOLIA_CHAIN_ID = 11155111;
 export const GAS_LIMIT = 100_000n;
+const ERC20_TRANSFER_SELECTOR = "a9059cbb";
 const POLL_INTERVAL = 5_000;
 const POLL_TIMEOUT = 180_000;
 export const KEY_VERSION = 1;
@@ -254,8 +255,8 @@ export async function executeDepositFlow(
   ]).slice(2);
   const evmTxParams = {
     to: erc20AddressNoPrefix,
-    functionSignature: "transfer(address,uint256)",
-    encodedArgs,
+    calldata: `${ERC20_TRANSFER_SELECTOR}${encodedArgs}`,
+    accessList: [],
     value: toCantonHex(0n, 32),
     nonce: toCantonHex(BigInt(nonce), 32),
     gasLimit: toCantonHex(GAS_LIMIT, 32),
@@ -296,7 +297,7 @@ export async function executeDepositFlow(
   const caip2Id = chainIdHexToCaip2(evmTxParams.chainId);
   const tsRequestId = computeRequestId(
     predecessorId,
-    { tag: "EvmTxParams" as const, value: evmTxParams },
+    { tag: "EvmType2TxParams" as const, value: evmTxParams },
     caip2Id,
     KEY_VERSION,
     fullPath,

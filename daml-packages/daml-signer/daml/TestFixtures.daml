@@ -1,7 +1,7 @@
 module TestFixtures where
 
 import DA.Crypto.Text (BytesHex)
-import EvmTypes (EvmTransactionParams(..))
+import EvmTypes (EvmAccessListEntry(..), EvmType2TransactionParams(..))
 import Signer (Signature(..), EcdsaSigData(..))
 
 -- ---------------------------------------------------------------------------
@@ -65,18 +65,52 @@ erc20BoolSchema = "[{\"name\":\"\",\"type\":\"bool\"}]"
 sampleVaultAddress : BytesHex
 sampleVaultAddress = "000000000000000000000000d8da6bf26964af9d7eed9e03e53415d37aa96045"
 
-sampleEvmParams : EvmTransactionParams
-sampleEvmParams = EvmTransactionParams with
-  to = "a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
-  functionSignature = "transfer(address,uint256)"
-  encodedArgs = sampleVaultAddress
-             <> "0000000000000000000000000000000000000000000000000000000005f5e100"
-  value = "0000000000000000000000000000000000000000000000000000000000000000"
-  nonce = "0000000000000000000000000000000000000000000000000000000000000001"
-  gasLimit = "000000000000000000000000000000000000000000000000000000000000c350"
-  maxFeePerGas = "00000000000000000000000000000000000000000000000000000001dcd65000"
-  maxPriorityFeePerGas = "000000000000000000000000000000000000000000000000000000003b9aca00"
+erc20TransferSelector : BytesHex
+erc20TransferSelector = "a9059cbb"
+
+sampleEvmType2Params : EvmType2TransactionParams
+sampleEvmType2Params = EvmType2TransactionParams with
   chainId = "0000000000000000000000000000000000000000000000000000000000aa36a7"
+  nonce = "0000000000000000000000000000000000000000000000000000000000000001"
+  maxPriorityFeePerGas = "000000000000000000000000000000000000000000000000000000003b9aca00"
+  maxFeePerGas = "00000000000000000000000000000000000000000000000000000001dcd65000"
+  gasLimit = "000000000000000000000000000000000000000000000000000000000000c350"
+  to = Some "a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
+  value = "0000000000000000000000000000000000000000000000000000000000000000"
+  calldata = erc20TransferSelector
+      <> sampleVaultAddress
+      <> "0000000000000000000000000000000000000000000000000000000005f5e100"
+  accessList = []
+
+sampleEthTransferParams : EvmType2TransactionParams
+sampleEthTransferParams = EvmType2TransactionParams with
+  chainId = "0000000000000000000000000000000000000000000000000000000000aa36a7"
+  nonce = "0000000000000000000000000000000000000000000000000000000000000002"
+  maxPriorityFeePerGas = "000000000000000000000000000000000000000000000000000000003b9aca00"
+  maxFeePerGas = "00000000000000000000000000000000000000000000000000000001dcd65000"
+  gasLimit = "0000000000000000000000000000000000000000000000000000000000005208"
+  to = Some "1111111111111111111111111111111111111111"
+  value = "00000000000000000000000000000000000000000000000000038d7ea4c68000"
+  calldata = ""
+  accessList = []
+
+sampleAccessListParams : EvmType2TransactionParams
+sampleAccessListParams = sampleEvmType2Params with
+  accessList =
+    [ EvmAccessListEntry with
+        address = "2222222222222222222222222222222222222222"
+        storageKeys =
+          [ "0000000000000000000000000000000000000000000000000000000000000000"
+          , "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+          ]
+    ]
+
+sampleContractCreationParams : EvmType2TransactionParams
+sampleContractCreationParams = sampleEvmType2Params with
+  nonce = "0000000000000000000000000000000000000000000000000000000000000003"
+  to = None
+  value = "0000000000000000000000000000000000000000000000000000000000000000"
+  calldata = ""
 
 -- ---------------------------------------------------------------------------
 -- Withdrawal test data
@@ -91,15 +125,16 @@ sampleErc20Address = "a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
 sampleHoldingAmount : BytesHex
 sampleHoldingAmount = "0000000000000000000000000000000000000000000000000000000005f5e100"
 
-sampleWithdrawalEvmParams : EvmTransactionParams
-sampleWithdrawalEvmParams = EvmTransactionParams with
-  to = sampleErc20Address
-  functionSignature = "transfer(address,uint256)"
-  encodedArgs = sampleRecipientAddress
-             <> sampleHoldingAmount
-  value = "0000000000000000000000000000000000000000000000000000000000000000"
-  nonce = "0000000000000000000000000000000000000000000000000000000000000001"
-  gasLimit = "000000000000000000000000000000000000000000000000000000000000c350"
-  maxFeePerGas = "00000000000000000000000000000000000000000000000000000001dcd65000"
-  maxPriorityFeePerGas = "000000000000000000000000000000000000000000000000000000003b9aca00"
+sampleWithdrawalEvmParams : EvmType2TransactionParams
+sampleWithdrawalEvmParams = EvmType2TransactionParams with
   chainId = "0000000000000000000000000000000000000000000000000000000000aa36a7"
+  nonce = "0000000000000000000000000000000000000000000000000000000000000001"
+  maxPriorityFeePerGas = "000000000000000000000000000000000000000000000000000000003b9aca00"
+  maxFeePerGas = "00000000000000000000000000000000000000000000000000000001dcd65000"
+  gasLimit = "000000000000000000000000000000000000000000000000000000000000c350"
+  to = Some sampleErc20Address
+  value = "0000000000000000000000000000000000000000000000000000000000000000"
+  calldata = erc20TransferSelector
+      <> sampleRecipientAddress
+      <> sampleHoldingAmount
+  accessList = []

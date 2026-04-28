@@ -1,18 +1,54 @@
 import { describe, it, expect } from "vitest";
-import { computeRequestId, computeResponseHash, type EvmTransactionParams } from "canton-sig";
+import {
+  computeRequestId,
+  computeResponseHash,
+  hashEvmType2Params,
+  type EvmType2TransactionParams,
+} from "canton-sig";
 
-const sampleEvmParams: EvmTransactionParams = {
+const sampleEvmType2Params: EvmType2TransactionParams = {
+  chainId: "0000000000000000000000000000000000000000000000000000000000aa36a7",
+  nonce: "0000000000000000000000000000000000000000000000000000000000000001",
+  maxPriorityFeePerGas: "000000000000000000000000000000000000000000000000000000003b9aca00",
+  maxFeePerGas: "00000000000000000000000000000000000000000000000000000001dcd65000",
+  gasLimit: "000000000000000000000000000000000000000000000000000000000000c350",
   to: "a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
-  functionSignature: "transfer(address,uint256)",
-  encodedArgs:
+  value: "0000000000000000000000000000000000000000000000000000000000000000",
+  calldata:
+    "a9059cbb" +
     "000000000000000000000000d8da6bf26964af9d7eed9e03e53415d37aa96045" +
     "0000000000000000000000000000000000000000000000000000000005f5e100",
+  accessList: [],
+};
+
+const sampleEthTransferParams: EvmType2TransactionParams = {
+  ...sampleEvmType2Params,
+  nonce: "0000000000000000000000000000000000000000000000000000000000000002",
+  gasLimit: "0000000000000000000000000000000000000000000000000000000000005208",
+  to: "1111111111111111111111111111111111111111",
+  value: "00000000000000000000000000000000000000000000000000038d7ea4c68000",
+  calldata: "",
+};
+
+const sampleAccessListParams: EvmType2TransactionParams = {
+  ...sampleEvmType2Params,
+  accessList: [
+    {
+      address: "2222222222222222222222222222222222222222",
+      storageKeys: [
+        "0000000000000000000000000000000000000000000000000000000000000000",
+        "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      ],
+    },
+  ],
+};
+
+const sampleContractCreationParams: EvmType2TransactionParams = {
+  ...sampleEvmType2Params,
+  nonce: "0000000000000000000000000000000000000000000000000000000000000003",
+  to: null,
   value: "0000000000000000000000000000000000000000000000000000000000000000",
-  nonce: "0000000000000000000000000000000000000000000000000000000000000001",
-  gasLimit: "000000000000000000000000000000000000000000000000000000000000c350",
-  maxFeePerGas: "00000000000000000000000000000000000000000000000000000001dcd65000",
-  maxPriorityFeePerGas: "000000000000000000000000000000000000000000000000000000003b9aca00",
-  chainId: "0000000000000000000000000000000000000000000000000000000000aa36a7",
+  calldata: "",
 };
 
 const SENDER = "df60843384dea829feee6d7abe7e9dfef996ad71e536ee73c1af8d23e0b4070a";
@@ -24,15 +60,44 @@ const PATH = "m/44/60/0/0";
 // Cross-language vectors (must match Daml TestRequestId.daml)
 // ---------------------------------------------------------------------------
 const VECTORS = {
-  requestIdKv0: "0x12bfaa34afe3f201000cd8e210621b3fa59d2347910227f0c65e9ea78ae4e1e2",
-  requestIdKv1: "0xdd07e1832901b393e7da1065997c972d269f5d137fc5fcbe23c6e5bb5eccf5d5",
-  requestIdKv256: "0x347d4b8465b7ca5de4622c4d64c6f6ec8230bdb6286aadd55443765d05088854",
-  requestIdEmptyArgs: "0x3eced208c8066b60562bc2b9be41cf675aa82e20a2110f83309b07ecf1395538",
+  hashType2Sample: "0xf1ea0b772bfe36491fe76c2e6dc01500d1d450bf69de3452d7e6db0356568dbf",
+  hashType2EthTransfer: "0x772a96f61e790006aea0170ce80be388d26f929ddaa670088946ee26b0103f92",
+  hashType2AccessList: "0x1958cd3129ac47587cc671edcd0dbee65fa18bca4c97e6c959a30d15ba9994e9",
+  hashType2ContractCreation: "0xea05c872b41f323538651c9661ebdc4404e4c934b548eb49c7f0ddbf6ba03667",
+  requestIdKv0: "0xc78bad85eb84c149611f8dbc20e179e2001f0b703b8199b1a31c8feec653301d",
+  requestIdKv1: "0xaf5de812ffd1408db82f32b543c1b92f973c4280d7456efa032c2ace9725e1e7",
+  requestIdKv256: "0xd790759b0f32e12a2dce289a8a9caba39bfa7804dc8f39efab9480909e029457",
+  requestIdEthTransfer: "0x10a0778a26f7eccfe5f3b987443ddf429a5cd246a5c0baf6c893fbdd0b66256c",
+  requestIdAccessList: "0xa8b7453df8b0739b5a8ceb121ed6ffcda2230e92e703e814ca842ef3604aaadc",
+  requestIdContractCreation: "0x79bf70f52ac4f67dcbfd2711bd72de792a899e4167fbdadba44bf6493d3b6ed6",
   responseHash01: "0x0344a8df5db02fe0579ff283081b60d9e6f3956594facfc6ea2befd5890366f4",
   responseHashEmpty: "0x20ee8f1366f06926e9e8771d8fb9007a8537c8dfdb6a3f8c2cfd64db19d2ec90",
 };
 
 const KNOWN_REQUEST_ID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+// ---------------------------------------------------------------------------
+// hashEvmType2Params
+// ---------------------------------------------------------------------------
+describe("hashEvmType2Params", () => {
+  it("matches cross-language vector for ERC20 calldata", () => {
+    expect(hashEvmType2Params(sampleEvmType2Params)).toBe(VECTORS.hashType2Sample);
+  });
+
+  it("matches cross-language vector for plain ETH transfer", () => {
+    expect(hashEvmType2Params(sampleEthTransferParams)).toBe(VECTORS.hashType2EthTransfer);
+  });
+
+  it("matches cross-language vector for access list", () => {
+    expect(hashEvmType2Params(sampleAccessListParams)).toBe(VECTORS.hashType2AccessList);
+  });
+
+  it("matches cross-language vector for contract creation", () => {
+    expect(hashEvmType2Params(sampleContractCreationParams)).toBe(
+      VECTORS.hashType2ContractCreation,
+    );
+  });
+});
 
 // ---------------------------------------------------------------------------
 // computeRequestId
@@ -42,7 +107,7 @@ describe("computeRequestId", () => {
     expect(
       computeRequestId(
         SENDER,
-        { tag: "EvmTxParams", value: sampleEvmParams },
+        { tag: "EvmType2TxParams", value: sampleEvmType2Params },
         CAIP2_ID,
         KEY_VERSION,
         PATH,
@@ -56,7 +121,7 @@ describe("computeRequestId", () => {
   it("returns a 32-byte hex hash", () => {
     const rid = computeRequestId(
       SENDER,
-      { tag: "EvmTxParams", value: sampleEvmParams },
+      { tag: "EvmType2TxParams", value: sampleEvmType2Params },
       CAIP2_ID,
       KEY_VERSION,
       PATH,
@@ -70,7 +135,7 @@ describe("computeRequestId", () => {
   it("is deterministic", () => {
     const a = computeRequestId(
       SENDER,
-      { tag: "EvmTxParams", value: sampleEvmParams },
+      { tag: "EvmType2TxParams", value: sampleEvmType2Params },
       CAIP2_ID,
       KEY_VERSION,
       PATH,
@@ -80,7 +145,7 @@ describe("computeRequestId", () => {
     );
     const b = computeRequestId(
       SENDER,
-      { tag: "EvmTxParams", value: sampleEvmParams },
+      { tag: "EvmType2TxParams", value: sampleEvmType2Params },
       CAIP2_ID,
       KEY_VERSION,
       PATH,
@@ -94,7 +159,7 @@ describe("computeRequestId", () => {
   it("changes with different sender (operator set)", () => {
     const a = computeRequestId(
       "operatorSetA",
-      { tag: "EvmTxParams", value: sampleEvmParams },
+      { tag: "EvmType2TxParams", value: sampleEvmType2Params },
       CAIP2_ID,
       KEY_VERSION,
       PATH,
@@ -104,7 +169,7 @@ describe("computeRequestId", () => {
     );
     const b = computeRequestId(
       "operatorSetB",
-      { tag: "EvmTxParams", value: sampleEvmParams },
+      { tag: "EvmType2TxParams", value: sampleEvmType2Params },
       CAIP2_ID,
       KEY_VERSION,
       PATH,
@@ -118,7 +183,7 @@ describe("computeRequestId", () => {
   it("changes with different params", () => {
     const a = computeRequestId(
       SENDER,
-      { tag: "EvmTxParams", value: sampleEvmParams },
+      { tag: "EvmType2TxParams", value: sampleEvmType2Params },
       CAIP2_ID,
       KEY_VERSION,
       PATH,
@@ -128,7 +193,7 @@ describe("computeRequestId", () => {
     );
     const b = computeRequestId(
       SENDER,
-      { tag: "EvmTxParams", value: sampleEvmParams },
+      { tag: "EvmType2TxParams", value: sampleEvmType2Params },
       CAIP2_ID,
       KEY_VERSION,
       PATH,
@@ -142,7 +207,7 @@ describe("computeRequestId", () => {
   it("changes with different keyVersion", () => {
     const a = computeRequestId(
       SENDER,
-      { tag: "EvmTxParams", value: sampleEvmParams },
+      { tag: "EvmType2TxParams", value: sampleEvmType2Params },
       CAIP2_ID,
       1,
       PATH,
@@ -152,7 +217,7 @@ describe("computeRequestId", () => {
     );
     const b = computeRequestId(
       SENDER,
-      { tag: "EvmTxParams", value: sampleEvmParams },
+      { tag: "EvmType2TxParams", value: sampleEvmType2Params },
       CAIP2_ID,
       256,
       PATH,
@@ -169,7 +234,7 @@ describe("computeRequestId", () => {
     expect(
       computeRequestId(
         SENDER,
-        { tag: "EvmTxParams", value: sampleEvmParams },
+        { tag: "EvmType2TxParams", value: sampleEvmType2Params },
         CAIP2_ID,
         0,
         PATH,
@@ -180,11 +245,10 @@ describe("computeRequestId", () => {
     ).toBe(VECTORS.requestIdKv0);
   });
 
-  it("changes with empty encodedArgs", () => {
-    const emptyArgsParams = { ...sampleEvmParams, encodedArgs: "" };
+  it("supports plain ETH transfers with empty calldata", () => {
     const a = computeRequestId(
       SENDER,
-      { tag: "EvmTxParams", value: sampleEvmParams },
+      { tag: "EvmType2TxParams", value: sampleEvmType2Params },
       CAIP2_ID,
       1,
       PATH,
@@ -194,7 +258,7 @@ describe("computeRequestId", () => {
     );
     const b = computeRequestId(
       SENDER,
-      { tag: "EvmTxParams", value: emptyArgsParams },
+      { tag: "EvmType2TxParams", value: sampleEthTransferParams },
       CAIP2_ID,
       1,
       PATH,
@@ -203,7 +267,37 @@ describe("computeRequestId", () => {
       "",
     );
     expect(a).not.toBe(b);
-    expect(b).toBe(VECTORS.requestIdEmptyArgs);
+    expect(b).toBe(VECTORS.requestIdEthTransfer);
+  });
+
+  it("matches cross-language vector for access lists", () => {
+    expect(
+      computeRequestId(
+        SENDER,
+        { tag: "EvmType2TxParams", value: sampleAccessListParams },
+        CAIP2_ID,
+        KEY_VERSION,
+        PATH,
+        "ECDSA",
+        "ethereum",
+        "",
+      ),
+    ).toBe(VECTORS.requestIdAccessList);
+  });
+
+  it("matches cross-language vector for contract creation", () => {
+    expect(
+      computeRequestId(
+        SENDER,
+        { tag: "EvmType2TxParams", value: sampleContractCreationParams },
+        CAIP2_ID,
+        KEY_VERSION,
+        PATH,
+        "ECDSA",
+        "ethereum",
+        "",
+      ),
+    ).toBe(VECTORS.requestIdContractCreation);
   });
 });
 

@@ -4,10 +4,10 @@ import DA.Optional (fromSome)
 import Daml.Script
 
 import Signer (Signer(..), SignBidirectional(..), Respond(..), RespondBidirectional(..), SignRequest(..), SignBidirectionalEvent(..), Consume_SignatureResponded(..), Consume_RespondBidirectional(..), Signature(..), EcdsaSigData(..), requestIdFromSignEvent)
-import EvmTypes (isBytesN, isCanonicalHex, isEvmUInt256, validEvmTransactionParams)
+import EvmTypes (EvmAccessListEntry(..), isBytesN, isCanonicalHex, isEvmUInt256, validEvmType2TransactionParams)
 import RequestId (computeOperatorsHash)
 import TxParams (TxParams(..))
-import TestFixtures (sampleEvmParams, erc20BoolSchema)
+import TestFixtures (sampleAccessListParams, sampleContractCreationParams, sampleEthTransferParams, sampleEvmType2Params, erc20BoolSchema)
 
 ------------------------------------------------------------------------
 -- Helpers
@@ -34,7 +34,7 @@ mkSignRequest operator requester sigNetwork =
   submit (actAs operator <> actAs requester) do
     createCmd SignRequest with
       operators = [operator]; requester; sigNetwork
-      txParams = EvmTxParams sampleEvmParams
+      txParams = EvmType2TxParams sampleEvmType2Params
       caip2Id = "eip155:11155111"
       keyVersion = 1
       path = "test-path"
@@ -64,29 +64,50 @@ testHexPredicatesReturnBoolForMalformedInput = do
 
 testHexPredicatesValidateExpectedByteWidths : Script ()
 testHexPredicatesValidateExpectedByteWidths = do
-  assertMsg "20-byte address passes isBytesN 20" (isBytesN 20 sampleEvmParams.to)
-  assertMsg "32-byte uint passes isBytesN 32" (isBytesN 32 sampleEvmParams.value)
+  let sampleTo = fromSome sampleEvmType2Params.to
+  assertMsg "20-byte address passes isBytesN 20" (isBytesN 20 sampleTo)
+  assertMsg "32-byte uint passes isBytesN 32" (isBytesN 32 sampleEvmType2Params.value)
   assertMsg "empty bytes hex is not bytes32" (not (isBytesN 32 ""))
   assertMsg "one-byte hex is not bytes32" (not (isBytesN 32 "00"))
-  assertMsg "21-byte address fails isBytesN 20" (not (isBytesN 20 ("00" <> sampleEvmParams.to)))
-  assertMsg "32-byte uint passes isEvmUInt256" (isEvmUInt256 sampleEvmParams.nonce)
+  assertMsg "21-byte address fails isBytesN 20" (not (isBytesN 20 ("00" <> sampleTo)))
+  assertMsg "32-byte uint passes isEvmUInt256" (isEvmUInt256 sampleEvmType2Params.nonce)
   assertMsg "empty hex is not EVM uint256" (not (isEvmUInt256 ""))
   assertMsg "short hex is not EVM uint256" (not (isEvmUInt256 "00"))
   assertMsg "non-hex is not EVM uint256" (not (isEvmUInt256 "zz"))
 
-testValidEvmTransactionParamsChecksByteShapes : Script ()
-testValidEvmTransactionParamsChecksByteShapes = do
-  assertMsg "sample EVM params are valid" (validEvmTransactionParams sampleEvmParams)
-  assertMsg "empty encoded args are valid variable-length bytes"
-    (validEvmTransactionParams (sampleEvmParams with encodedArgs = ""))
-  assertMsg "non-hex encoded args are rejected"
-    (not (validEvmTransactionParams (sampleEvmParams with encodedArgs = "zz")))
-  assertMsg "wrong address length is rejected"
-    (not (validEvmTransactionParams (sampleEvmParams with to = "00" <> sampleEvmParams.to)))
+testValidEvmType2TransactionParamsChecksByteShapes : Script ()
+testValidEvmType2TransactionParamsChecksByteShapes = do
+  assertMsg "sample EVM params are valid" (validEvmType2TransactionParams sampleEvmType2Params)
+  assertMsg "plain ETH transfer with empty calldata is valid"
+    (validEvmType2TransactionParams sampleEthTransferParams)
+  assertMsg "access list entries are valid"
+    (validEvmType2TransactionParams sampleAccessListParams)
+  assertMsg "contract creation with no recipient is valid"
+    (validEvmType2TransactionParams sampleContractCreationParams)
+  assertMsg "non-hex calldata is rejected"
+    (not (validEvmType2TransactionParams (sampleEvmType2Params with calldata = "zz")))
+  assertMsg "wrong recipient address length is rejected"
+    (not (validEvmType2TransactionParams (sampleEvmType2Params with to = Some "00")))
   assertMsg "empty uint256 field is rejected"
-    (not (validEvmTransactionParams (sampleEvmParams with value = "")))
+    (not (validEvmType2TransactionParams (sampleEvmType2Params with value = "")))
   assertMsg "short uint256 field is rejected"
-    (not (validEvmTransactionParams (sampleEvmParams with nonce = "00")))
+    (not (validEvmType2TransactionParams (sampleEvmType2Params with nonce = "00")))
+  assertMsg "wrong access-list address length is rejected"
+    (not (validEvmType2TransactionParams
+      (sampleEvmType2Params with
+        accessList =
+          [ EvmAccessListEntry with
+              address = "00"
+              storageKeys = ["0000000000000000000000000000000000000000000000000000000000000000"]
+          ])))
+  assertMsg "wrong access-list storage key length is rejected"
+    (not (validEvmType2TransactionParams
+      (sampleEvmType2Params with
+        accessList =
+          [ EvmAccessListEntry with
+              address = "2222222222222222222222222222222222222222"
+              storageKeys = ["00"]
+          ])))
 
 ------------------------------------------------------------------------
 -- Respond / RespondBidirectional
@@ -233,7 +254,7 @@ testSignBidirectionalHappyPath = do
   assertMsg "sigNetwork"                 (e.sigNetwork                 == sigNetwork)
   -- sender is computed in SignRequest.Execute from the on-ledger operators set; not user-supplied
   assertMsg "sender"                     (e.sender                     == expectedSender)
-  assertMsg "txParams"                (e.txParams                == EvmTxParams sampleEvmParams)
+  assertMsg "txParams"                (e.txParams                == EvmType2TxParams sampleEvmType2Params)
   assertMsg "caip2Id"                    (e.caip2Id                    == "eip155:11155111")
   assertMsg "keyVersion"                 (e.keyVersion                 == 1)
   assertMsg "path"                       (e.path                       == "test-path")
@@ -266,7 +287,7 @@ testSignRequestEmptyOperatorsFails = do
   submitMustFail requester do
     createCmd SignRequest with
       operators = []; requester; sigNetwork
-      txParams = EvmTxParams sampleEvmParams
+      txParams = EvmType2TxParams sampleEvmType2Params
       caip2Id = "eip155:11155111"
       keyVersion = 1
       path = "test-path"
@@ -284,7 +305,7 @@ testSignRequestDuplicateOperatorsFails = do
   submitMustFail (actAs operator <> actAs requester) do
     createCmd SignRequest with
       operators = [operator, operator]; requester; sigNetwork
-      txParams = EvmTxParams sampleEvmParams
+      txParams = EvmType2TxParams sampleEvmType2Params
       caip2Id = "eip155:11155111"
       keyVersion = 1
       path = "test-path"
@@ -298,12 +319,12 @@ testSignRequestDuplicateOperatorsFails = do
 testSignRequestRejectsNonCanonicalEvmHex : Script ()
 testSignRequestRejectsNonCanonicalEvmHex = do
   (sigNetwork, operator, requester, _signerCid) <- setup
-  let badParams = sampleEvmParams with to = "0x" <> sampleEvmParams.to
+  let badParams = sampleEvmType2Params with calldata = "0x" <> sampleEvmType2Params.calldata
 
   submitMustFail (actAs operator <> actAs requester) do
     createCmd SignRequest with
       operators = [operator]; requester; sigNetwork
-      txParams = EvmTxParams badParams
+      txParams = EvmType2TxParams badParams
       caip2Id = "eip155:11155111"
       keyVersion = 1
       path = "test-path"
@@ -317,12 +338,12 @@ testSignRequestRejectsNonCanonicalEvmHex = do
 testSignRequestRejectsWrongEvmByteLength : Script ()
 testSignRequestRejectsWrongEvmByteLength = do
   (sigNetwork, operator, requester, _signerCid) <- setup
-  let badParams = sampleEvmParams with nonce = "00"
+  let badParams = sampleEvmType2Params with nonce = "00"
 
   submitMustFail (actAs operator <> actAs requester) do
     createCmd SignRequest with
       operators = [operator]; requester; sigNetwork
-      txParams = EvmTxParams badParams
+      txParams = EvmType2TxParams badParams
       caip2Id = "eip155:11155111"
       keyVersion = 1
       path = "test-path"
@@ -460,7 +481,7 @@ testSenderIsOperatorsHash = do
   let mkReq ops = submit (foldr (<>) (actAs requester) (map actAs ops)) do
         createCmd SignRequest with
           operators = ops; requester; sigNetwork
-          txParams = EvmTxParams sampleEvmParams
+          txParams = EvmType2TxParams sampleEvmType2Params
           caip2Id = "eip155:11155111"
           keyVersion = 1
           path = "test-path"
@@ -499,7 +520,7 @@ testSignBidirectionalEventRejectsSpoofedSender = do
       requester
       sigNetwork
       sender = "0000000000000000000000000000000000000000000000000000000000000000"
-      txParams = EvmTxParams sampleEvmParams
+      txParams = EvmType2TxParams sampleEvmType2Params
       caip2Id = "eip155:11155111"
       keyVersion = 1
       path = "test-path"

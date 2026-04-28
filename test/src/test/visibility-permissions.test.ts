@@ -4,6 +4,7 @@ import {
   CantonClient,
   type CreatedEvent,
   type DisclosedContract,
+  type EvmType2TransactionParams,
   findCreated,
   firstCreated,
   deriveDepositAddress,
@@ -37,8 +38,9 @@ const MPC_ROOT_PUBLIC_KEY =
 const KEY_VERSION = 1;
 const ALGO = "ECDSA";
 const DEST = "ethereum";
+const ERC20_TRANSFER_SELECTOR = "a9059cbb";
 
-function buildSampleEvmParams(vaultAddress: Hex) {
+function buildSampleEvmParams(vaultAddress: Hex): EvmType2TransactionParams {
   const encodedArgs = encodeAbiParameters(parseAbiParameters("address, uint256"), [
     vaultAddress,
     100_000_000n,
@@ -46,8 +48,8 @@ function buildSampleEvmParams(vaultAddress: Hex) {
 
   return {
     to: "a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
-    functionSignature: "transfer(address,uint256)",
-    encodedArgs,
+    calldata: `${ERC20_TRANSFER_SELECTOR}${encodedArgs}`,
+    accessList: [],
     value: "0".repeat(64),
     nonce: "0".repeat(64),
     gasLimit: "0".repeat(64),

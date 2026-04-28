@@ -3,12 +3,21 @@ module Erc20Vault where
 import DA.List (sort, unique)
 import DA.Crypto.Text (BytesHex, PublicKeyHex, secp256k1WithEcdsaOnly)
 
-import EvmTypes (EvmTransactionParams, isBytesN, validEvmTransactionParams)
+import EvmTypes (EvmType2TransactionParams, isBytesN, validEvmType2TransactionParams)
 import TxParams (TxParams(..))
 import Eip712 (chainIdToDecimalText)
 import RequestId (computeResponseHash)
-import Abi (abiHasErrorPrefix, abiDecodeAddress, abiDecodeBool, abiDecodeUint,
-            isAbiAddressSlot, abiAddressSlotToAddress, abiHasExactSlotCount)
+import Abi
+  ( abiHasErrorPrefix
+  , abiDecodeAddress
+  , abiDecodeBool
+  , abiDecodeUint
+  , abiSelectorMatches
+  , abiStripSelector
+  , isAbiAddressSlot
+  , abiAddressSlotToAddress
+  , abiHasExactSlotCount
+  )
 import Signer (Signer, SignRequest(..), SignBidirectionalEvent(..),
                SignatureRespondedEvent(..), RespondBidirectionalEvent(..),
                SignBidirectional(..),
@@ -20,6 +29,15 @@ sameOperatorSet lhs rhs = sort lhs == sort rhs
 
 erc20TransferArgSlots : Int
 erc20TransferArgSlots = 2
+
+erc20TransferSignature : Text
+erc20TransferSignature = "transfer(address,uint256)"
+
+txRecipientAddress : Text -> EvmType2TransactionParams -> BytesHex
+txRecipientAddress label evmTxParams =
+  case evmTxParams.to of
+    Some address -> address
+    None -> error (label <> " requires a transaction recipient")
 
 validateRespondBidirectionalEvent : Text
   -> [Party]
@@ -72,11 +90,11 @@ template PendingDeposit
     requester   : Party
     sigNetwork  : Party
     requestId   : BytesHex
-    evmTxParams : EvmTransactionParams
+    evmTxParams : EvmType2TransactionParams
   where
     signatory operators
     observer requester, sigNetwork
-    ensure not (null operators) && isBytesN 32 requestId && validEvmTransactionParams evmTxParams
+    ensure not (null operators) && isBytesN 32 requestId && validEvmType2TransactionParams evmTxParams
 
 template PendingWithdrawal
   with
@@ -84,7 +102,7 @@ template PendingWithdrawal
     requester    : Party
     sigNetwork   : Party
     requestId    : BytesHex
-    evmTxParams  : EvmTransactionParams
+    evmTxParams  : EvmType2TransactionParams
     erc20Address : BytesHex
     amount       : BytesHex
   where
@@ -92,7 +110,7 @@ template PendingWithdrawal
     observer requester, sigNetwork
     ensure not (null operators)
       && isBytesN 32 requestId
-      && validEvmTransactionParams evmTxParams
+      && validEvmType2TransactionParams evmTxParams
       && isBytesN 20 erc20Address
       && isBytesN 32 amount
 
@@ -155,7 +173,7 @@ template Vault
         requester    : Party
         signerCid    : ContractId Signer
         path         : Text
-        evmTxParams  : EvmTransactionParams
+        evmTxParams  : EvmType2TransactionParams
         keyVersion   : Int
         algo         : Text
         dest         : Text
@@ -165,12 +183,17 @@ template Vault
       controller requester
       do
         assertMsg "Only ERC20 transfer allowed"
-          (evmTxParams.functionSignature == "transfer(address,uint256)")
-        assertMsg "encodedArgs must be exactly 2 ABI slots"
-          (abiHasExactSlotCount erc20TransferArgSlots evmTxParams.encodedArgs)
-        let recipientAddress = abiDecodeAddress evmTxParams.encodedArgs 0
+          (abiSelectorMatches erc20TransferSignature evmTxParams.calldata)
+        let transferArgs = abiStripSelector evmTxParams.calldata
+        assertMsg "transfer calldata must have exactly 2 ABI slots"
+          (abiHasExactSlotCount erc20TransferArgSlots transferArgs)
+        let recipientAddress = abiDecodeAddress transferArgs 0
         assertMsg "Transfer recipient must be vault address"
           (recipientAddress == abiAddressSlotToAddress evmVaultAddress)
+        assertMsg "ERC20 deposit requires token contract recipient"
+          (case evmTxParams.to of
+            Some _ -> True
+            None -> False)
 
         -- Vault namespaces its key derivation via path so two vaults sharing the same operator set still get distinct EVM keys
         let fullPath = vaultId <> "," <> partyToText requester <> "," <> path
@@ -178,7 +201,7 @@ template Vault
 
         signReqCid <- create SignRequest with
           operators; requester; sigNetwork
-          txParams = EvmTxParams evmTxParams; caip2Id; keyVersion
+          txParams = EvmType2TxParams evmTxParams; caip2Id; keyVersion
           path = fullPath; algo; dest; params
           outputDeserializationSchema; respondSerializationSchema
 
@@ -225,11 +248,11 @@ template Vault
         exercise respondBidirectionalEventCid Consume_RespondBidirectional with actor = requester
         exercise signatureRespondedEventCid Consume_SignatureResponded with actor = requester
 
-        let amount = abiDecodeUint (pending.evmTxParams).encodedArgs 1
+        let amount = abiDecodeUint (abiStripSelector (pending.evmTxParams).calldata) 1
         create Erc20Holding with
           operators
           owner = requester
-          erc20Address = (pending.evmTxParams).to
+          erc20Address = txRecipientAddress "ERC20 deposit" pending.evmTxParams
           amount
 
     -- Withdrawal flow
@@ -238,7 +261,7 @@ template Vault
       with
         requester        : Party
         signerCid        : ContractId Signer
-        evmTxParams      : EvmTransactionParams
+        evmTxParams      : EvmType2TransactionParams
         recipientAddress : BytesHex
         balanceCid       : ContractId Erc20Holding
         keyVersion       : Int
@@ -256,13 +279,14 @@ template Vault
         assertMsg "Holding owner mismatch" (holding.owner == requester)
 
         assertMsg "Only ERC20 transfer allowed"
-          (evmTxParams.functionSignature == "transfer(address,uint256)")
-        assertMsg "encodedArgs must be exactly 2 ABI slots"
-          (abiHasExactSlotCount erc20TransferArgSlots evmTxParams.encodedArgs)
-        let recipientArg = abiDecodeAddress evmTxParams.encodedArgs 0
-        let amountArg = abiDecodeUint evmTxParams.encodedArgs 1
+          (abiSelectorMatches erc20TransferSignature evmTxParams.calldata)
+        let transferArgs = abiStripSelector evmTxParams.calldata
+        assertMsg "transfer calldata must have exactly 2 ABI slots"
+          (abiHasExactSlotCount erc20TransferArgSlots transferArgs)
+        let recipientArg = abiDecodeAddress transferArgs 0
+        let amountArg = abiDecodeUint transferArgs 1
         assertMsg "ERC20 contract must match holding"
-          (evmTxParams.to == holding.erc20Address)
+          (evmTxParams.to == Some holding.erc20Address)
         assertMsg "Transfer recipient must match"
           (recipientArg == abiAddressSlotToAddress recipientAddress)
         assertMsg "Withdraw amount must match holding"
@@ -276,7 +300,7 @@ template Vault
 
         signReqCid <- create SignRequest with
           operators; requester; sigNetwork
-          txParams = EvmTxParams evmTxParams; caip2Id; keyVersion
+          txParams = EvmType2TxParams evmTxParams; caip2Id; keyVersion
           path = fullPath; algo; dest; params
           outputDeserializationSchema; respondSerializationSchema
 

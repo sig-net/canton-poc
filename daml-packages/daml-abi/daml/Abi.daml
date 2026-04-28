@@ -6,6 +6,8 @@ import DA.Crypto.Text
   , byteCount
   , fromHex
   , isHex
+  , keccak256
+  , toHex
   )
 
 -- ---------------------------------------------------------------------------
@@ -73,6 +75,16 @@ abiSelector hex =
   in if hexLen < selectorHexChars
      then error ("abiSelector: data too short (" <> show (hexLen / 2) <> " bytes)")
      else DA.Text.take selectorHexChars hex
+
+-- | Compute the canonical 4-byte selector for a Solidity function signature.
+functionSelector : Text -> BytesHex
+functionSelector functionSignature =
+  DA.Text.take selectorHexChars (keccak256 (toHex functionSignature))
+
+-- | Check a calldata selector against a Solidity function signature.
+abiSelectorMatches : Text -> BytesHex -> Bool
+abiSelectorMatches functionSignature calldata =
+  DA.Text.asciiToLower (abiSelector calldata) == functionSelector functionSignature
 
 -- | Strip the 4-byte (8 hex char) function selector from calldata.
 -- After stripping, the result can be decoded with abiSlot/abiDecode* at slot 0.

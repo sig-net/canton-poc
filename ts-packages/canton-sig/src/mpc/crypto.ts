@@ -1,19 +1,24 @@
 import { keccak256, toHex, toBytes, pad, concat, type Hex } from "viem";
 import { secp256k1 } from "@noble/curves/secp256k1.js";
 
-export interface EvmTransactionParams {
-  to: string;
-  functionSignature: string;
-  encodedArgs: string;
-  value: string;
-  nonce: string;
-  gasLimit: string;
-  maxFeePerGas: string;
-  maxPriorityFeePerGas: string;
-  chainId: string;
+export interface EvmAccessListEntry {
+  address: string;
+  storageKeys: string[];
 }
 
-export type TxParams = { tag: "EvmTxParams"; value: EvmTransactionParams };
+export interface EvmType2TransactionParams {
+  chainId: string;
+  nonce: string;
+  maxPriorityFeePerGas: string;
+  maxFeePerGas: string;
+  gasLimit: string;
+  to: string | null;
+  value: string;
+  calldata: string;
+  accessList: EvmAccessListEntry[];
+}
+
+export type TxParams = { tag: "EvmType2TxParams"; value: EvmType2TransactionParams };
 
 // ---------------------------------------------------------------------------
 // EIP-712 primitive encoding — mirrors Daml's Eip712.daml
@@ -41,6 +46,30 @@ function eip712EncodeBytes(data: Hex): Hex {
   return keccak256(data);
 }
 
+function hexBytes(hex: string): Hex {
+  return hex === "" ? "0x" : `0x${hex}`;
+}
+
+function hashOptionalAddress(address: string | null): Hex {
+  return address === null ? eip712EncodeBytes("0x") : eip712EncodeAddress(`0x${address}`);
+}
+
+function hashStorageKeys(storageKeys: string[]): Hex {
+  if (storageKeys.length === 0) return keccak256("0x");
+  return keccak256(concat(storageKeys.map((storageKey) => hexBytes(storageKey))));
+}
+
+function hashAccessListEntry(entry: EvmAccessListEntry): Hex {
+  return keccak256(
+    concat([eip712EncodeAddress(`0x${entry.address}`), hashStorageKeys(entry.storageKeys)]),
+  );
+}
+
+function hashAccessList(accessList: EvmAccessListEntry[]): Hex {
+  if (accessList.length === 0) return keccak256("0x");
+  return keccak256(concat(accessList.map(hashAccessListEntry)));
+}
+
 // ---------------------------------------------------------------------------
 // Flat keccak256(concat(encoded fields)) — mirrors Daml's RequestId.daml
 // ---------------------------------------------------------------------------
@@ -48,23 +77,23 @@ function eip712EncodeBytes(data: Hex): Hex {
 function hashTxParams(cp: TxParams): Hex {
   switch (cp.tag) {
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- exhaustive switch for future BTC/SOL variants
-    case "EvmTxParams":
-      return hashEvmParams(cp.value);
+    case "EvmType2TxParams":
+      return hashEvmType2Params(cp.value);
   }
 }
 
-function hashEvmParams(p: EvmTransactionParams): Hex {
+export function hashEvmType2Params(p: EvmType2TransactionParams): Hex {
   return keccak256(
     concat([
-      eip712EncodeAddress(`0x${p.to}`),
-      eip712EncodeString(p.functionSignature),
-      eip712EncodeBytes(p.encodedArgs === "" ? "0x" : `0x${p.encodedArgs}`),
-      eip712EncodeUint256(`0x${p.value}`),
-      eip712EncodeUint256(`0x${p.nonce}`),
-      eip712EncodeUint256(`0x${p.gasLimit}`),
-      eip712EncodeUint256(`0x${p.maxFeePerGas}`),
-      eip712EncodeUint256(`0x${p.maxPriorityFeePerGas}`),
       eip712EncodeUint256(`0x${p.chainId}`),
+      eip712EncodeUint256(`0x${p.nonce}`),
+      eip712EncodeUint256(`0x${p.maxPriorityFeePerGas}`),
+      eip712EncodeUint256(`0x${p.maxFeePerGas}`),
+      eip712EncodeUint256(`0x${p.gasLimit}`),
+      hashOptionalAddress(p.to),
+      eip712EncodeUint256(`0x${p.value}`),
+      eip712EncodeBytes(hexBytes(p.calldata)),
+      hashAccessList(p.accessList),
     ]),
   );
 }

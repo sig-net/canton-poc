@@ -24,21 +24,25 @@ export type { StreamHandle } from "./infra/ledger-stream.js";
 export {
   computeRequestId,
   computeResponseHash,
+  hashEvmType2Params,
   toSpkiPublicKey,
   derivePublicKey,
 } from "./mpc/crypto.js";
-export type { EvmTransactionParams, TxParams } from "./mpc/crypto.js";
+export type { EvmAccessListEntry, EvmType2TransactionParams, TxParams } from "./mpc/crypto.js";
 export { deriveDepositAddress, chainIdHexToCaip2, KEY_VERSION } from "./mpc/address-derivation.js";
 
 // EVM transaction building
 export {
-  buildCalldata,
   buildTxRequest,
   serializeUnsignedTx,
   reconstructSignedTx,
   submitRawTransaction,
 } from "./evm/tx-builder.js";
-export type { CantonEvmParams } from "./evm/tx-builder.js";
+export type {
+  CantonEvmAccessListEntry,
+  CantonEvmType2Params,
+  Eip1559TxFields,
+} from "./evm/tx-builder.js";
 
 // Daml template types (re-exported for consumer convenience)
 export {

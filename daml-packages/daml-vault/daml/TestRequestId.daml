@@ -5,8 +5,8 @@ import Daml.Script
 
 import Eip712 (eip712EncodeString, eip712EncodeBytesArray)
 import TxParams (TxParams(..))
-import RequestId (hashEvmParams, computeRequestId, computeResponseHash, computeOperatorsHash)
-import TestFixtures (sampleEvmParams)
+import RequestId (hashEvmType2Params, computeRequestId, computeResponseHash, computeOperatorsHash)
+import TestFixtures (sampleAccessListParams, sampleContractCreationParams, sampleEthTransferParams, sampleEvmType2Params)
 
 ------------------------------------------------------------------------
 -- eip712EncodeString
@@ -46,18 +46,20 @@ testHashBytesList = do
     (hEmpty == "c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470")
 
 ------------------------------------------------------------------------
--- hashEvmParams
+-- hashEvmType2Params
 ------------------------------------------------------------------------
 
-testHashEvmTxParams : Script ()
-testHashEvmTxParams = do
-  let h1 = hashEvmParams sampleEvmParams
-  let h2 = hashEvmParams sampleEvmParams
-  assertMsg "hashEvmParams is deterministic" (h1 == h2)
-  assertMsg "hashEvmParams is 32 bytes" (byteCount h1 == 32)
-  let modified = sampleEvmParams with nonce = "0000000000000000000000000000000000000000000000000000000000000002"
-  let h3 = hashEvmParams modified
+testHashEvmType2TxParams : Script ()
+testHashEvmType2TxParams = do
+  let h1 = hashEvmType2Params sampleEvmType2Params
+  let h2 = hashEvmType2Params sampleEvmType2Params
+  assertMsg "hashEvmType2Params is deterministic" (h1 == h2)
+  assertMsg "hashEvmType2Params is 32 bytes" (byteCount h1 == 32)
+  let modified = sampleEvmType2Params with calldata = sampleEvmType2Params.calldata <> "00"
+  let h3 = hashEvmType2Params modified
   assertMsg "different params -> different hash" (h1 /= h3)
+  let h4 = hashEvmType2Params sampleAccessListParams
+  assertMsg "access-list params hash differently" (h1 /= h4)
 
 ------------------------------------------------------------------------
 -- computeOperatorsHash
@@ -84,8 +86,8 @@ testRequestIdDeterministic = do
   let predecessorId = computeOperatorsHash ["Operator1::1220aa", "Operator2::1220bb"]
   let caip2Id = "eip155:11155111"
   let path = "m/44/60/0/0"
-  let id1 = computeRequestId predecessorId (EvmTxParams sampleEvmParams) caip2Id 1 path "ECDSA" "ethereum" ""
-  let id2 = computeRequestId predecessorId (EvmTxParams sampleEvmParams) caip2Id 1 path "ECDSA" "ethereum" ""
+  let id1 = computeRequestId predecessorId (EvmType2TxParams sampleEvmType2Params) caip2Id 1 path "ECDSA" "ethereum" ""
+  let id2 = computeRequestId predecessorId (EvmType2TxParams sampleEvmType2Params) caip2Id 1 path "ECDSA" "ethereum" ""
   assertMsg "request_id must be deterministic" (id1 == id2)
   assertMsg ("request_id wrong length: " <> show (byteCount id1)) (byteCount id1 == 32)
 
@@ -98,7 +100,7 @@ testResponseHash = do
   let predecessorId = computeOperatorsHash ["Operator1::1220aa", "Operator2::1220bb"]
   let caip2Id = "eip155:11155111"
   let path = "m/44/60/0/0"
-  let requestId = computeRequestId predecessorId (EvmTxParams sampleEvmParams) caip2Id 1 path "ECDSA" "ethereum" ""
+  let requestId = computeRequestId predecessorId (EvmType2TxParams sampleEvmType2Params) caip2Id 1 path "ECDSA" "ethereum" ""
   let output    = "00000000000000000000000000000000000000000000000000000000deadbeef"
   let hash1     = computeResponseHash requestId output
   let hash2     = computeResponseHash requestId output
@@ -116,7 +118,7 @@ testDomainSeparation = do
   let predecessorId = computeOperatorsHash ["Operator1::1220aa", "Operator2::1220bb"]
   let caip2Id = "eip155:11155111"
   let path = "m/44/60/0/0"
-  let requestId = computeRequestId predecessorId (EvmTxParams sampleEvmParams) caip2Id 1 path "ECDSA" "ethereum" ""
+  let requestId = computeRequestId predecessorId (EvmType2TxParams sampleEvmType2Params) caip2Id 1 path "ECDSA" "ethereum" ""
   let responseHash = computeResponseHash requestId "01"
   assertMsg "requestId != responseHash" (requestId /= responseHash)
 
@@ -126,21 +128,21 @@ testDomainSeparation = do
 
 testCrossLanguageVectors : Script ()
 testCrossLanguageVectors = do
-  assertMsg "hashEvmParams(sampleEvmParams) matches TS"
-    (hashEvmParams sampleEvmParams
-      == "61745a0f9bf98212e3663e78ecbf8d3424e6a3b220924fee314cd17cbda7f349")
+  assertMsg "hashEvmType2Params(sampleEvmType2Params) matches TS"
+    (hashEvmType2Params sampleEvmType2Params
+      == "f1ea0b772bfe36491fe76c2e6dc01500d1d450bf69de3452d7e6db0356568dbf")
 
   let predecessorId = computeOperatorsHash ["Operator1::1220aa", "Operator2::1220bb"]
   let caip2Id = "eip155:11155111"
   let path = "m/44/60/0/0"
 
-  let rid1 = computeRequestId predecessorId (EvmTxParams sampleEvmParams) caip2Id 1 path "ECDSA" "ethereum" ""
+  let rid1 = computeRequestId predecessorId (EvmType2TxParams sampleEvmType2Params) caip2Id 1 path "ECDSA" "ethereum" ""
   assertMsg "requestId(kv=1) matches TS"
-    (rid1 == "dd07e1832901b393e7da1065997c972d269f5d137fc5fcbe23c6e5bb5eccf5d5")
+    (rid1 == "af5de812ffd1408db82f32b543c1b92f973c4280d7456efa032c2ace9725e1e7")
 
-  let rid256 = computeRequestId predecessorId (EvmTxParams sampleEvmParams) caip2Id 256 path "ECDSA" "ethereum" ""
+  let rid256 = computeRequestId predecessorId (EvmType2TxParams sampleEvmType2Params) caip2Id 256 path "ECDSA" "ethereum" ""
   assertMsg "requestId(kv=256) matches TS"
-    (rid256 == "347d4b8465b7ca5de4622c4d64c6f6ec8230bdb6286aadd55443765d05088854")
+    (rid256 == "d790759b0f32e12a2dce289a8a9caba39bfa7804dc8f39efab9480909e029457")
 
   let knownId = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   assertMsg "computeResponseHash(knownId, 01) matches TS"
@@ -151,14 +153,27 @@ testCrossLanguageVectors = do
     (computeResponseHash knownId ""
       == "20ee8f1366f06926e9e8771d8fb9007a8537c8dfdb6a3f8c2cfd64db19d2ec90")
 
-  let rid0 = computeRequestId predecessorId (EvmTxParams sampleEvmParams) caip2Id 0 path "ECDSA" "ethereum" ""
+  let rid0 = computeRequestId predecessorId (EvmType2TxParams sampleEvmType2Params) caip2Id 0 path "ECDSA" "ethereum" ""
   assertMsg "requestId(kv=0) matches TS"
-    (rid0 == "12bfaa34afe3f201000cd8e210621b3fa59d2347910227f0c65e9ea78ae4e1e2")
+    (rid0 == "c78bad85eb84c149611f8dbc20e179e2001f0b703b8199b1a31c8feec653301d")
 
-  let emptyArgsParams = sampleEvmParams with encodedArgs = ""
-  let hEmpty = hashEvmParams emptyArgsParams
-  assertMsg "hashEvmParams(emptyArgs) matches TS"
-    (hEmpty == "4ec7535f4daabb4f6d1c4f573817c5263ef84fb7272c715f54dccbcc31d43318")
-  let ridEmpty = computeRequestId predecessorId (EvmTxParams emptyArgsParams) caip2Id 1 path "ECDSA" "ethereum" ""
-  assertMsg "requestId(emptyArgs) matches TS"
-    (ridEmpty == "3eced208c8066b60562bc2b9be41cf675aa82e20a2110f83309b07ecf1395538")
+  assertMsg "hashEvmType2Params(plain ETH transfer) matches TS"
+    (hashEvmType2Params sampleEthTransferParams
+      == "772a96f61e790006aea0170ce80be388d26f929ddaa670088946ee26b0103f92")
+  let ridEthTransfer = computeRequestId predecessorId (EvmType2TxParams sampleEthTransferParams) caip2Id 1 path "ECDSA" "ethereum" ""
+  assertMsg "requestId(plain ETH transfer) matches TS"
+    (ridEthTransfer == "10a0778a26f7eccfe5f3b987443ddf429a5cd246a5c0baf6c893fbdd0b66256c")
+
+  assertMsg "hashEvmType2Params(access list) matches TS"
+    (hashEvmType2Params sampleAccessListParams
+      == "1958cd3129ac47587cc671edcd0dbee65fa18bca4c97e6c959a30d15ba9994e9")
+  let ridAccessList = computeRequestId predecessorId (EvmType2TxParams sampleAccessListParams) caip2Id 1 path "ECDSA" "ethereum" ""
+  assertMsg "requestId(access list) matches TS"
+    (ridAccessList == "a8b7453df8b0739b5a8ceb121ed6ffcda2230e92e703e814ca842ef3604aaadc")
+
+  assertMsg "hashEvmType2Params(contract creation) matches TS"
+    (hashEvmType2Params sampleContractCreationParams
+      == "ea05c872b41f323538651c9661ebdc4404e4c934b548eb49c7f0ddbf6ba03667")
+  let ridContractCreation = computeRequestId predecessorId (EvmType2TxParams sampleContractCreationParams) caip2Id 1 path "ECDSA" "ethereum" ""
+  assertMsg "requestId(contract creation) matches TS"
+    (ridContractCreation == "79bf70f52ac4f67dcbfd2711bd72de792a899e4167fbdadba44bf6493d3b6ed6")

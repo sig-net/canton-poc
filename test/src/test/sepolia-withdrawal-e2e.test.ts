@@ -47,10 +47,16 @@ import {
 
 const env = tryLoadEnv();
 const describeIf = env ? describe : describe.skip;
+const ERC20_TRANSFER_SELECTOR = "a9059cbb";
 
 describeIf("sepolia e2e withdrawal lifecycle", () => {
-  let setup: VaultSetup;
+  let setup: VaultSetup | undefined;
   let holdingCid: string;
+
+  const requireSetup = (): VaultSetup => {
+    if (setup === undefined) throw new Error("setupVault did not complete");
+    return setup;
+  };
 
   beforeAll(async () => {
     setup = await setupVault(env!, "sepolia-withdrawal-e2e", "Wdl");
@@ -69,10 +75,11 @@ describeIf("sepolia e2e withdrawal lifecycle", () => {
   }, 600_000);
 
   afterAll(() => {
-    setup.mpcServer.shutdown();
+    setup?.mpcServer.shutdown();
   });
 
   it("completes full withdrawal flow through Sepolia", async () => {
+    const setup = requireSetup();
     const erc20AddressNoPrefix = env!.ERC20_ADDRESS.slice(2).toLowerCase();
 
     // Recipient is the faucet address (send tokens back)
@@ -90,8 +97,8 @@ describeIf("sepolia e2e withdrawal lifecycle", () => {
     ]).slice(2);
     const evmTxParams = {
       to: erc20AddressNoPrefix,
-      functionSignature: "transfer(address,uint256)",
-      encodedArgs,
+      calldata: `${ERC20_TRANSFER_SELECTOR}${encodedArgs}`,
+      accessList: [],
       value: toCantonHex(0n, 32),
       nonce: toCantonHex(BigInt(vaultNonce), 32),
       gasLimit: toCantonHex(GAS_LIMIT, 32),
@@ -141,7 +148,7 @@ describeIf("sepolia e2e withdrawal lifecycle", () => {
     const withdrawalPath = `${setup.vaultId},root`;
     const tsRequestId = computeRequestId(
       setup.predecessorId,
-      { tag: "EvmTxParams" as const, value: evmTxParams },
+      { tag: "EvmType2TxParams" as const, value: evmTxParams },
       caip2Id,
       KEY_VERSION,
       withdrawalPath,
@@ -229,6 +236,7 @@ describeIf("sepolia e2e withdrawal lifecycle", () => {
   }, 300_000);
 
   it("refunds Erc20Holding when withdrawal tx is replaced", async () => {
+    const setup = requireSetup();
     // Run a fresh deposit to get a new holding
     const deposit = await executeDepositFlow(env!, setup, "[wdl-nonce]");
     const errorHoldingCid = deposit.holdingCid;
@@ -257,8 +265,8 @@ describeIf("sepolia e2e withdrawal lifecycle", () => {
     ]).slice(2);
     const evmTxParams = {
       to: erc20AddressNoPrefix,
-      functionSignature: "transfer(address,uint256)",
-      encodedArgs,
+      calldata: `${ERC20_TRANSFER_SELECTOR}${encodedArgs}`,
+      accessList: [],
       value: toCantonHex(0n, 32),
       nonce: toCantonHex(BigInt(vaultNonce), 32),
       gasLimit: toCantonHex(GAS_LIMIT, 32),

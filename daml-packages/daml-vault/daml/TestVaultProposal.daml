@@ -6,7 +6,7 @@ import Daml.Script
 
 import Signer
 import Erc20Vault
-import TestFixtures (testPubKeyHex, sampleVaultAddress, sampleEvmParams, erc20BoolSchema)
+import TestFixtures (testPubKeyHex, sampleVaultAddress, sampleEvmType2Params, erc20BoolSchema)
 
 dirtyVaultAddress : BytesHex
 dirtyVaultAddress = "ffffffffffffffffffffffffd8da6bf26964af9d7eed9e03e53415d37aa96045"
@@ -284,7 +284,7 @@ testProposalToDepositLifecycle = do
   (signEventCid, pendingCid) <- submit (actAs requester <> readAs op1 <> readAs op2 <> readAs sigNetwork) do
     exerciseCmd vaultCid RequestDeposit with
       requester; signerCid; path = partyToText requester
-      evmTxParams = sampleEvmParams
+      evmTxParams = sampleEvmType2Params
       keyVersion = 1; algo = "ECDSA"; dest = "ethereum"; params = ""
       outputDeserializationSchema = erc20BoolSchema
       respondSerializationSchema = erc20BoolSchema

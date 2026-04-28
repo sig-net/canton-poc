@@ -7,29 +7,56 @@ import DA.Crypto.Text
   , toHex
   )
 
-import EvmTypes (EvmTransactionParams(..))
+import EvmTypes (EvmAccessListEntry(..), EvmType2TransactionParams(..))
 import TxParams (TxParams(..))
-import Eip712 (assertBytes32, eip712EncodeString, eip712EncodeUint256, eip712EncodeAddress, eip712EncodeBytes)
+import Eip712
+  ( assertBytes32
+  , eip712EncodeString
+  , eip712EncodeUint256
+  , eip712EncodeAddress
+  , eip712EncodeBytes
+  , safeKeccak256
+  )
 
 -- ---------------------------------------------------------------------------
 -- Struct hashing
 -- ---------------------------------------------------------------------------
 
-hashEvmParams : EvmTransactionParams -> BytesHex
-hashEvmParams p =
+hashEvmType2Params : EvmType2TransactionParams -> BytesHex
+hashEvmType2Params p =
   keccak256 $
-       eip712EncodeAddress p.to
-    <> eip712EncodeString p.functionSignature
-    <> eip712EncodeBytes p.encodedArgs
-    <> eip712EncodeUint256 p.value
+       eip712EncodeUint256 p.chainId
     <> eip712EncodeUint256 p.nonce
-    <> eip712EncodeUint256 p.gasLimit
-    <> eip712EncodeUint256 p.maxFeePerGas
     <> eip712EncodeUint256 p.maxPriorityFeePerGas
-    <> eip712EncodeUint256 p.chainId
+    <> eip712EncodeUint256 p.maxFeePerGas
+    <> eip712EncodeUint256 p.gasLimit
+    <> hashOptionalAddress p.to
+    <> eip712EncodeUint256 p.value
+    <> eip712EncodeBytes p.calldata
+    <> hashAccessList p.accessList
+
+hashOptionalAddress : Optional BytesHex -> BytesHex
+hashOptionalAddress maybeAddress =
+  case maybeAddress of
+    None -> eip712EncodeBytes ""
+    Some address -> eip712EncodeAddress address
+
+hashAccessListEntry : EvmAccessListEntry -> BytesHex
+hashAccessListEntry entry =
+  keccak256 $
+       eip712EncodeAddress entry.address
+    <> hashAccessListStorageKeys entry.storageKeys
+
+hashAccessListStorageKeys : [BytesHex] -> BytesHex
+hashAccessListStorageKeys storageKeys =
+  safeKeccak256 (mconcat storageKeys)
+
+hashAccessList : [EvmAccessListEntry] -> BytesHex
+hashAccessList entries =
+  safeKeccak256 (mconcat (map hashAccessListEntry entries))
 
 hashTxParams : TxParams -> BytesHex
-hashTxParams (EvmTxParams p) = hashEvmParams p
+hashTxParams (EvmType2TxParams p) = hashEvmType2Params p
 
 -- ---------------------------------------------------------------------------
 -- Operators hash — deterministic encoding of multi-sig operator set
