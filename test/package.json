@@ -7,7 +7,7 @@
     "check:types": "tsc --noEmit",
     "sepolia:preflight": "tsx src/scripts/sepolia-preflight.ts",
     "daml:build": "cd .. && dpm build --all",
-    "daml:test": "cd .. && for pkg in daml-packages/daml-abi daml-packages/daml-uint256 daml-packages/daml-eip712 daml-packages/daml-signer daml-packages/daml-vault; do (cd \"$pkg\" && dpm test) || exit 1; done",
+    "daml:test": "cd .. && for pkg in daml-packages/*/; do (cd \"$pkg\" && dpm test) || exit 1; done",
     "daml:sandbox": "cd .. && dpm sandbox --json-api-port 7575 --dar daml-packages/daml-vault/.daml/dist/daml-vault-0.0.1.dar",
     "codegen:api": "curl -sf http://localhost:7575/docs/openapi -o openapi.yaml && pnpm exec openapi-typescript openapi.yaml -o ../ts-packages/canton-sig/generated/api/ledger-api.ts",
     "codegen:daml": "cd .. && dpm codegen-js daml-packages/daml-signer/.daml/dist/daml-signer-0.0.1.dar -o ts-packages/canton-sig/generated/model -s daml.js && dpm codegen-js daml-packages/daml-vault/.daml/dist/daml-vault-0.0.1.dar -o ts-packages/canton-sig/generated/model -s daml.js",
