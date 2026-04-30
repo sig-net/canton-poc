@@ -40,7 +40,7 @@ chainIdToDecimalText hex =
   show (hexToInt hex)
 
 -- ---------------------------------------------------------------------------
--- Keccak helpers
+-- Internal keccak helpers
 -- ---------------------------------------------------------------------------
 
 keccak256Empty : BytesHex
@@ -49,21 +49,27 @@ keccak256Empty = "c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a4
 safeKeccak256 : BytesHex -> BytesHex
 safeKeccak256 hex = if hex == "" then keccak256Empty else keccak256 hex
 
-hashText : Text -> BytesHex
-hashText t = safeKeccak256 (toHex t)
-
-hashBytesList : [BytesHex] -> BytesHex
-hashBytesList xs = safeKeccak256 (foldl (<>) "" (map keccak256 xs))
-
 -- ---------------------------------------------------------------------------
--- EIP-712 domain (shared envelope used by RequestId and future modules)
+-- EIP-712 primitive encoding
 -- ---------------------------------------------------------------------------
 
-domainTypeHash : BytesHex
-domainTypeHash = keccak256 (toHex "EIP712Domain(string name,string version)")
+-- | EIP-712 string encoding: keccak256(utf8(text)).
+eip712EncodeString : Text -> BytesHex
+eip712EncodeString t = safeKeccak256 (toHex t)
 
-domainSeparator : BytesHex
-domainSeparator = keccak256 (domainTypeHash <> keccak256 (toHex "CantonMpc") <> keccak256 (toHex "1"))
+-- | EIP-712 uint256 encoding: left-pad hex to 32 bytes.
+eip712EncodeUint256 : BytesHex -> BytesHex
+eip712EncodeUint256 hex = padLeft hex 32
 
-eip712Hash : BytesHex -> BytesHex
-eip712Hash structHash = keccak256 ("1901" <> domainSeparator <> structHash)
+-- | EIP-712 address encoding: left-pad hex to 32 bytes.
+eip712EncodeAddress : BytesHex -> BytesHex
+eip712EncodeAddress hex = padLeft hex 32
+
+-- | EIP-712 bytes[] encoding: keccak256(concat(map keccak256 items)).
+eip712EncodeBytesArray : [BytesHex] -> BytesHex
+eip712EncodeBytesArray xs = safeKeccak256 (foldl (<>) "" (map keccak256 xs))
+
+-- | EIP-712 bytes encoding: keccak256(raw bytes).
+eip712EncodeBytes : BytesHex -> BytesHex
+eip712EncodeBytes hex = safeKeccak256 hex
+

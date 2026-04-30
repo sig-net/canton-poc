@@ -1,119 +1,97 @@
-import { hashTypedData, toHex, toBytes, type Hex } from "viem";
+import { keccak256, toHex, toBytes, pad, concat, type Hex } from "viem";
 import { secp256k1 } from "@noble/curves/secp256k1.js";
+import { cantonHexToHex } from "../evm/hex.js";
+import type { CantonEvmAccessListEntry, CantonEvmType2Params } from "../evm/tx-builder.js";
 
-export interface EvmTransactionParams {
-  to: string;
-  functionSignature: string;
-  args: string[];
-  value: string;
-  nonce: string;
-  gasLimit: string;
-  maxFeePerGas: string;
-  maxPriorityFee: string;
-  chainId: string;
+export type TxParams = { tag: "EvmType2TxParams"; value: CantonEvmType2Params };
+
+// ---------------------------------------------------------------------------
+// EIP-712 primitive encoding — mirrors Daml's Eip712.daml
+// ---------------------------------------------------------------------------
+
+const EMPTY_BYTES_HASH = keccak256("0x");
+
+const eip712EncodeString = (text: string): Hex => keccak256(toHex(text));
+
+/** EIP-712 word encoding: Canton-format hex (no 0x) left-padded to 32 bytes (viem's pad default). */
+const eip712EncodeWord = (cantonHex: string): Hex => pad(`0x${cantonHex}`);
+
+const hashOptionalAddress = (address: string | null): Hex =>
+  address === null ? EMPTY_BYTES_HASH : eip712EncodeWord(address);
+
+const hashStorageKeys = (storageKeys: string[]): Hex =>
+  storageKeys.length === 0 ? EMPTY_BYTES_HASH : keccak256(concat(storageKeys.map(cantonHexToHex)));
+
+const hashAccessListEntry = (entry: CantonEvmAccessListEntry): Hex =>
+  keccak256(concat([eip712EncodeWord(entry.address), hashStorageKeys(entry.storageKeys)]));
+
+const hashAccessList = (accessList: CantonEvmAccessListEntry[]): Hex =>
+  accessList.length === 0
+    ? EMPTY_BYTES_HASH
+    : keccak256(concat(accessList.map(hashAccessListEntry)));
+
+// ---------------------------------------------------------------------------
+// Flat keccak256(concat(encoded fields)) — mirrors Daml's RequestId.daml
+// ---------------------------------------------------------------------------
+
+function hashTxParams(cp: TxParams): Hex {
+  switch (cp.tag) {
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- exhaustive switch for future BTC/SOL variants
+    case "EvmType2TxParams":
+      return hashEvmType2Params(cp.value);
+  }
 }
 
-// ---------------------------------------------------------------------------
-// EIP-712 type definitions and domain
-// ---------------------------------------------------------------------------
-
-export const eip712Types = {
-  EvmTransactionParams: [
-    { name: "to", type: "address" },
-    { name: "functionSignature", type: "string" },
-    { name: "args", type: "bytes[]" },
-    { name: "value", type: "uint256" },
-    { name: "nonce", type: "uint256" },
-    { name: "gasLimit", type: "uint256" },
-    { name: "maxFeePerGas", type: "uint256" },
-    { name: "maxPriorityFee", type: "uint256" },
-    { name: "chainId", type: "uint256" },
-  ],
-  CantonMpcDepositRequest: [
-    { name: "sender", type: "string" },
-    { name: "evmParams", type: "EvmTransactionParams" },
-    { name: "caip2Id", type: "string" },
-    { name: "keyVersion", type: "uint32" },
-    { name: "path", type: "string" },
-    { name: "algo", type: "string" },
-    { name: "dest", type: "string" },
-    { name: "authCidText", type: "string" },
-  ],
-  CantonMpcResponse: [
-    { name: "requestId", type: "bytes32" },
-    { name: "mpcOutput", type: "bytes" },
-  ],
-} as const;
-
-export const eip712Domain = {
-  name: "CantonMpc",
-  version: "1",
-} as const;
-
-// ---------------------------------------------------------------------------
-// EIP-712 typed data hashing (viem)
-// ---------------------------------------------------------------------------
-
-function toEvmParamsMessage(p: EvmTransactionParams) {
-  const to: Hex = `0x${p.to}`;
-  return {
-    to,
-    functionSignature: p.functionSignature,
-    args: p.args.map((a): Hex => `0x${a}`),
-    value: BigInt(`0x${p.value}`),
-    nonce: BigInt(`0x${p.nonce}`),
-    gasLimit: BigInt(`0x${p.gasLimit}`),
-    maxFeePerGas: BigInt(`0x${p.maxFeePerGas}`),
-    maxPriorityFee: BigInt(`0x${p.maxPriorityFee}`),
-    chainId: BigInt(`0x${p.chainId}`),
-  };
+export function hashEvmType2Params(p: CantonEvmType2Params): Hex {
+  return keccak256(
+    concat([
+      eip712EncodeWord(p.chainId),
+      eip712EncodeWord(p.nonce),
+      eip712EncodeWord(p.maxPriorityFeePerGas),
+      eip712EncodeWord(p.maxFeePerGas),
+      eip712EncodeWord(p.gasLimit),
+      hashOptionalAddress(p.to),
+      eip712EncodeWord(p.value),
+      keccak256(cantonHexToHex(p.calldata)),
+      hashAccessList(p.accessList),
+    ]),
+  );
 }
 
 /**
- * Compute request_id using EIP-712 typed data hashing.
- * Mirrors Daml's computeRequestId in Crypto.daml.
+ * Compute request_id using flat keccak256(concat(encoded fields)).
+ * Three-way consistency required: must match Daml RequestId.daml and Rust indexer_canton::generate_request_id() byte-for-byte.
  */
 export function computeRequestId(
-  sender: string,
-  evmParams: EvmTransactionParams,
+  sender: string, // operatorsHash, set on-ledger by SignRequest.Execute (NOT user-supplied)
+  txParams: TxParams,
   caip2Id: string,
   keyVersion: number,
   path: string,
   algo: string,
   dest: string,
-  authCidText: string,
+  params: string,
 ): Hex {
-  return hashTypedData({
-    domain: eip712Domain,
-    types: eip712Types,
-    primaryType: "CantonMpcDepositRequest",
-    message: {
-      sender,
-      evmParams: toEvmParamsMessage(evmParams),
-      caip2Id,
-      keyVersion,
-      path,
-      algo,
-      dest,
-      authCidText,
-    },
-  });
+  return keccak256(
+    concat([
+      eip712EncodeString(sender),
+      hashTxParams(txParams),
+      eip712EncodeString(caip2Id),
+      pad(toHex(keyVersion)),
+      eip712EncodeString(path),
+      eip712EncodeString(algo),
+      eip712EncodeString(dest),
+      eip712EncodeString(params),
+    ]),
+  );
 }
 
 /**
- * Compute response_hash using EIP-712 typed data hashing.
- * Mirrors Daml's computeResponseHash in Crypto.daml.
+ * Compute response_hash = keccak256(requestId ‖ mpcOutput).
+ * Matches MPC node (respond_bidirectional.rs) and Solana (erc20_vault.rs); mirrored by Daml RequestId.daml.
  */
 export function computeResponseHash(requestId: string, mpcOutput: string): Hex {
-  return hashTypedData({
-    domain: eip712Domain,
-    types: eip712Types,
-    primaryType: "CantonMpcResponse",
-    message: {
-      requestId: `0x${requestId}` as const,
-      mpcOutput: `0x${mpcOutput}` as const,
-    },
-  });
+  return keccak256(concat([cantonHexToHex(requestId), cantonHexToHex(mpcOutput)]));
 }
 
 // ---------------------------------------------------------------------------
@@ -122,7 +100,7 @@ export function computeResponseHash(requestId: string, mpcOutput: string): Hex {
 
 /**
  * Derive the SPKI-encoded public key from an uncompressed secp256k1 public key.
- * Matches the format used by Canton's VaultOrchestrator.mpcPublicKey field.
+ * Matches the format used by Canton's Signer.mpcPublicKey field.
  */
 export function toSpkiPublicKey(uncompressedPubKey: string): string {
   const pubKeyBytes = toBytes(`0x${uncompressedPubKey}`);

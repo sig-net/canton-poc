@@ -1,0 +1,58 @@
+module EvmTypes where
+
+import qualified DA.Text
+
+import DA.Crypto.Text (BytesHex, byteCount, isHex)
+
+data EvmAccessListEntry = EvmAccessListEntry
+  with
+    address     : BytesHex
+    storageKeys : [BytesHex]
+  deriving (Eq, Show)
+
+data EvmType2TransactionParams = EvmType2TransactionParams
+  with
+    chainId              : BytesHex                 -- 32-byte uint256
+    nonce                : BytesHex                 -- 32-byte uint256
+    maxPriorityFeePerGas : BytesHex                 -- 32-byte uint256
+    maxFeePerGas         : BytesHex                 -- 32-byte uint256
+    gasLimit             : BytesHex                 -- 32-byte uint256
+    to                   : Optional BytesHex        -- None for contract creation, Some 20-byte address otherwise
+    value                : BytesHex                 -- 32-byte uint256
+    calldata             : BytesHex                 -- raw EVM calldata, without 0x prefix
+    accessList           : [EvmAccessListEntry]
+  deriving (Eq, Show)
+
+isBytesN : Int -> BytesHex -> Bool
+isBytesN expected value =
+  isCanonicalHex value && byteCount value == expected
+
+isCanonicalHex : BytesHex -> Bool
+isCanonicalHex value =
+  value == "" || (DA.Text.length value % 2 == 0 && isHex value)
+
+isEvmUInt256 : BytesHex -> Bool
+isEvmUInt256 = isBytesN 32
+
+validOptionalAddress : Optional BytesHex -> Bool
+validOptionalAddress maybeAddress =
+  case maybeAddress of
+    None -> True
+    Some address -> isBytesN 20 address
+
+validAccessListEntry : EvmAccessListEntry -> Bool
+validAccessListEntry entry =
+     isBytesN 20 entry.address
+  && all (isBytesN 32) entry.storageKeys
+
+validEvmType2TransactionParams : EvmType2TransactionParams -> Bool
+validEvmType2TransactionParams params =
+     isEvmUInt256 params.chainId
+  && isEvmUInt256 params.nonce
+  && isEvmUInt256 params.maxPriorityFeePerGas
+  && isEvmUInt256 params.maxFeePerGas
+  && isEvmUInt256 params.gasLimit
+  && validOptionalAddress params.to
+  && isEvmUInt256 params.value
+  && isCanonicalHex params.calldata
+  && all validAccessListEntry params.accessList

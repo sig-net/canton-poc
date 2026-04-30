@@ -23,7 +23,6 @@ EIP-712 typed structured data hashing for Daml. Implements the domain separator 
 ## Dependencies
 
 - `daml-prim`, `daml-stdlib`, `daml-script`
-- `daml-evm-types` (via `data-dependencies`) -- used by `TestCrypto.daml` test fixtures
 
 ## Usage
 
@@ -32,7 +31,6 @@ Add to your `daml.yaml`:
 ```yaml
 data-dependencies:
   - ../daml-eip712/.daml/dist/daml-eip712-0.0.1.dar
-  - ../daml-evm-types/.daml/dist/daml-evm-types-0.0.1.dar
 ```
 
 ```daml

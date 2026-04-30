@@ -1,17 +1,15 @@
 import { type Hex } from "viem";
 import { publicKeyToAddress } from "viem/accounts";
-import { utils } from "signet.js";
+import { utils, constants } from "signet.js";
 
 const { deriveChildPublicKey } = utils.cryptography;
-
-/** signet.js uses eip155:1 for all EVM key derivation, regardless of network. */
-const KDF_CHAIN_ID = "eip155:1";
+const KDF_CHAIN_ID = constants.KDF_CHAIN_IDS.CANTON;
 
 export const KEY_VERSION = 1;
 
 /**
  * Derive an Ethereum deposit address from MPC root key + derivation params.
- * Uses eip155:1 for KDF (signet.js protocol constant).
+ * Uses canton:global for KDF (Canton source chain ID).
  */
 export function deriveDepositAddress(
   rootPubKey: string, // "04..." uncompressed secp256k1 (no 0x)

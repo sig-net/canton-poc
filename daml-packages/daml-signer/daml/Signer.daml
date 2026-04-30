@@ -1,0 +1,224 @@
+module Signer where
+
+import DA.List (unique)
+import DA.Crypto.Text (BytesHex, SignatureHex)
+
+import EvmTypes (isBytesN, isCanonicalHex)
+import TxParams (TxParams, validTxParams)
+import RequestId (computeOperatorsHash, computeRequestId)
+
+-- ---------------------------------------------------------------------------
+-- Signature types
+-- ---------------------------------------------------------------------------
+--
+-- Why DER encoding?
+-- Daml lacks byte-manipulation libraries, so we can't convert between signature
+-- formats on-ledger. The built-in `secp256k1WithEcdsaOnly` function requires
+-- DER-encoded signatures, so we use DER throughout the Canton ↔ MPC interface.
+--
+-- Why a union type?
+-- Future-proofs for EdDSA (Solana, Sui) and Schnorr (Bitcoin Taproot) without
+-- changing the wire format. Each variant carries algorithm-specific data.
+-- ---------------------------------------------------------------------------
+
+-- | ECDSA signature with DER encoding and recovery ID.
+data EcdsaSigData = EcdsaSigData with
+    der : SignatureHex      -- DER-encoded (r, s) as hex
+    recoveryId : Int        -- 0 or 1 — y-parity for EVM ecrecover
+  deriving (Eq, Show)
+
+-- | Signature union type (see indexer_canton/contracts.rs for Rust mirror).
+data Signature
+  = EcdsaSig EcdsaSigData
+  -- Future: EddsaSig EddsaSigData, SchnorrSig SchnorrSigData
+  deriving (Eq, Show)
+
+validSignature : Signature -> Bool
+validSignature (EcdsaSig sig) =
+  sig.recoveryId >= 0 && sig.recoveryId <= 1 && isCanonicalHex sig.der && sig.der /= ""
+
+-- | Extract DER-encoded signature for secp256k1 verification.
+signatureDer : Signature -> SignatureHex
+signatureDer (EcdsaSig d) = d.der
+
+-- ---------------------------------------------------------------------------
+-- Signer singleton — MPC infrastructure
+-- ---------------------------------------------------------------------------
+
+template Signer
+  with
+    sigNetwork : Party
+  where
+    signatory sigNetwork
+
+    -- authority bridge: delegates to SignRequest.Execute for operators+requester authority
+    nonconsuming choice SignBidirectional : ContractId SignBidirectionalEvent
+      with
+        signRequestCid : ContractId SignRequest
+        requester      : Party
+      controller requester
+      do
+        exercise signRequestCid Execute
+
+    nonconsuming choice Respond : ContractId SignatureRespondedEvent
+      with
+        signEventCid : ContractId SignBidirectionalEvent
+        requestId    : BytesHex
+        signature    : Signature
+      controller sigNetwork
+      do
+        signEvent <- fetch signEventCid
+        assertMsg "Sign event belongs to a different sigNetwork"
+          (signEvent.sigNetwork == sigNetwork)
+        assertMsg "requestId does not match sign event"
+          (requestId == requestIdFromSignEvent signEvent)
+        create SignatureRespondedEvent with
+          sigNetwork
+          operators = signEvent.operators
+          requester = signEvent.requester
+          requestId
+          responder = sigNetwork
+          signature
+
+    nonconsuming choice RespondBidirectional : ContractId RespondBidirectionalEvent
+      with
+        signEventCid     : ContractId SignBidirectionalEvent
+        requestId        : BytesHex
+        serializedOutput : BytesHex
+        signature        : Signature
+      controller sigNetwork
+      do
+        signEvent <- fetch signEventCid
+        assertMsg "Sign event belongs to a different sigNetwork"
+          (signEvent.sigNetwork == sigNetwork)
+        assertMsg "requestId does not match sign event"
+          (requestId == requestIdFromSignEvent signEvent)
+        create RespondBidirectionalEvent with
+          sigNetwork
+          operators = signEvent.operators
+          requester = signEvent.requester
+          requestId
+          responder = sigNetwork
+          serializedOutput
+          signature
+
+-- ---------------------------------------------------------------------------
+-- SignRequest — transient authority bridge (Vault → Signer CPI)
+-- ---------------------------------------------------------------------------
+
+template SignRequest
+  with
+    operators                  : [Party]
+    requester                  : Party
+    sigNetwork                 : Party
+    txParams                   : TxParams
+    caip2Id                    : Text
+    keyVersion                 : Int
+    path                       : Text   -- Vault is responsible for namespacing (e.g. prefix with vaultId) when same operator set is reused across vaults
+    algo                       : Text
+    dest                       : Text
+    params                     : Text
+    outputDeserializationSchema : Text
+    respondSerializationSchema  : Text
+  where
+    signatory operators, requester
+    observer sigNetwork
+    ensure not (null operators) && unique operators && validTxParams txParams
+
+    -- body authority = operators (signatory) + requester (controller) — exactly SignBidirectionalEvent's signatories
+    -- predecessorId (`sender`) is derived from on-ledger operators here so it cannot be Vault-supplied
+    choice Execute : ContractId SignBidirectionalEvent
+      controller requester
+      do
+        let sender = computeOperatorsHash (map partyToText operators)
+        create SignBidirectionalEvent with
+          operators; requester; sigNetwork; sender
+          txParams; caip2Id; keyVersion; path; algo; dest; params
+          outputDeserializationSchema; respondSerializationSchema
+
+-- ---------------------------------------------------------------------------
+-- SignBidirectionalEvent — what the MPC watches
+-- ---------------------------------------------------------------------------
+
+template SignBidirectionalEvent
+  with
+    operators                  : [Party]
+    requester                  : Party
+    sigNetwork                 : Party
+    sender                     : BytesHex   -- operatorsHash, set by SignRequest.Execute (NOT user-supplied) — feeds KDF + requestId, isolates key namespace per operator set
+    txParams                : TxParams
+    caip2Id                    : Text
+    keyVersion                 : Int
+    path                       : Text
+    algo                       : Text
+    dest                       : Text
+    params                     : Text
+    outputDeserializationSchema : Text
+    respondSerializationSchema  : Text
+  where
+    -- operators + requester — NOT sigNetwork — so a compromised sigNetwork cannot forge sign requests at the ledger level
+    signatory operators, requester
+    observer sigNetwork
+    ensure not (null operators) && unique operators
+      && sender == computeOperatorsHash (map partyToText operators)
+      && validTxParams txParams
+
+requestIdFromSignEvent : SignBidirectionalEvent -> BytesHex
+requestIdFromSignEvent event =
+  computeRequestId
+    event.sender
+    event.txParams
+    event.caip2Id
+    event.keyVersion
+    event.path
+    event.algo
+    event.dest
+    event.params
+
+-- ---------------------------------------------------------------------------
+-- Evidence contracts — MPC response delivery
+-- ---------------------------------------------------------------------------
+
+template SignatureRespondedEvent
+  with
+    sigNetwork : Party
+    operators  : [Party]
+    requester     : Party
+    requestId  : BytesHex
+    responder  : Party
+    signature  : Signature
+  where
+    signatory sigNetwork
+    observer operators, requester
+    ensure isBytesN 32 requestId && validSignature signature
+
+    -- Vault claim path cannot `archive` directly (lacks sigNetwork authority) — this choice delegates cleanup
+    choice Consume_SignatureResponded : ()
+      with actor : Party
+      controller actor
+      do
+        assertMsg "Not authorized"
+          (actor `elem` operators || actor == requester)
+        pure ()
+
+template RespondBidirectionalEvent
+  with
+    sigNetwork       : Party
+    operators        : [Party]
+    requester           : Party
+    requestId        : BytesHex
+    responder        : Party
+    serializedOutput : BytesHex
+    signature        : Signature
+  where
+    signatory sigNetwork
+    observer operators, requester
+    ensure isBytesN 32 requestId && isCanonicalHex serializedOutput && validSignature signature
+
+    choice Consume_RespondBidirectional : ()
+      with actor : Party
+      controller actor
+      do
+        assertMsg "Not authorized"
+          (actor `elem` operators || actor == requester)
+        pure ()

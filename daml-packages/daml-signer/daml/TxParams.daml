@@ -1,0 +1,11 @@
+module TxParams where
+
+import EvmTypes (EvmType2TransactionParams, validEvmType2TransactionParams)
+
+data TxParams
+  = EvmType2TxParams EvmType2TransactionParams
+  deriving (Eq, Show)
+
+validTxParams : TxParams -> Bool
+validTxParams (EvmType2TxParams params) =
+  validEvmType2TransactionParams params

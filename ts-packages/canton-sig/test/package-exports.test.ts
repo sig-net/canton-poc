@@ -1,6 +1,14 @@
 import { describe, it, expect } from "vitest";
 import { existsSync } from "node:fs";
-import { MpcServer, CantonClient, DAR_PATH } from "canton-sig";
+import {
+  MpcServer,
+  CantonClient,
+  DAR_PATH,
+  Signer,
+  SignBidirectionalEvent,
+  Vault,
+  Erc20Holding,
+} from "canton-sig";
 
 describe("package exports (ESM)", () => {
   it("exports MpcServer class", () => {
@@ -18,11 +26,32 @@ describe("package exports (ESM)", () => {
     expect(DAR_PATH).toContain("daml-vault-0.0.1.dar");
   });
 
-  // @ts-expect-error — intentionally calling without args to verify it throws
-  it("MpcServer constructor requires config", () => expect(() => new MpcServer()).toThrow());
+  it("MpcServer constructor requires config", () =>
+    expect(() => {
+      // @ts-expect-error — intentionally calling without args to verify it throws
+      return new MpcServer();
+    }).toThrow());
 
   it("CantonClient can be instantiated with default URL", () => {
     expect(new CantonClient()).toBeInstanceOf(CantonClient);
+  });
+});
+
+describe("daml template re-exports", () => {
+  it("exports Signer with templateId", () => {
+    expect(Signer.templateId).toMatch(/Signer/);
+  });
+
+  it("exports SignBidirectionalEvent with templateId", () => {
+    expect(SignBidirectionalEvent.templateId).toMatch(/SignBidirectionalEvent/);
+  });
+
+  it("exports Vault with templateId", () => {
+    expect(Vault.templateId).toMatch(/Vault/);
+  });
+
+  it("exports Erc20Holding with templateId", () => {
+    expect(Erc20Holding.templateId).toMatch(/Erc20Holding/);
   });
 });
 

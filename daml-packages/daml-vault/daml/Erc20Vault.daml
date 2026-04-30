@@ -1,323 +1,359 @@
 module Erc20Vault where
 
-import DA.Action (when, void)
-import DA.List ((!!)  )
-import DA.Crypto.Text (BytesHex, PublicKeyHex, SignatureHex, secp256k1WithEcdsaOnly)
+import DA.List (sort, unique)
+import DA.Crypto.Text (BytesHex, PublicKeyHex, secp256k1WithEcdsaOnly)
 
-import EvmTypes (EvmTransactionParams)
+import EvmTypes (EvmType2TransactionParams, isBytesN, validEvmType2TransactionParams)
+import TxParams (TxParams(..))
 import Eip712 (chainIdToDecimalText)
-import RequestId (computeRequestId, computeResponseHash)
-import Abi (hasErrorPrefix, abiDecodeBool)
+import RequestId (computeResponseHash)
+import Abi
+  ( abiHasErrorPrefix
+  , abiDecodeAddress
+  , abiDecodeBool
+  , abiDecodeUint
+  , abiSelectorMatches
+  , abiStripSelector
+  , isAbiAddressSlot
+  , abiAddressSlotToAddress
+  , abiHasExactSlotCount
+  )
+import Signer (Signer, SignRequest(..), SignBidirectionalEvent(..),
+               SignatureRespondedEvent(..), RespondBidirectionalEvent(..),
+               SignBidirectional(..),
+               Consume_SignatureResponded(..), Consume_RespondBidirectional(..),
+               requestIdFromSignEvent, signatureDer)
 
-template DepositAuthProposal
-  with
-    issuer : Party
-    owner  : Party
-  where
-    signatory issuer
-    observer owner
+sameOperatorSet : [Party] -> [Party] -> Bool
+sameOperatorSet lhs rhs = sort lhs == sort rhs
 
-template DepositAuthorization
-  with
-    issuer        : Party
-    mpc           : Party
-    owner         : Party
-    remainingUses : Int
-  where
-    signatory issuer
-    observer mpc, owner
+erc20TransferArgSlots : Int
+erc20TransferArgSlots = 2
+
+erc20TransferSignature : Text
+erc20TransferSignature = "transfer(address,uint256)"
+
+txRecipientAddress : Text -> EvmType2TransactionParams -> BytesHex
+txRecipientAddress label evmTxParams =
+  case evmTxParams.to of
+    Some address -> address
+    None -> error (label <> " requires a transaction recipient")
+
+validateRespondBidirectionalEvent : Text
+  -> [Party]
+  -> Party
+  -> Party
+  -> BytesHex
+  -> RespondBidirectionalEvent
+  -> Update ()
+validateRespondBidirectionalEvent label expectedOperators expectedRequester expectedSigNetwork expectedRequestId event = do
+  assertMsg (label <> " sigNetwork mismatch") (event.sigNetwork == expectedSigNetwork)
+  assertMsg (label <> " operators mismatch") (sameOperatorSet expectedOperators event.operators)
+  assertMsg (label <> " requester mismatch") (event.requester == expectedRequester)
+  assertMsg (label <> " requestId mismatch") (event.requestId == expectedRequestId)
+
+validateSignatureRespondedEvent : Text
+  -> [Party]
+  -> Party
+  -> Party
+  -> BytesHex
+  -> SignatureRespondedEvent
+  -> Update ()
+validateSignatureRespondedEvent label expectedOperators expectedRequester expectedSigNetwork expectedRequestId event = do
+  assertMsg (label <> " sigNetwork mismatch") (event.sigNetwork == expectedSigNetwork)
+  assertMsg (label <> " operators mismatch") (sameOperatorSet expectedOperators event.operators)
+  assertMsg (label <> " requester mismatch") (event.requester == expectedRequester)
+  assertMsg (label <> " requestId mismatch") (event.requestId == expectedRequestId)
+
+-- ---------------------------------------------------------------------------
+-- Holdings
+-- ---------------------------------------------------------------------------
 
 template Erc20Holding
   with
-    issuer       : Party
+    operators    : [Party]
     owner        : Party
     erc20Address : BytesHex
     amount       : BytesHex
   where
-    signatory issuer
-    observer owner
+    signatory operators
+    observer owner  -- sigNetwork intentionally NOT an observer — domain contracts decoupled from MPC layer
+    ensure isBytesN 20 erc20Address && isBytesN 32 amount
 
-data TxSource
-  = DepositSource (ContractId DepositAuthorization)
-  | WithdrawalSource (ContractId Erc20Holding)
-  deriving (Eq, Show)
+-- ---------------------------------------------------------------------------
+-- Pending anchors (single-use via archive)
+-- ---------------------------------------------------------------------------
 
-template PendingEvmTx
+template PendingDeposit
   with
-    issuer       : Party
+    operators   : [Party]
+    requester   : Party
+    sigNetwork  : Party
+    requestId   : BytesHex
+    evmTxParams : EvmType2TransactionParams
+  where
+    signatory operators
+    observer requester, sigNetwork
+    ensure not (null operators) && isBytesN 32 requestId && validEvmType2TransactionParams evmTxParams
+
+template PendingWithdrawal
+  with
+    operators    : [Party]
     requester    : Party
-    mpc          : Party
+    sigNetwork   : Party
     requestId    : BytesHex
-    path         : Text
-    evmParams    : EvmTransactionParams
-    vaultId      : Text           -- issuer-controlled discriminator for MPC key derivation (from VaultOrchestrator)
-    nonceCidText : Text           -- user-supplied, source contractId as text (nonce for requestId)
-    source       : TxSource       -- DepositSource authCid | WithdrawalSource balanceCid
-    keyVersion   : Int
-    algo         : Text
-    dest         : Text
-    outputDeserializationSchema : Text  -- JSON ABI type array for decoding EVM return data
-    respondSerializationSchema : Text   -- JSON ABI type array for re-encoding the response
+    evmTxParams  : EvmType2TransactionParams
+    erc20Address : BytesHex
+    amount       : BytesHex
   where
-    signatory issuer
-    observer mpc, requester
+    signatory operators
+    observer requester, sigNetwork
+    ensure not (null operators)
+      && isBytesN 32 requestId
+      && validEvmType2TransactionParams evmTxParams
+      && isBytesN 20 erc20Address
+      && isBytesN 32 amount
 
-template EcdsaSignature
+-- ---------------------------------------------------------------------------
+-- VaultProposal — multi-party agreement for Vault creation
+-- ---------------------------------------------------------------------------
+
+toSign : VaultProposal -> [Party]
+toSign VaultProposal { alreadySigned, allOperators } =
+  filter (`notElem` alreadySigned) allOperators
+
+template VaultProposal
   with
-    issuer    : Party
-    requester : Party
-    requestId : BytesHex
-    r         : BytesHex
-    s         : BytesHex
-    v         : Int
+    allOperators    : [Party]
+    alreadySigned   : [Party]
+    sigNetwork      : Party
+    evmVaultAddress : BytesHex
+    evmMpcPublicKey : PublicKeyHex
+    vaultId         : Text
   where
-    signatory issuer
-    observer requester
+    signatory alreadySigned
+    observer allOperators
+    ensure not (null allOperators) && unique allOperators && unique alreadySigned
+      && isAbiAddressSlot evmVaultAddress
 
-template EvmTxOutcomeSignature
-  with
-    issuer    : Party
-    requester : Party
-    requestId : BytesHex
-    signature : SignatureHex
-    mpcOutput : BytesHex
-  where
-    signatory issuer
-    observer requester
-
-template VaultOrchestrator
-  with
-    issuer       : Party
-    mpc          : Party
-    mpcPublicKey : PublicKeyHex
-    vaultAddress : BytesHex
-    vaultId      : Text           -- issuer-controlled discriminator for MPC key derivation
-  where
-    signatory issuer
-    observer mpc
-
-    nonconsuming choice RequestDepositAuth : ContractId DepositAuthProposal
-      with
-        requester : Party
-      controller requester
+    choice SignVault : Either (ContractId VaultProposal) (ContractId Vault)
+      with signer : Party
+      controller signer
       do
-        create DepositAuthProposal with
-          issuer
-          owner = requester
+        assertMsg "Not an operator" (signer `elem` toSign this)
+        let newSigned = signer :: alreadySigned
+        if sameOperatorSet newSigned allOperators
+          then Right <$> create Vault with
+            operators = allOperators; sigNetwork
+            evmVaultAddress; evmMpcPublicKey; vaultId
+          else Left <$> create this with alreadySigned = newSigned
 
-    nonconsuming choice ApproveDepositAuth : ContractId DepositAuthorization
-      with
-        proposalCid   : ContractId DepositAuthProposal
-        remainingUses : Int
-      controller issuer
-      do
-        proposal <- fetch proposalCid
-        assertMsg "Proposal issuer mismatch" (proposal.issuer == issuer)
-        archive proposalCid
-        create DepositAuthorization with
-          issuer
-          mpc
-          owner = proposal.owner
-          remainingUses
+-- ---------------------------------------------------------------------------
+-- Vault — ERC20 custody
+-- ---------------------------------------------------------------------------
 
-    nonconsuming choice RequestEvmDeposit : ContractId PendingEvmTx
+template Vault
+  with
+    operators       : [Party]
+    sigNetwork      : Party
+    evmVaultAddress : BytesHex
+    evmMpcPublicKey : PublicKeyHex
+    vaultId         : Text
+  where
+    signatory operators
+    observer sigNetwork
+    ensure not (null operators) && unique operators
+      && isAbiAddressSlot evmVaultAddress
+
+    -- Deposit flow
+    -- atomic create+exercise: Vault body (operators + requester) creates SignRequest, requester exercises Signer.SignBidirectional → Execute → SignBidirectionalEvent — all in one tx
+    nonconsuming choice RequestDeposit
+      : (ContractId SignBidirectionalEvent, ContractId PendingDeposit)
       with
-        requester      : Party
-        path           : Text
-        evmParams      : EvmTransactionParams
-        authCidText    : Text       -- user-supplied, DepositAuthorization contractId as text (nonce)
-        keyVersion     : Int
-        algo           : Text
-        dest           : Text
-        authCid        : ContractId DepositAuthorization
+        requester    : Party
+        signerCid    : ContractId Signer
+        path         : Text
+        evmTxParams  : EvmType2TransactionParams
+        keyVersion   : Int
+        algo         : Text
+        dest         : Text
+        params       : Text
         outputDeserializationSchema : Text
-        respondSerializationSchema : Text
+        respondSerializationSchema  : Text
       controller requester
       do
-        auth <- fetch authCid
-        assertMsg "Auth card issuer mismatch" (auth.issuer == issuer)
-        assertMsg "Auth card owner mismatch" (auth.owner == requester)
-        assertMsg "Auth card has no remaining uses" (auth.remainingUses > 0)
-        archive authCid
-        when (auth.remainingUses > 1) do
-          void $ create auth with remainingUses = auth.remainingUses - 1
-
-        let recipientArg = case evmParams.args of
-              recipient :: _ -> recipient
-              [] -> ""
-
         assertMsg "Only ERC20 transfer allowed"
-          (evmParams.functionSignature == "transfer(address,uint256)")
+          (abiSelectorMatches erc20TransferSignature evmTxParams.calldata)
+        let transferArgs = abiStripSelector evmTxParams.calldata
+        assertMsg "transfer calldata must have exactly 2 ABI slots"
+          (abiHasExactSlotCount erc20TransferArgSlots transferArgs)
+        let recipientAddress = abiDecodeAddress transferArgs 0
         assertMsg "Transfer recipient must be vault address"
-          (recipientArg == vaultAddress)
+          (recipientAddress == abiAddressSlotToAddress evmVaultAddress)
+        assertMsg "ERC20 deposit requires token contract recipient"
+          (case evmTxParams.to of
+            Some _ -> True
+            None -> False)
 
-        let sender = partyToText requester
-        let fullPath = sender <> "," <> path
-        let caip2Id = "eip155:" <> chainIdToDecimalText evmParams.chainId
-        let requestId = computeRequestId sender evmParams caip2Id keyVersion fullPath algo dest authCidText
-        create PendingEvmTx with
-          issuer; requester; mpc; requestId; path = fullPath; evmParams
-          vaultId; nonceCidText = authCidText; source = DepositSource authCid
-          keyVersion; algo; dest; outputDeserializationSchema; respondSerializationSchema
+        -- Vault namespaces its key derivation via path so two vaults sharing the same operator set still get distinct EVM keys
+        let fullPath = vaultId <> "," <> partyToText requester <> "," <> path
+        let caip2Id = "eip155:" <> chainIdToDecimalText evmTxParams.chainId
 
-    nonconsuming choice SignEvmTx : ContractId EcdsaSignature
+        signReqCid <- create SignRequest with
+          operators; requester; sigNetwork
+          txParams = EvmType2TxParams evmTxParams; caip2Id; keyVersion
+          path = fullPath; algo; dest; params
+          outputDeserializationSchema; respondSerializationSchema
+
+        signEventCid <- exercise signerCid SignBidirectional with
+          signRequestCid = signReqCid; requester
+
+        signEvent <- fetch signEventCid
+        let requestId = requestIdFromSignEvent signEvent
+
+        pendingCid <- create PendingDeposit with
+          operators; requester; sigNetwork; requestId; evmTxParams
+
+        pure (signEventCid, pendingCid)
+
+    nonconsuming choice ClaimDeposit : ContractId Erc20Holding
       with
-        requester : Party
-        requestId : BytesHex
-        r         : BytesHex
-        s         : BytesHex
-        v         : Int
-      controller issuer
-      do
-        create EcdsaSignature with
-          issuer; requester; requestId; r; s; v
-
-    nonconsuming choice ProvideEvmOutcomeSig : ContractId EvmTxOutcomeSignature
-      with
-        requester : Party
-        requestId : BytesHex
-        signature : SignatureHex
-        mpcOutput : BytesHex
-      controller issuer
-      do
-        create EvmTxOutcomeSignature with
-          issuer; requester; requestId; signature; mpcOutput
-
-    nonconsuming choice ClaimEvmDeposit : ContractId Erc20Holding
-      with
-        requester   : Party
-        pendingCid  : ContractId PendingEvmTx
-        outcomeCid  : ContractId EvmTxOutcomeSignature
-        ecdsaCid    : ContractId EcdsaSignature
+        requester                    : Party
+        pendingDepositCid            : ContractId PendingDeposit
+        respondBidirectionalEventCid : ContractId RespondBidirectionalEvent
+        signatureRespondedEventCid   : ContractId SignatureRespondedEvent
       controller requester
       do
-        pending <- fetch pendingCid
-        outcome <- fetch outcomeCid
-        ecdsa   <- fetch ecdsaCid
+        pending <- fetch pendingDepositCid
+        archive pendingDepositCid        -- archive first: single-use guarantee against MPC-outcome replay
 
-        case pending.source of
-          DepositSource _ -> pure ()
-          _ -> abort "PendingEvmTx is not a deposit"
+        assertMsg "Sender mismatch" (pending.requester == requester)
+        assertMsg "Operators mismatch" (sameOperatorSet pending.operators operators)
 
-        assertMsg "Pending issuer mismatch"
-          (pending.issuer == issuer)
-        assertMsg "Outcome issuer mismatch"
-          (outcome.issuer == issuer)
-        assertMsg "Requester mismatch"
-          (pending.requester == requester)
+        outcome <- fetch respondBidirectionalEventCid
+        validateRespondBidirectionalEvent "Outcome" operators requester sigNetwork pending.requestId outcome
 
-        assertMsg "Request ID mismatch"
-          (pending.requestId == outcome.requestId)
+        signatureResponse <- fetch signatureRespondedEventCid
+        validateSignatureRespondedEvent "Signature response" operators requester sigNetwork pending.requestId signatureResponse
+
+        let responseHash = computeResponseHash pending.requestId outcome.serializedOutput
+        assertMsg "Invalid MPC signature"
+          (secp256k1WithEcdsaOnly (signatureDer outcome.signature) responseHash evmMpcPublicKey)
 
         assertMsg "MPC reported ETH transaction failure"
-          (not (hasErrorPrefix outcome.mpcOutput))
-        let success = abiDecodeBool outcome.mpcOutput 0
+          (not (abiHasErrorPrefix outcome.serializedOutput))
+        let success = abiDecodeBool outcome.serializedOutput 0
         assertMsg "ERC20 transfer returned false" success
 
-        let responseHash = computeResponseHash pending.requestId outcome.mpcOutput
-        assertMsg "Invalid MPC signature on deposit response"
-          (secp256k1WithEcdsaOnly outcome.signature responseHash mpcPublicKey)
+        exercise respondBidirectionalEventCid Consume_RespondBidirectional with actor = requester
+        exercise signatureRespondedEventCid Consume_SignatureResponded with actor = requester
 
-        let amount = (pending.evmParams).args !! 1
-
-        archive pendingCid
-        archive outcomeCid
-        archive ecdsaCid
-
+        let amount = abiDecodeUint (abiStripSelector (pending.evmTxParams).calldata) 1
         create Erc20Holding with
-          issuer
-          owner = pending.requester
-          erc20Address = (pending.evmParams).to
+          operators
+          owner = requester
+          erc20Address = txRecipientAddress "ERC20 deposit" pending.evmTxParams
           amount
 
-    nonconsuming choice RequestEvmWithdrawal : ContractId PendingEvmTx
+    -- Withdrawal flow
+    nonconsuming choice RequestWithdrawal
+      : (ContractId SignBidirectionalEvent, ContractId PendingWithdrawal)
       with
         requester        : Party
-        evmParams        : EvmTransactionParams
+        signerCid        : ContractId Signer
+        evmTxParams      : EvmType2TransactionParams
         recipientAddress : BytesHex
-        balanceCidText   : Text
+        balanceCid       : ContractId Erc20Holding
         keyVersion       : Int
         algo             : Text
         dest             : Text
-        balanceCid       : ContractId Erc20Holding
+        params           : Text
         outputDeserializationSchema : Text
-        respondSerializationSchema : Text
+        respondSerializationSchema  : Text
       controller requester
       do
+        assertMsg "recipientAddress must be a canonical ABI address slot"
+          (isAbiAddressSlot recipientAddress)
         holding <- fetch balanceCid
-        assertMsg "Holding issuer mismatch" (holding.issuer == issuer)
+        assertMsg "Holding operators mismatch" (sameOperatorSet holding.operators operators)
         assertMsg "Holding owner mismatch" (holding.owner == requester)
 
-        let recipientArg = case evmParams.args of
-              recipient :: _ -> recipient
-              [] -> ""
-        let amountArg = evmParams.args !! 1
-
         assertMsg "Only ERC20 transfer allowed"
-          (evmParams.functionSignature == "transfer(address,uint256)")
+          (abiSelectorMatches erc20TransferSignature evmTxParams.calldata)
+        let transferArgs = abiStripSelector evmTxParams.calldata
+        assertMsg "transfer calldata must have exactly 2 ABI slots"
+          (abiHasExactSlotCount erc20TransferArgSlots transferArgs)
+        let recipientArg = abiDecodeAddress transferArgs 0
+        let amountArg = abiDecodeUint transferArgs 1
         assertMsg "ERC20 contract must match holding"
-          (evmParams.to == holding.erc20Address)
-        assertMsg "Transfer recipient must match specified address"
-          (recipientArg == recipientAddress)
-        assertMsg "Withdraw amount must match holding (full withdrawal)"
+          (evmTxParams.to == Some holding.erc20Address)
+        assertMsg "Transfer recipient must match"
+          (recipientArg == abiAddressSlotToAddress recipientAddress)
+        assertMsg "Withdraw amount must match holding"
           (amountArg == holding.amount)
 
-        archive balanceCid
+        archive balanceCid        -- optimistic debit: refunded by CompleteWithdrawal if MPC reports failure
 
-        let sender = partyToText requester
-        let fullPath = "root"
-        let caip2Id = "eip155:" <> chainIdToDecimalText evmParams.chainId
-        let requestId = computeRequestId sender evmParams caip2Id keyVersion fullPath algo dest balanceCidText
-        create PendingEvmTx with
-          issuer; requester; mpc; requestId; path = fullPath; evmParams
-          vaultId; nonceCidText = balanceCidText; source = WithdrawalSource balanceCid
-          keyVersion; algo; dest; outputDeserializationSchema; respondSerializationSchema
+        let caip2Id = "eip155:" <> chainIdToDecimalText evmTxParams.chainId
+        -- Vault namespaces its key derivation via path so two vaults sharing the same operator set still get distinct EVM keys
+        let fullPath = vaultId <> ",root"
 
-    nonconsuming choice CompleteEvmWithdrawal : Optional (ContractId Erc20Holding)
+        signReqCid <- create SignRequest with
+          operators; requester; sigNetwork
+          txParams = EvmType2TxParams evmTxParams; caip2Id; keyVersion
+          path = fullPath; algo; dest; params
+          outputDeserializationSchema; respondSerializationSchema
+
+        signEventCid <- exercise signerCid SignBidirectional with
+          signRequestCid = signReqCid; requester
+
+        signEvent <- fetch signEventCid
+        let requestId = requestIdFromSignEvent signEvent
+
+        pendingCid <- create PendingWithdrawal with
+          operators; requester; sigNetwork; requestId; evmTxParams
+          erc20Address = holding.erc20Address
+          amount = holding.amount
+
+        pure (signEventCid, pendingCid)
+
+    nonconsuming choice CompleteWithdrawal : Optional (ContractId Erc20Holding)
       with
-        requester   : Party
-        pendingCid  : ContractId PendingEvmTx
-        outcomeCid  : ContractId EvmTxOutcomeSignature
-        ecdsaCid    : ContractId EcdsaSignature
+        requester                    : Party
+        pendingWithdrawalCid         : ContractId PendingWithdrawal
+        respondBidirectionalEventCid : ContractId RespondBidirectionalEvent
+        signatureRespondedEventCid   : ContractId SignatureRespondedEvent
       controller requester
       do
-        pending <- fetch pendingCid
-        outcome <- fetch outcomeCid
-        ecdsa   <- fetch ecdsaCid
+        pending <- fetch pendingWithdrawalCid
+        archive pendingWithdrawalCid
 
-        case pending.source of
-          WithdrawalSource _ -> pure ()
-          _ -> abort "PendingEvmTx is not a withdrawal"
+        assertMsg "Sender mismatch" (pending.requester == requester)
+        assertMsg "Operators mismatch" (sameOperatorSet pending.operators operators)
 
-        assertMsg "Pending issuer mismatch"
-          (pending.issuer == issuer)
-        assertMsg "Outcome issuer mismatch"
-          (outcome.issuer == issuer)
+        outcome <- fetch respondBidirectionalEventCid
+        validateRespondBidirectionalEvent "Outcome" operators requester sigNetwork pending.requestId outcome
 
-        assertMsg "Requester mismatch"
-          (pending.requester == requester)
+        signatureResponse <- fetch signatureRespondedEventCid
+        validateSignatureRespondedEvent "Signature response" operators requester sigNetwork pending.requestId signatureResponse
 
-        assertMsg "Request ID mismatch"
-          (pending.requestId == outcome.requestId)
+        let responseHash = computeResponseHash pending.requestId outcome.serializedOutput
+        assertMsg "Invalid MPC signature"
+          (secp256k1WithEcdsaOnly (signatureDer outcome.signature) responseHash evmMpcPublicKey)
 
-        let responseHash = computeResponseHash pending.requestId outcome.mpcOutput
-        assertMsg "Invalid MPC signature on withdrawal response"
-          (secp256k1WithEcdsaOnly outcome.signature responseHash mpcPublicKey)
-
-        archive pendingCid
-        archive outcomeCid
-        archive ecdsaCid
+        exercise respondBidirectionalEventCid Consume_RespondBidirectional with actor = requester
+        exercise signatureRespondedEventCid Consume_SignatureResponded with actor = requester
 
         let shouldRefund =
-              if hasErrorPrefix outcome.mpcOutput then True
-              else not (abiDecodeBool outcome.mpcOutput 0)
+              abiHasErrorPrefix outcome.serializedOutput
+                || not (abiDecodeBool outcome.serializedOutput 0)
+
         if not shouldRefund
-          then return None
+          then pure None
           else do
-            let amount = (pending.evmParams).args !! 1
             refundCid <- create Erc20Holding with
-              issuer
-              owner = pending.requester
-              erc20Address = (pending.evmParams).to
-              amount
-            return (Some refundCid)
+              operators
+              owner = requester
+              erc20Address = pending.erc20Address
+              amount = pending.amount
+            pure (Some refundCid)

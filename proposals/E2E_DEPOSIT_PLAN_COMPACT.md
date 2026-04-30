@@ -5,33 +5,43 @@ personal **deposit address**, and the system automatically sweeps them into a
 centralized vault — except here the "CEX backend" is a Canton ledger + MPC
 signing service, giving cryptographic proof of every step.
 
+The Signer (sigNetwork) is generic signing infrastructure — chain-agnostic,
+vault-agnostic, reusable across multiple vault types. The Vault (operators)
+is domain-specific ERC20 custody that creates signing requests and interprets
+outcomes. See [`daml-packages/daml-signer/README.md`](../daml-packages/daml-signer/README.md)
+for the Signer layer, authority delegation flow, MPC service flow, and security model.
+
 ## What the Demo Does
 
-1. User exercises `RequestDepositAuth` on Canton, creating a `DepositAuthProposal`
-   (Daml Propose and Accept pattern)
-2. Issuer approves via `ApproveDepositAuth`, archiving the proposal and creating
-   a `DepositAuthorization` (auth card) with a hard use-limit
-3. User sends ERC20 tokens to a **deposit address** on Sepolia
-   (derived from MPC root public key, predecessorId=vaultId+issuer, path=sender+userPath)
-4. User exercises `RequestEvmDeposit` on Canton to request a **sweep from the deposit address to the
-   vault address**
-   (derived from MPC root public key, predecessorId=vaultId+issuer, path="root")
-   via an ERC20 `transfer` call. The choice validates the `DepositAuthorization`, burns one
-   use, and creates a `PendingEvmTx` with `source = DepositSource`.
-5. MPC Service observes the `PendingEvmTx`
+1. User exercises `Signer.IssueNonce` (disclosed contract), creating a
+   `SigningNonce` for replay prevention
+2. User sends ERC20 tokens to a **deposit address** on Sepolia
+   (derived from MPC root public key, predecessorId=vaultId+operatorsHash,
+   path=requester+userPath)
+3. User exercises `Vault.RequestDeposit` on Canton to request a **sweep from
+   the deposit address to the vault address**
+   (derived from MPC root public key, predecessorId=vaultId+operatorsHash,
+   path="root") via an ERC20 `transfer` call. The choice atomically:
+   - Creates a `SignRequest` (authority bridge)
+   - Exercises `Signer.SignBidirectional`, which archives the `SigningNonce`,
+     delegates to `SignRequest.Execute` → `SignBidirectionalEvent`, and
+     issues a fresh nonce
+   - Creates a `PendingDeposit` (vault-layer anchor)
+4. MPC Service observes the `SignBidirectionalEvent` via WebSocket stream
+5. MPC Service validates signatories and nonce archive in same tx
 6. MPC Service builds, serializes, and signs the EVM sweep transaction
-7. MPC Service exercises `SignEvmTx` on Canton, creating an `EcdsaSignature`
-8. User observes the `EcdsaSignature`, reconstructs the signed transaction,
-   and submits it to Sepolia via `eth_sendRawTransaction` — this executes the
-   ERC20 `transfer` on-chain, sweeping tokens from the **deposit address** to the
-   **vault address**
-9. MPC Service re-simulates the call at `blockNumber - 1` to extract ABI-encoded
-   return data
-10. MPC Service exercises `ProvideEvmOutcomeSig` on Canton, creating an
-    `EvmTxOutcomeSignature` carrying the ABI-encoded `mpcOutput`
-11. User observes the outcome signature and exercises `ClaimEvmDeposit` on Canton
-12. Canton decodes the `mpcOutput` via `abiDecodeBool`, verifies the MPC signature,
-    archives all evidence contracts, and creates an `Erc20Holding`
+7. MPC Service exercises `Signer.Respond` on Canton, creating a
+   `SignatureRespondedEvent`
+8. User observes the `SignatureRespondedEvent`, reconstructs the signed
+   transaction, and submits it to Sepolia via `eth_sendRawTransaction`
+9. MPC Service re-simulates the call at `blockNumber - 1` to extract
+   ABI-encoded return data
+10. MPC Service exercises `Signer.RespondBidirectional` on Canton, creating a
+    `RespondBidirectionalEvent` carrying the ABI-encoded `mpcOutput`
+11. User observes the outcome and exercises `Vault.ClaimDeposit` on Canton
+12. Canton verifies the MPC signature via `secp256k1WithEcdsaOnly`, decodes the
+    `mpcOutput` via `abiDecodeBool`, archives `PendingDeposit` and both evidence
+    contracts, and creates an `Erc20Holding`
 
 The result: an `Erc20Holding` contract on Canton representing the user's
 wrapped ERC-20 balance.
@@ -39,500 +49,348 @@ wrapped ERC-20 balance.
 ## Deposit Lifecycle
 
 ```
- User                           Canton (VaultOrchestrator)     MPC Service                    Sepolia
- |                              |                              |                              |
- | 1. RequestDepositAuth        |                              |                              |
- |----------------------------->|                              |                              |
- |                              | creates DepositAuthProposal  |                              |
- |                              |                              |                              |
- | 2. Issuer: ApproveDepositAuth|                              |                              |
- |                              | archives DepositAuthProposal |                              |
- |                              | creates DepositAuthorization |                              |
- |<---- DepositAuthorization ---|  (remainingUses=N)           |                              |
- |                              |                              |                              |
- | 3. ERC20 transfer            |                              |                              |
- |                              |                              |                              |
- |----------------------------------------------------------------------------- transfer ---->|
- |                              |                              |        (user → deposit addr) |
- |<---------------------------------------------------------------------------- receipt ------|
- |                              |                              |                              |
- | 4. RequestEvmDeposit         |                              |                              |
- |    (evmParams, path,         |                              |                              |
- |     authCidText, authCid,    |                              |                              |
- |     schemas)                 |                              |                              |
- |----------------------------->|                              |                              |
- |                              | validates auth card,         |                              |
- |                              | burns one use                |                              |
- |                              |                              |                              |
- |                              | 5. creates PendingEvmTx      |                              |
- |                              |    (source=DepositSource,    |                              |
- |                              |     path, evmParams,         |                              |
- |                              |     requester, schemas,      |                              |
- |                              |     nonceCidText)            |                              |
- |                              |                              |                              |
- |                              |    observes PendingEvmTx     |                              |
- |                              |----------------------------->|                              |
- |                              |                              |                              |
- |                              |                              | 6. buildCalldata             |
- |                              |                              |    serializeTx               |
- |                              |                              |    keccak256 -> txHash       |
- |                              |                              |    deriveChildKey            |
- |                              |                              |    sign(txHash)              |
- |                              |                              |                              |
- |                              |                              | 7. SignEvmTx                 |
- |                              |<------ EcdsaSignature -------|                              |
- |                              |        (r, s, v)             |                              |
- |                              |                              |                              |
- | 8. observes EcdsaSignature   |                              |                              |
- |<-----------------------------|                              |                              |
- |    reconstructSignedTx       |                              |                              |
- |    eth_sendRawTransaction    |                              |                              |
- |----------------------------------------------------------------------------- sweep tx ---->|
- |                              |                              |  (deposit addr → vault addr) |
- |<---------------------------------------------------------------------------- receipt ------|
- |                              |                              |                              |
- |                              |                              | 9. polls Sepolia             |
- |                              |                              |    (knows expected           |
- |                              |                              |     sweep tx hash)           |
- |                              |                              |                              |
- |                              |                              |--- getTransactionReceipt --->|
- |                              |                              |<-----------------------------|
- |                              |                              |                              |
- |                              |                              |    re-simulate call          |
- |                              |                              |    at blockNumber - 1        |
- |                              |                              |                              |
- |                              |                              |--- client.call (simulate) -->|
- |                              |                              |<----- ABI-encoded result ----|
- |                              |                              |                              |
- |                              |                              | 10. ProvideEvmOutcomeSig     |
- |                              |<--- EvmTxOutcomeSignature ---|                              |
- |                              |    (signature, mpcOutput=    |                              |
- |                              |     ABI-encoded return data) |                              |
- |                              |                              |                              |
- | 11. observes EvmTxOutcomeSig |                              |                              |
- |<-----------------------------|                              |                              |
- |    ClaimEvmDeposit           |                              |                              |
- |-- pending, outcome, ecdsa -->|                              |                              |
- |                              |                              |                              |
- |                              | 12. hasErrorPrefix? reject   |                              |
- |                              |     abiDecodeBool == true?   |                              |
- |                              |     verify MPC signature     |                              |
- |                              |     archive PendingEvmTx     |                              |
- |                              |     archive EvmTxOutcomeSig  |                              |
- |                              |     archive EcdsaSignature   |                              |
- |                              |                              |                              |
- |                              |     creates Erc20Holding     |                              |
- |                              |                              |                              |
- |<------- Erc20Holding --------|                              |                              |
- |                              |                              |                              |
+ Sender                Vault (Operators)       Signer (SigNetwork)     MPC (sigNetwork)         Sepolia
+ |                     |                       |                       |                         |
+ | 1. IssueNonce       |                       |                       |                         |
+ |--------------------------------------------►| requester creates     |                         |
+ |                     |                       |   SigningNonce         |                         |
+ |<--------------------------------------------|   (via disclosed Signer)                        |
+ |                     |                       |                       |                         |
+ | 2. ERC20 transfer to deposit address        |                       |                         |
+ |------------------------------------------------------------------------------ transfer ------>|
+ |                     |                       |                       |                         |
+ | 3. RequestDeposit(nonceCid, ...)            |                       |                         |
+ |-------------------->|                       |                       |                         |
+ |                     | create + exercise:    |                       |                         |
+ |                     | SignRequest ──────────► SignBidirectional      |                         |
+ |                     |                       | → Execute:            |                         |
+ |                     |                       |   archives SigningNonce                         |
+ |                     |                       |   creates SignBidirectionalEvent                 |
+ |                     | + PendingDeposit      |   (signatory: operators, requester)              |
+ |                     |   (vault anchor)      |                       |                         |
+ |                     |                       |                       |                         |
+ |                     |                       |                       | 4. observes event       |
+ |                     |                       |                       |    validates signatories |
+ |                     |                       |                       |    verifies nonce archive|
+ |                     |                       |                       |    derives child key    |
+ |                     |                       |                       |    threshold sign       |
+ |                     |                       |                       |                         |
+ |                     |                       | 5. Respond            |                         |
+ |                     |                       |<- SignatureResponded -|                         |
+ |                     |                       |                       |                         |
+ | 6. observes SignatureRespondedEvent         |                       |                         |
+ |<--------------------------------------------|                       |                         |
+ |    reconstructSignedTx, eth_sendRawTransaction                      |                         |
+ |------------------------------------------------------------------------------ sweep tx ------>|
+ |                     |                       |                       |                         |
+ |                     |                       |                       | 7. polls Sepolia        |
+ |                     |                       |                       |    re-simulates call    |
+ |                     |                       |                       |                         |
+ |                     |                       | 8. RespondBidirectional                        |
+ |                     |                       |<- RespondBidirectional-|                         |
+ |                     |                       |   Event               |                         |
+ |                     |                       |                       |                         |
+ | 9. ClaimDeposit     |                       |                       |                         |
+ |-------------------->|                       |                       |                         |
+ |                     | archives PendingDeposit (single-use)          |                         |
+ |                     | verifies MPC sig      |                       |                         |
+ |                     |   via evmMpcPublicKey  |                       |                         |
+ |                     | creates Erc20Holding  |                       |                         |
+ |                     |                       |                       |                         |
+ |<-- Erc20Holding ----|                       |                       |                         |
 ```
+
+## Parties
+
+| Party        | Role                               | Owns   |
+| ------------ | ---------------------------------- | ------ |
+| `sigNetwork` | MPC infrastructure (single party)  | Signer |
+| `operators`  | Vault operator multi-sig `[Party]` | Vault  |
+| `requester`  | End user (depositor)               | --     |
 
 ## Daml Contracts
 
-### `VaultOrchestrator` (Erc20Vault.daml)
+### Signer Layer (generic signing infrastructure)
 
-Singleton orchestrator contract. Hosts all choices that drive the deposit
-lifecycle. All evidence contracts (`EcdsaSignature`,
-`EvmTxOutcomeSignature`) and state contracts (`PendingEvmTx`,
-`Erc20Holding`) are created through its choices. Its `created_event_blob`
-is disclosed off-chain so that users can attach it to command submissions
+Signer templates (`Signer`, `SigningNonce`, `SignRequest`, `SignBidirectionalEvent`,
+`SignatureRespondedEvent`, `RespondBidirectionalEvent`) are documented in the
+[`daml-signer` package README](../daml-packages/daml-signer/README.md) along
+with the authority delegation flow, MPC service flow, and security model.
+The deposit flow exercises them in the sequence shown in the lifecycle diagram above.
 
-```daml
-template VaultOrchestrator
-  with
-    issuer       : Party          -- the party that operates the vault
-    mpc          : Party          -- the MPC signing service party
-    mpcPublicKey : PublicKeyHex   -- MPC root public key for signature verification
-    vaultAddress : BytesHex       -- centralized sweep address (derived from MPC root key + vault derivation path)
-    vaultId      : Text           -- issuer-controlled discriminator for MPC key derivation
-  where
-    signatory issuer
-    observer mpc
+### Vault Layer (domain ERC20 custody)
 
-    nonconsuming choice RequestDepositAuth   : ContractId DepositAuthProposal
-    nonconsuming choice ApproveDepositAuth   : ContractId DepositAuthorization
-    nonconsuming choice RequestEvmDeposit    : ContractId PendingEvmTx
-    nonconsuming choice SignEvmTx            : ContractId EcdsaSignature
-    nonconsuming choice ProvideEvmOutcomeSig : ContractId EvmTxOutcomeSignature
-    nonconsuming choice ClaimEvmDeposit      : ContractId Erc20Holding
-```
+The Vault layer (`Erc20Vault.daml` in `daml-vault`) defines the ERC-20 custody
+templates and choice bodies used by the deposit flow. Transaction parameter
+types (`EvmTransactionParams`, `TxParams`) are imported from `daml-signer`
+and documented in the
+[`daml-signer` README](../daml-packages/daml-signer/README.md#evmtransactionparams)
+— including the rationale for splitting `functionSignature` /
+`encodedArgs` instead of storing raw calldata.
 
-### `EvmTransactionParams` (Types.daml)
+### `Signature` (Signer.daml)
 
-Generic EIP-1559 transaction parameters. The MPC is transaction-type agnostic
-— it signs any Type 2 transaction. The contract stores the function signature
-and args separately, giving Daml visibility into the EVM call for on-chain
-authorization.
+Signature union type. Currently ECDSA-only, extensible to EdDSA/Schnorr.
 
 ```daml
-data EvmTransactionParams = EvmTransactionParams
-  with
-    to                : BytesHex   -- 20 bytes, destination address
-    functionSignature : Text       -- e.g., "transfer(address,uint256)"
-    args              : [BytesHex] -- per-arg hex values, canonical width
-    value             : BytesHex   -- 32 bytes, ETH value (usually "00...")
-    nonce             : BytesHex   -- 32 bytes
-    gasLimit          : BytesHex   -- 32 bytes
-    maxFeePerGas      : BytesHex   -- 32 bytes
-    maxPriorityFee    : BytesHex   -- 32 bytes
-    chainId           : BytesHex   -- 32 bytes
+data EcdsaSigData = EcdsaSigData with
+    der : SignatureHex      -- DER-encoded (r, s) as hex
+    recoveryId : Int        -- 0 or 1 — y-parity for EVM ecrecover
+  deriving (Eq, Show)
+
+data Signature
+  = EcdsaSig EcdsaSigData
   deriving (Eq, Show)
 ```
 
-The MPC reconstructs calldata deterministically from
-`functionSignature` + `args`.
+### `VaultProposal` (Erc20Vault.daml)
 
-### `DepositAuthProposal` (Erc20Vault.daml)
-
-User's request for an authorization card — the "propose" half of Daml's
-Propose and Accept pattern. The issuer approves or ignores it.
+Multi-party agreement contract for Vault creation. Uses the standard Daml
+Pending pattern — each operator signs in sequence until all have agreed.
 
 ```daml
-template DepositAuthProposal
+toSign : VaultProposal -> [Party]
+toSign VaultProposal { alreadySigned, allOperators } =
+  filter (`notElem` alreadySigned) allOperators
+
+template VaultProposal
   with
-    issuer : Party
-    owner  : Party
+    allOperators    : [Party]
+    alreadySigned   : [Party]
+    sigNetwork      : Party
+    evmVaultAddress : BytesHex
+    evmMpcPublicKey : PublicKeyHex
+    vaultId         : Text
   where
-    signatory issuer
-    observer owner
+    signatory alreadySigned
+    observer allOperators
+    ensure not (null allOperators) && unique allOperators && unique alreadySigned
+      && byteCount evmVaultAddress == 32
+
+    choice SignVault : Either (ContractId VaultProposal) (ContractId Vault)
+      with signer : Party
+      controller signer
+      do
+        assertMsg "Not an operator" (signer `elem` toSign this)
+        let newSigned = signer :: alreadySigned
+        if sort newSigned == sort allOperators
+          then Right <$> create Vault with
+            operators = allOperators; sigNetwork
+            evmVaultAddress; evmMpcPublicKey; vaultId
+          else Left <$> create this with alreadySigned = newSigned
 ```
 
-### `DepositAuthorization` (Erc20Vault.daml)
+### `Vault` (Erc20Vault.daml)
 
-Authorization card with a hard use-limit, following the Daml Authorization
-Pattern with an archive-and-recreate counter — each deposit consumes the card
-and recreates it with decremented uses, providing application-level rate
-limiting for nonconsuming choices on `VaultOrchestrator`. The consumed card's
-`contractId` doubles as a natural nonce for `requestId` (globally unique,
-cryptographically generated by Canton, consumed exactly once). The issuer can
-issue multiple cards to the same user enabling higher throughput; each is an
-independent contract.
+Domain-specific ERC20 custody. `evmMpcPublicKey` is per-vault (each vault
+has its own derived MPC key). `evmVaultAddress` is validated as 32 bytes
+(ABI-encoded address).
 
 ```daml
-template DepositAuthorization
+template Vault
   with
-    issuer        : Party
-    mpc           : Party
-    owner         : Party
-    remainingUses : Int
+    operators       : [Party]
+    sigNetwork      : Party
+    evmVaultAddress : BytesHex
+    evmMpcPublicKey : PublicKeyHex
+    vaultId         : Text
   where
-    signatory issuer
-    observer mpc, owner
+    signatory operators
+    observer sigNetwork
+    ensure not (null operators) && unique operators
+      && byteCount evmVaultAddress == 32
+
+    nonconsuming choice RequestDeposit
+      : (ContractId SignBidirectionalEvent, ContractId PendingDeposit, ContractId SigningNonce)
+    nonconsuming choice ClaimDeposit : ContractId Erc20Holding
+    nonconsuming choice RequestWithdrawal
+      : (ContractId SignBidirectionalEvent, ContractId PendingWithdrawal, ContractId SigningNonce)
+    nonconsuming choice CompleteWithdrawal : Optional (ContractId Erc20Holding)
 ```
 
-### `TxSource` (Erc20Vault.daml)
+### `PendingDeposit` (Erc20Vault.daml)
 
-Variant that doubles as **type discriminator** and **provenance CID** for
-`PendingEvmTx`. Tells finalization choices which flow the transaction belongs
-to, while preserving a type-safe reference to the consumed source contract.
-
-```daml
-data TxSource
-  = DepositSource (ContractId DepositAuthorization)
-  | WithdrawalSource (ContractId Erc20Holding)
-  deriving (Eq, Show)
-```
-
-### `PendingEvmTx` (Erc20Vault.daml)
-
-Anchor contract for both deposit and withdrawal lifecycles. The MPC service
-observes this single template regardless of flow — it reads `evmParams`,
-`path`, `vaultId`, `issuer` and signs.
+Vault-layer anchor for an in-flight deposit. Created by `RequestDeposit`,
+consumed by `ClaimDeposit`. Guarantees single-use via archive.
 
 ```daml
-template PendingEvmTx
+template PendingDeposit
   with
-    issuer       : Party        -- the party that operates the vault
-    requester    : Party        -- the user initiating the transaction
-    mpc          : Party        -- the MPC signing service party
-    requestId    : BytesHex
-    path         : Text         -- deposit: sender + "," + userPath; withdrawal: "root"
-    evmParams    : EvmTransactionParams
-    vaultId      : Text         -- issuer-controlled discriminator (from VaultOrchestrator)
-    nonceCidText : Text         -- user-supplied, source contractId as text (nonce for requestId)
-    source       : TxSource     -- discriminator + typed provenance CID
-    keyVersion   : Int          -- e.g., 1
-    algo         : Text         -- e.g., "ECDSA"
-    dest         : Text         -- e.g., "ethereum"
-    outputDeserializationSchema : Text  -- JSON ABI type array for decoding EVM return data
-    respondSerializationSchema : Text   -- JSON ABI type array for re-encoding the response
+    operators   : [Party]
+    requester   : Party
+    sigNetwork  : Party
+    requestId   : BytesHex
+    evmTxParams : EvmTransactionParams
   where
-    signatory issuer
-    observer mpc, requester
-```
-
-`PendingEvmTx` carries two nonce references:
-
-- **`nonceCidText : Text`** — user-supplied string form of the consumed
-  contract ID (`DepositAuthorization` for deposits, `Erc20Holding` for
-  withdrawals). Input to `computeRequestId`; globally unique per use
-  (archive + recreate), guaranteeing `requestId` uniqueness.
-
-- **`source : TxSource`** — variant carrying the typed `ContractId`,
-  injected by `VaultOrchestrator` after fetch + validation. Non-spoofable;
-  MPC reads it directly from the contract payload.
-
-**Key derivation (predecessorId + path):** `predecessorId = vaultId + issuer`
-(`vaultId` is the issuer-controlled discriminator, concatenated with the issuer
-party identifier). This ensures different vaults never control the same EVM
-address via the MPC KDF. The MPC reads both `vaultId` and `issuer` directly
-from the `PendingEvmTx` payload.
-The `vaultId` is set once on `VaultOrchestrator` at deployment and is immutable,
-allowing the same issuer to run multiple independent vaults with different
-keyspaces.
-
-- **Vault address**: path = `"root"`
-- **Deposit address**: path = `sender + "," + user-supplied path argument`
-
-### `EcdsaSignature` (Erc20Vault.daml)
-
-MPC's EVM transaction signature.
-
-```daml
-template EcdsaSignature
-  with
-    issuer    : Party
-    requester : Party
-    requestId : BytesHex
-    r         : BytesHex              -- 32 bytes
-    s         : BytesHex              -- 32 bytes
-    v         : Int                   -- recovery id (0 or 1)
-  where
-    signatory issuer
-    observer requester
-```
-
-### `EvmTxOutcomeSignature` (Erc20Vault.daml)
-
-MPC's attestation of the ETH transaction outcome. Contains a
-`secp256k1` signature over the EIP-712 response hash of `(requestId, mpcOutput)`
-— verified cryptographically against `mpcPublicKey` in the `ClaimEvmDeposit` choice.
-
-```daml
-template EvmTxOutcomeSignature
-  with
-    issuer    : Party
-    requester : Party
-    requestId : BytesHex
-    signature : SignatureHex   -- secp256k1 over EIP-712 response hash of (requestId, mpcOutput)
-    mpcOutput : BytesHex       -- ABI-encoded return data, or "deadbeef" + error payload
-  where
-    signatory issuer
-    observer requester
+    signatory operators
+    observer requester, sigNetwork
+    ensure not (null operators)
 ```
 
 ### `Erc20Holding` (Erc20Vault.daml)
 
-Final state — represents a user's ownership of wrapped ERC-20 tokens on Canton.
+Tracks on-ledger ERC20 balances per user. `sigNetwork` is NOT an observer —
+domain contracts stay decoupled from MPC infrastructure.
 
 ```daml
 template Erc20Holding
   with
-    issuer       : Party
+    operators    : [Party]
     owner        : Party
     erc20Address : BytesHex
-    amount       : BytesHex    -- raw uint256, e.g. 1e18 base units
+    amount       : BytesHex
   where
-    signatory issuer
+    signatory operators
     observer owner
 ```
 
-### Choices on `VaultOrchestrator`
+### Choices on `Vault`
 
-**`RequestDepositAuth`** — user requests an authorization card.
-
-```daml
-nonconsuming choice RequestDepositAuth : ContractId DepositAuthProposal
-  with requester : Party
-  controller requester
-  do create DepositAuthProposal with issuer; owner = requester
-```
-
-**`ApproveDepositAuth`** — issuer approves the request, creating an auth card
-with a hard use-limit.
+**`RequestDeposit`** — user creates a deposit request. Atomically creates
+`SignRequest` → `SignBidirectionalEvent` (via Signer) and `PendingDeposit`
+(vault anchor). Returns the new `SigningNonce` for the next request.
 
 ```daml
-nonconsuming choice ApproveDepositAuth : ContractId DepositAuthorization
+nonconsuming choice RequestDeposit
+  : (ContractId SignBidirectionalEvent, ContractId PendingDeposit, ContractId SigningNonce)
   with
-    proposalCid   : ContractId DepositAuthProposal
-    remainingUses : Int
-  controller issuer
-  do
-    proposal <- fetch proposalCid
-    assertMsg "Proposal issuer mismatch" (proposal.issuer == issuer)
-    archive proposalCid
-    create DepositAuthorization with
-      issuer; mpc; owner = proposal.owner; remainingUses
-```
-
-**`RequestEvmDeposit`** — user creates a deposit request.
-
-```daml
-nonconsuming choice RequestEvmDeposit : ContractId PendingEvmTx
-  with
-    requester      : Party
-    path           : Text
-    evmParams      : EvmTransactionParams
-    authCidText    : Text       -- user-supplied, DepositAuthorization contractId as text (nonce)
-    keyVersion     : Int
-    algo           : Text
-    dest           : Text
-    authCid        : ContractId DepositAuthorization
+    requester    : Party
+    signerCid    : ContractId Signer
+    path         : Text
+    evmTxParams  : EvmTransactionParams
+    nonceCid     : ContractId SigningNonce
+    nonceCidText : Text
+    keyVersion   : Int
+    algo         : Text
+    dest         : Text
+    params       : Text
     outputDeserializationSchema : Text
-    respondSerializationSchema : Text
+    respondSerializationSchema  : Text
   controller requester
   do
-    auth <- fetch authCid
-    assertMsg "Auth card issuer mismatch" (auth.issuer == issuer)
-    assertMsg "Auth card owner mismatch" (auth.owner == requester)
-    assertMsg "Auth card has no remaining uses" (auth.remainingUses > 0)
-    archive authCid
-    when (auth.remainingUses > 1) do
-      void $ create auth with remainingUses = auth.remainingUses - 1
-
-    let recipientArg = case evmParams.args of
-          recipient :: _ -> recipient
-          [] -> ""
-
     assertMsg "Only ERC20 transfer allowed"
-      (evmParams.functionSignature == "transfer(address,uint256)")
+      (evmTxParams.functionSignature == "transfer(address,uint256)")
+    assertMsg "encodedArgs must be exactly 2 slots"
+      (abiSlotCount evmTxParams.encodedArgs == 2)
+    let recipientArg = abiSlot evmTxParams.encodedArgs 0
     assertMsg "Transfer recipient must be vault address"
-      (recipientArg == vaultAddress)
+      (recipientArg == evmVaultAddress)
 
-    let sender = partyToText requester
-    let fullPath = sender <> "," <> path
-    let caip2Id = "eip155:" <> chainIdToDecimalText evmParams.chainId
-    let requestId = computeRequestId sender evmParams caip2Id keyVersion fullPath algo dest authCidText
-    create PendingEvmTx with
-      issuer; requester; mpc; requestId; path = fullPath; evmParams
-      vaultId; nonceCidText = authCidText; source = DepositSource authCid
-      keyVersion; algo; dest; outputDeserializationSchema; respondSerializationSchema
+    let fullPath = partyToText requester <> "," <> path
+    let caip2Id = "eip155:" <> chainIdToDecimalText evmTxParams.chainId
+    let operatorsHash = computeOperatorsHash (map partyToText operators)
+    let predecessorId = vaultId <> operatorsHash
+
+    signReqCid <- create SignRequest with
+      operators; requester; sigNetwork
+      txParams = EvmTxParams evmTxParams; sender = predecessorId; caip2Id; keyVersion
+      path = fullPath; algo; dest; params
+      nonceCidText
+      outputDeserializationSchema; respondSerializationSchema
+
+    (signEventCid, newNonceCid) <- exercise signerCid SignBidirectional with
+      signRequestCid = signReqCid; nonceCid; requester
+
+    let requestId = computeRequestId
+          predecessorId (EvmTxParams evmTxParams) caip2Id keyVersion
+          fullPath algo dest params nonceCidText
+
+    pendingCid <- create PendingDeposit with
+      operators; requester; sigNetwork; requestId; evmTxParams
+
+    pure (signEventCid, pendingCid, newNonceCid)
 ```
 
-**`SignEvmTx`** — MPC posts its EVM transaction signature.
+**`ClaimDeposit`** — user triggers claim after observing the outcome.
+Archives `PendingDeposit` (single-use guarantee), verifies the MPC
+signature against `evmMpcPublicKey`, validates ABI-decoded bool, archives
+both evidence contracts via `Consume_*` choices, and creates `Erc20Holding`.
 
 ```daml
-nonconsuming choice SignEvmTx : ContractId EcdsaSignature
+nonconsuming choice ClaimDeposit : ContractId Erc20Holding
   with
-    requester : Party
-    requestId : BytesHex
-    r         : BytesHex
-    s         : BytesHex
-    v         : Int
-  controller issuer
-  do
-    create EcdsaSignature with
-      issuer; requester; requestId; r; s; v
-```
-
-**`ProvideEvmOutcomeSig`** — MPC posts the ETH receipt verification proof.
-
-```daml
-nonconsuming choice ProvideEvmOutcomeSig : ContractId EvmTxOutcomeSignature
-  with
-    requester : Party
-    requestId : BytesHex
-    signature : SignatureHex
-    mpcOutput : BytesHex
-  controller issuer
-  do
-    create EvmTxOutcomeSignature with
-      issuer; requester; requestId; signature; mpcOutput
-```
-
-**`ClaimEvmDeposit`** — user triggers claim after observing the outcome
-signature. Asserts `DepositSource`, decodes ABI return data, verifies MPC
-signature, and archives all evidence contracts (`PendingEvmTx`,
-`EvmTxOutcomeSignature`, `EcdsaSignature`).
-
-```daml
-nonconsuming choice ClaimEvmDeposit : ContractId Erc20Holding
-  with
-    requester   : Party
-    pendingCid  : ContractId PendingEvmTx
-    outcomeCid  : ContractId EvmTxOutcomeSignature
-    ecdsaCid    : ContractId EcdsaSignature
+    requester                    : Party
+    pendingDepositCid            : ContractId PendingDeposit
+    respondBidirectionalEventCid : ContractId RespondBidirectionalEvent
+    signatureRespondedEventCid   : ContractId SignatureRespondedEvent
   controller requester
   do
-    pending <- fetch pendingCid
-    outcome <- fetch outcomeCid
-    ecdsa   <- fetch ecdsaCid
+    pending <- fetch pendingDepositCid
+    archive pendingDepositCid
 
-    case pending.source of
-      DepositSource _ -> pure ()
-      _ -> abort "PendingEvmTx is not a deposit"
+    assertMsg "Sender mismatch" (pending.requester == requester)
+    assertMsg "Operators mismatch" (sort pending.operators == sort operators)
 
-    assertMsg "Pending issuer mismatch"
-      (pending.issuer == issuer)
-    assertMsg "Outcome issuer mismatch"
-      (outcome.issuer == issuer)
-    assertMsg "Requester mismatch"
-      (pending.requester == requester)
+    outcome <- fetch respondBidirectionalEventCid
+    assertMsg "Outcome requestId mismatch"
+      (outcome.requestId == pending.requestId)
 
-    assertMsg "Request ID mismatch"
-      (pending.requestId == outcome.requestId)
+    let responseHash = computeResponseHash pending.requestId outcome.serializedOutput
+    assertMsg "Invalid MPC signature"
+      (secp256k1WithEcdsaOnly (signatureDer outcome.signature) responseHash evmMpcPublicKey)
 
     assertMsg "MPC reported ETH transaction failure"
-      (not (hasErrorPrefix outcome.mpcOutput))
-    let success = abiDecodeBool outcome.mpcOutput 0
+      (not (abiHasErrorPrefix outcome.serializedOutput))
+    let success = abiDecodeBool outcome.serializedOutput 0
     assertMsg "ERC20 transfer returned false" success
 
-    let responseHash = computeResponseHash pending.requestId outcome.mpcOutput
-    assertMsg "Invalid MPC signature on deposit response"
-      (secp256k1WithEcdsaOnly outcome.signature responseHash mpcPublicKey)
+    exercise respondBidirectionalEventCid Consume_RespondBidirectional with actor = requester
+    exercise signatureRespondedEventCid Consume_SignatureResponded with actor = requester
 
-    let amount = (pending.evmParams).args !! 1
-
-    archive pendingCid
-    archive outcomeCid
-    archive ecdsaCid
-
+    let amount = abiDecodeUint (pending.evmTxParams).encodedArgs 1
     create Erc20Holding with
-      issuer
-      owner = pending.requester
-      erc20Address = (pending.evmParams).to
+      operators
+      owner = requester
+      erc20Address = (pending.evmTxParams).to
       amount
 ```
 
-### Crypto Functions (Crypto.daml, RequestId.daml)
+### Key Derivation (predecessorId + path)
 
-All hashing uses EIP-712 typed data (domain `"CantonMpc"`, version `"1"`).
+`predecessorId = vaultId <> computeOperatorsHash(map partyToText operators)`.
+This ensures different operator sets never control the same EVM address via
+the MPC KDF. `computeOperatorsHash` sorts operators and hashes each
+individually before concatenating and hashing the result.
+
+- **Vault address**: path = `"root"`
+- **Deposit address**: path = `partyToText requester <> "," <> userPath`
+
+### Crypto Functions (RequestId.daml)
 
 ```daml
 hashEvmParams : EvmTransactionParams -> BytesHex
 hashEvmParams p =
   keccak256 $
-       evmParamsTypeHash
-    <> padLeft p.to 32
-    <> hashText p.functionSignature
-    <> hashBytesList p.args
-    <> padLeft p.value          32
-    <> padLeft p.nonce          32
-    <> padLeft p.gasLimit       32
-    <> padLeft p.maxFeePerGas   32
-    <> padLeft p.maxPriorityFee 32
-    <> padLeft p.chainId        32
+       eip712EncodeAddress p.to
+    <> eip712EncodeString p.functionSignature
+    <> eip712EncodeBytes p.encodedArgs
+    <> eip712EncodeUint256 p.value
+    <> eip712EncodeUint256 p.nonce
+    <> eip712EncodeUint256 p.gasLimit
+    <> eip712EncodeUint256 p.maxFeePerGas
+    <> eip712EncodeUint256 p.maxPriorityFee
+    <> eip712EncodeUint256 p.chainId
 
-computeRequestId : Text -> EvmTransactionParams -> Text -> Int -> Text -> Text -> Text -> Text -> BytesHex
-computeRequestId sender evmParams caip2Id keyVersion path algo dest authCidText =
-  eip712Hash $ keccak256 $
-       requestTypeHash
-    <> hashText sender
-    <> hashEvmParams evmParams
-    <> hashText caip2Id
-    <> padLeft (toHex keyVersion) 32
-    <> hashText path
-    <> hashText algo
-    <> hashText dest
-    <> hashText authCidText
+computeRequestId : Text -> TxParams -> Text -> Int -> Text -> Text -> Text -> Text -> Text -> BytesHex
+computeRequestId sender txParams caip2Id keyVersion path algo dest params nonceCidText =
+  keccak256 $
+       eip712EncodeString sender
+    <> hashTxParams txParams
+    <> eip712EncodeString caip2Id
+    <> eip712EncodeUint256 (toHex keyVersion)
+    <> eip712EncodeString path
+    <> eip712EncodeString algo
+    <> eip712EncodeString dest
+    <> eip712EncodeString params
+    <> eip712EncodeString nonceCidText
 
 computeResponseHash : BytesHex -> BytesHex -> BytesHex
 computeResponseHash requestId output =
-  eip712Hash $ keccak256 (responseTypeHash <> assertBytes32 requestId <> safeKeccak256 output)
+  keccak256 (assertBytes32 requestId <> output)
 ```
 
-`computeResponseHash` hashes `mpcOutput` generically via `safeKeccak256` —
-it works for any length.
+`computeResponseHash` concatenates the raw `mpcOutput` after `requestId` and
+hashes once — matches the MPC node and Solana reference.
 
 ## ABI-Encoded mpcOutput
 
@@ -558,19 +416,19 @@ Failure:  "deadbeef" <> <ABI-encoded error>  e.g. "deadbeef0000...0001" (72 hex 
 
 ### How Canton Interprets mpcOutput
 
-**`ClaimEvmDeposit`** (deposit claim — rejects on any failure):
+**`ClaimDeposit`** (deposit claim — rejects on any failure):
 
 ```daml
 assertMsg "MPC reported ETH transaction failure"
-  (not (hasErrorPrefix outcome.mpcOutput))
-let success = abiDecodeBool outcome.mpcOutput 0
+  (not (abiHasErrorPrefix outcome.serializedOutput))
+let success = abiDecodeBool outcome.serializedOutput 0
 assertMsg "ERC20 transfer returned false" success
 ```
 
-### Schemas on PendingEvmTx
+### Schemas on SignBidirectionalEvent
 
-`PendingEvmTx` carries two schema fields that tell the MPC service how to
-decode and re-encode return data:
+`SignBidirectionalEvent` carries two schema fields that tell the MPC service
+how to decode and re-encode return data:
 
 - `outputDeserializationSchema` — how to decode EVM return data
 - `respondSerializationSchema` — how to encode the response for Canton

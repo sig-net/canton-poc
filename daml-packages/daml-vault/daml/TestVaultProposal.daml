@@ -1,0 +1,298 @@
+module TestVaultProposal where
+
+import DA.Optional (fromSome, isSome)
+import DA.Crypto.Text (BytesHex, byteCount)
+import Daml.Script
+
+import Signer
+import Erc20Vault
+import TestFixtures (testPubKeyHex, sampleVaultAddress, sampleEvmType2Params, erc20BoolSchema)
+
+dirtyVaultAddress : BytesHex
+dirtyVaultAddress = "ffffffffffffffffffffffffd8da6bf26964af9d7eed9e03e53415d37aa96045"
+
+------------------------------------------------------------------------
+-- One remaining sign completes the proposal → Right (Vault)
+------------------------------------------------------------------------
+
+-- one remaining signer completes the proposal → Right (Vault) with correct operators
+testSingleOperatorProposal : Script ()
+testSingleOperatorProposal = do
+  sigNetwork <- allocateParty "SigNetwork"
+  op1        <- allocateParty "Op1"
+  op2        <- allocateParty "Op2"
+
+  -- op1 bootstraps the proposal; op2 is the sole remaining signer
+  proposalCid <- submit op1 do
+    createCmd VaultProposal with
+      allOperators = [op1, op2]; alreadySigned = [op1]; sigNetwork
+      evmVaultAddress = sampleVaultAddress
+      evmMpcPublicKey = testPubKeyHex
+      vaultId = "single-sign-vault"
+
+  result <- submit op2 do
+    exerciseCmd proposalCid SignVault with signer = op2
+
+  case result of
+    Right vaultCid -> do
+      vault <- queryContractId op1 vaultCid
+      let v = fromSome vault
+      assertMsg "operators" (v.operators == [op1, op2])
+      assertMsg "sigNetwork" (v.sigNetwork == sigNetwork)
+      assertMsg "vaultId" (v.vaultId == "single-sign-vault")
+    Left _ -> abort "Expected Right (Vault), got Left (proposal)"
+
+------------------------------------------------------------------------
+-- Three operators: op1 creates, op2 signs (Left), op3 signs (Right)
+------------------------------------------------------------------------
+
+-- three operators: op2 signs (Left), op3 signs (Right/Vault) with all three operators
+testTwoOperatorSequentialSign : Script ()
+testTwoOperatorSequentialSign = do
+  sigNetwork <- allocateParty "SigNetwork"
+  op1        <- allocateParty "Op1"
+  op2        <- allocateParty "Op2"
+  op3        <- allocateParty "Op3"
+
+  proposalCid <- submit op1 do
+    createCmd VaultProposal with
+      allOperators = [op1, op2, op3]; alreadySigned = [op1]; sigNetwork
+      evmVaultAddress = sampleVaultAddress
+      evmMpcPublicKey = testPubKeyHex
+      vaultId = "three-op-vault"
+
+  -- op2 signs → Left (still waiting for op3)
+  result1 <- submit op2 do
+    exerciseCmd proposalCid SignVault with signer = op2
+
+  newProposalCid <- case result1 of
+    Left cid -> pure cid
+    Right _  -> abort "Expected Left (proposal), got Right (Vault)"
+
+  -- op3 signs → Right (all signed)
+  result2 <- submit op3 do
+    exerciseCmd newProposalCid SignVault with signer = op3
+
+  case result2 of
+    Right vaultCid -> do
+      vault <- queryContractId op1 vaultCid
+      let v = fromSome vault
+      assertMsg "operators" (v.operators == [op1, op2, op3])
+      assertMsg "sigNetwork" (v.sigNetwork == sigNetwork)
+      assertMsg "vaultId" (v.vaultId == "three-op-vault")
+    Left _ -> abort "Expected Right (Vault), got Left (proposal)"
+
+------------------------------------------------------------------------
+-- Double sign fails: op2 signs once (Left), tries again → fails
+------------------------------------------------------------------------
+
+-- operator who already signed cannot sign again (filtered out by toSign)
+testDoubleSignFails : Script ()
+testDoubleSignFails = do
+  sigNetwork <- allocateParty "SigNetwork"
+  op1        <- allocateParty "Op1"
+  op2        <- allocateParty "Op2"
+  op3        <- allocateParty "Op3"
+
+  proposalCid <- submit op1 do
+    createCmd VaultProposal with
+      allOperators = [op1, op2, op3]; alreadySigned = [op1]; sigNetwork
+      evmVaultAddress = sampleVaultAddress
+      evmMpcPublicKey = testPubKeyHex
+      vaultId = "double-sign-vault"
+
+  -- op2 signs → Left (new proposal with alreadySigned=[op2, op1])
+  result <- submit op2 do
+    exerciseCmd proposalCid SignVault with signer = op2
+
+  newProposalCid <- case result of
+    Left cid -> pure cid
+    Right _  -> abort "Expected Left (proposal), got Right (Vault)"
+
+  -- op2 tries to sign the new proposal again → must fail (already signed)
+  submitMustFail op2 do
+    exerciseCmd newProposalCid SignVault with signer = op2
+
+  pure ()
+
+------------------------------------------------------------------------
+-- Non-observer party cannot exercise SignVault.
+-- The failure occurs at the Canton visibility layer: because
+-- VaultProposal has `observer allOperators`, a party not in that list
+-- has no visibility on the contract and cannot exercise any choice.
+-- The `assertMsg "Not an operator"` guard is never reached.
+------------------------------------------------------------------------
+
+-- party not in allOperators has no visibility and cannot exercise SignVault
+testNonObserverCannotExercise : Script ()
+testNonObserverCannotExercise = do
+  sigNetwork <- allocateParty "SigNetwork"
+  op1        <- allocateParty "Op1"
+  op2        <- allocateParty "Op2"
+  rogue      <- allocateParty "Rogue"
+
+  proposalCid <- submit op1 do
+    createCmd VaultProposal with
+      allOperators = [op1, op2]; alreadySigned = [op1]; sigNetwork
+      evmVaultAddress = sampleVaultAddress
+      evmMpcPublicKey = testPubKeyHex
+      vaultId = "rogue-vault"
+
+  submitMustFail rogue do
+    exerciseCmd proposalCid SignVault with signer = rogue
+
+  pure ()
+
+------------------------------------------------------------------------
+-- Empty allOperators fails ensure
+------------------------------------------------------------------------
+
+-- VaultProposal with allOperators=[] is rejected by ensure clause
+testEmptyOperatorsFails : Script ()
+testEmptyOperatorsFails = do
+  sigNetwork <- allocateParty "SigNetwork"
+  op1        <- allocateParty "Op1"
+
+  submitMustFail op1 do
+    createCmd VaultProposal with
+      allOperators = []; alreadySigned = [op1]; sigNetwork
+      evmVaultAddress = sampleVaultAddress
+      evmMpcPublicKey = testPubKeyHex
+      vaultId = "empty-ops"
+
+  pure ()
+
+------------------------------------------------------------------------
+-- Duplicate allOperators fails ensure
+------------------------------------------------------------------------
+
+-- VaultProposal with duplicate allOperators is rejected by ensure clause
+testDuplicateOperatorsFails : Script ()
+testDuplicateOperatorsFails = do
+  sigNetwork <- allocateParty "SigNetwork"
+  op1        <- allocateParty "Op1"
+
+  submitMustFail op1 do
+    createCmd VaultProposal with
+      allOperators = [op1, op1]; alreadySigned = [op1]; sigNetwork
+      evmVaultAddress = sampleVaultAddress
+      evmMpcPublicKey = testPubKeyHex
+      vaultId = "dup-ops"
+
+  pure ()
+
+------------------------------------------------------------------------
+-- Dirty vault address padding fails ensure
+------------------------------------------------------------------------
+
+-- VaultProposal rejects ABI address slots whose high 12 bytes are not zero.
+testDirtyVaultAddressPaddingFails : Script ()
+testDirtyVaultAddressPaddingFails = do
+  sigNetwork <- allocateParty "SigNetwork"
+  op1        <- allocateParty "Op1"
+
+  submitMustFail op1 do
+    createCmd VaultProposal with
+      allOperators = [op1]; alreadySigned = [op1]; sigNetwork
+      evmVaultAddress = dirtyVaultAddress
+      evmMpcPublicKey = testPubKeyHex
+      vaultId = "dirty-address-proposal"
+
+  pure ()
+
+------------------------------------------------------------------------
+-- Signing order independence: op3 signs before op2 → same result.
+-- Proves `sort newSigned == sort allOperators` works regardless of
+-- the order in which operators sign.
+------------------------------------------------------------------------
+
+-- op3 signs before op2 → same Vault result (sort-based completion check)
+testSigningOrderIndependence : Script ()
+testSigningOrderIndependence = do
+  sigNetwork <- allocateParty "SigNetwork"
+  op1        <- allocateParty "Op1"
+  op2        <- allocateParty "Op2"
+  op3        <- allocateParty "Op3"
+
+  proposalCid <- submit op1 do
+    createCmd VaultProposal with
+      allOperators = [op1, op2, op3]; alreadySigned = [op1]; sigNetwork
+      evmVaultAddress = sampleVaultAddress
+      evmMpcPublicKey = testPubKeyHex
+      vaultId = "order-vault"
+
+  -- op3 signs first (out of list order) → Left (still waiting for op2)
+  result1 <- submit op3 do
+    exerciseCmd proposalCid SignVault with signer = op3
+
+  newProposalCid <- case result1 of
+    Left cid -> pure cid
+    Right _  -> abort "Expected Left (proposal), got Right (Vault)"
+
+  -- op2 signs last → Right (all signed, despite reversed order)
+  result2 <- submit op2 do
+    exerciseCmd newProposalCid SignVault with signer = op2
+
+  case result2 of
+    Right vaultCid -> do
+      vault <- queryContractId op1 vaultCid
+      let v = fromSome vault
+      assertMsg "operators" (v.operators == [op1, op2, op3])
+      assertMsg "sigNetwork" (v.sigNetwork == sigNetwork)
+      assertMsg "vaultId" (v.vaultId == "order-vault")
+    Left _ -> abort "Expected Right (Vault), got Left (proposal)"
+
+------------------------------------------------------------------------
+-- Full lifecycle: VaultProposal → Vault → deposit
+-- Proves the Vault created via proposal is fully functional.
+------------------------------------------------------------------------
+
+-- propose vault with 2 operators, collect signatures, then run a deposit through the resulting vault
+testProposalToDepositLifecycle : Script ()
+testProposalToDepositLifecycle = do
+  sigNetwork <- allocateParty "SigNetwork"
+  op1        <- allocateParty "Op1"
+  op2        <- allocateParty "Op2"
+  requester  <- allocateParty "Requester"
+
+  -- Step 1: Create Signer singleton
+  signerCid <- submit sigNetwork do
+    createCmd Signer with sigNetwork
+
+  -- Step 2: Propose vault with 2 operators
+  proposalCid <- submit op1 do
+    createCmd VaultProposal with
+      allOperators = [op1, op2]; alreadySigned = [op1]; sigNetwork
+      evmVaultAddress = sampleVaultAddress
+      evmMpcPublicKey = testPubKeyHex
+      vaultId = "lifecycle-vault"
+
+  -- Step 3: op2 signs → Vault created
+  result <- submit op2 do
+    exerciseCmd proposalCid SignVault with signer = op2
+
+  vaultCid <- case result of
+    Right cid -> pure cid
+    Left _    -> abort "Expected Right (Vault)"
+
+  vault <- queryContractId op1 vaultCid
+  let v = fromSome vault
+  assertMsg "vault operators" (v.operators == [op1, op2])
+  assertMsg "sigNetwork" (v.sigNetwork == sigNetwork)
+
+  -- Step 4: RequestDeposit through the proposal-created vault
+  (signEventCid, pendingCid) <- submit (actAs requester <> readAs op1 <> readAs op2 <> readAs sigNetwork) do
+    exerciseCmd vaultCid RequestDeposit with
+      requester; signerCid; path = partyToText requester
+      evmTxParams = sampleEvmType2Params
+      keyVersion = 1; algo = "ECDSA"; dest = "ethereum"; params = ""
+      outputDeserializationSchema = erc20BoolSchema
+      respondSerializationSchema = erc20BoolSchema
+
+  -- Verify deposit artifacts
+  pending <- queryContractId requester pendingCid
+  let pd = fromSome pending
+  assertMsg "requestId must be 32 bytes" (byteCount pd.requestId == 32)
+
+  signEvent <- queryContractId requester signEventCid
+  assertMsg "sign event must exist" (isSome signEvent)
