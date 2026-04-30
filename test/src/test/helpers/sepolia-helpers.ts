@@ -1,39 +1,58 @@
-import { createPublicClient, createWalletClient, http, type Hex, parseAbi } from "viem";
+import {
+  createPublicClient,
+  createWalletClient,
+  http,
+  type Hex,
+  parseAbi,
+  numberToHex,
+} from "viem";
 import { sepolia } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
-
-export { toCantonHex } from "canton-sig";
 
 export const DEPOSIT_AMOUNT = 1_000_000_000_000_000n; // 0.001 DAI (18 decimals)
 const FAUCET_ETH_AMOUNT = 2_000_000_000_000_000n; // 0.002 ETH (~2x ERC20 transfer cost)
 
-const sepoliaPublicClient = (rpcUrl: string) =>
-  createPublicClient({ chain: sepolia, transport: http(rpcUrl) });
-
-/** Get the current nonce for an address on Sepolia. */
+/**
+ * Get the current nonce for an address on Sepolia.
+ */
 export async function fetchNonce(rpcUrl: string, address: Hex): Promise<number> {
-  return sepoliaPublicClient(rpcUrl).getTransactionCount({ address });
+  const client = createPublicClient({ chain: sepolia, transport: http(rpcUrl) });
+  return client.getTransactionCount({ address });
 }
 
-/** Get current gas parameters from Sepolia. */
+/**
+ * Get current gas parameters from Sepolia.
+ */
 export async function fetchGasParams(
   rpcUrl: string,
 ): Promise<{ maxFeePerGas: bigint; maxPriorityFeePerGas: bigint }> {
-  const block = await sepoliaPublicClient(rpcUrl).getBlock({ blockTag: "latest" });
+  const client = createPublicClient({ chain: sepolia, transport: http(rpcUrl) });
+  const block = await client.getBlock({ blockTag: "latest" });
   const baseFee = block.baseFeePerGas ?? 1_000_000_000n;
   const maxPriorityFeePerGas = 1_000_000_000n; // 1 gwei
   const maxFeePerGas = baseFee * 2n + maxPriorityFeePerGas;
   return { maxFeePerGas, maxPriorityFeePerGas };
 }
 
-/** Check ERC20 balance of an address. */
+/**
+ * Check ERC20 balance of an address.
+ */
 export async function checkErc20Balance(rpcUrl: string, token: Hex, address: Hex): Promise<bigint> {
-  return sepoliaPublicClient(rpcUrl).readContract({
+  const client = createPublicClient({ chain: sepolia, transport: http(rpcUrl) });
+  const balance = await client.readContract({
     address: token,
     abi: parseAbi(["function balanceOf(address) view returns (uint256)"]),
     functionName: "balanceOf",
     args: [address],
   });
+  return balance;
+}
+
+/**
+ * Convert a value to Canton's padded hex format (no 0x prefix).
+ */
+export function toCantonHex(value: bigint | number, bytes: number): string {
+  return numberToHex(BigInt(value), { size: bytes }).slice(2);
 }
 
 /**
@@ -48,7 +67,7 @@ export async function fundFromFaucet(
   erc20Amount: bigint,
 ): Promise<void> {
   const account = privateKeyToAccount(faucetPrivateKey);
-  const publicClient = sepoliaPublicClient(rpcUrl);
+  const publicClient = createPublicClient({ chain: sepolia, transport: http(rpcUrl) });
   const walletClient = createWalletClient({ account, chain: sepolia, transport: http(rpcUrl) });
 
   // Fund ETH if below threshold

@@ -5,13 +5,13 @@ import {
   type JsGetUpdatesResponse,
 } from "../infra/canton-client.js";
 import { createLedgerStream, type StreamHandle } from "../infra/ledger-stream.js";
+import { PendingEvmTx } from "@daml.js/daml-vault-0.0.1/lib/Erc20Vault/module";
 import {
   signAndEnqueue,
   checkPendingTx,
   type PendingTx,
   type MpcServiceConfig,
 } from "./tx-handler.js";
-import { SignBidirectionalEvent } from "@daml.js/daml-signer-0.0.1/lib/Signer/module";
 
 const MONITOR_INTERVAL_MS = 5_000;
 
@@ -21,11 +21,11 @@ function templateSuffix(templateId: string): string {
   return parts.slice(-2).join(":");
 }
 
-const SIGN_EVENT_SUFFIX = templateSuffix(SignBidirectionalEvent.templateId);
+const PENDING_TX_SUFFIX = templateSuffix(PendingEvmTx.templateId);
 
 export interface MpcServerConfig {
   canton: CantonClient;
-  signerCid: string;
+  orchCid: string;
   userId: string;
   parties: string[];
   rootPrivateKey: Hex;
@@ -48,7 +48,7 @@ export class MpcServer {
     });
     this.serviceConfig = {
       canton: config.canton,
-      signerCid: config.signerCid,
+      orchCid: config.orchCid,
       userId: config.userId,
       actAs: config.parties,
       rootPrivateKey: config.rootPrivateKey,
@@ -58,7 +58,7 @@ export class MpcServer {
 
   private dispatch(event: CreatedEvent): void {
     if (this.pendingTxs.has(event.contractId)) return;
-    console.log(`[MPC] SignBidirectionalEvent detected, contractId=${event.contractId}`);
+    console.log(`[MPC] PendingEvmTx detected, contractId=${event.contractId}`);
     void this.process(event);
   }
 
@@ -73,11 +73,11 @@ export class MpcServer {
   }
 
   private async catchUp(): Promise<void> {
-    console.log("[MPC] Catching up on active SignBidirectionalEvent contracts...");
+    console.log("[MPC] Catching up on active PendingEvmTx contracts...");
     try {
       const txs = await this.config.canton.getActiveContracts(
         this.config.parties,
-        SignBidirectionalEvent.templateId,
+        PendingEvmTx.templateId,
       );
       for (const c of txs) this.dispatch(c);
       console.log(`[MPC] Catch-up complete (${txs.length} pending txs)`);
@@ -133,11 +133,10 @@ export class MpcServer {
         const update = item.update;
         if (!("Transaction" in update)) return;
 
-        const txEvents = update.Transaction.value.events ?? [];
-        for (const event of txEvents) {
+        for (const event of update.Transaction.value.events ?? []) {
           if (!("CreatedEvent" in event)) continue;
           const created = event.CreatedEvent;
-          if (templateSuffix(created.templateId) === SIGN_EVENT_SUFFIX) {
+          if (templateSuffix(created.templateId) === PENDING_TX_SUFFIX) {
             this.dispatch(created);
           }
         }
@@ -146,7 +145,7 @@ export class MpcServer {
       onReady: () => {
         this.resolveReady();
         this.startMonitor();
-        console.log("[MPC] Listening for SignBidirectionalEvent events...");
+        console.log("[MPC] Listening for PendingEvmTx events...");
       },
       onReconnect: () => void this.catchUp(),
     });

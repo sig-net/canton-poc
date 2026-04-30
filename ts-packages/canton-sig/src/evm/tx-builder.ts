@@ -1,85 +1,83 @@
 import {
+  serializeTransaction,
+  toFunctionSelector,
+  concat,
   createPublicClient,
   http,
-  serializeTransaction,
+  hexToBigInt,
+  hexToNumber,
   type Hex,
   type TransactionSerializableEIP1559,
 } from "viem";
 import { sepolia } from "viem/chains";
-import { cantonHexToHex } from "./hex.js";
 
-export interface CantonEvmAccessListEntry {
-  address: string;
-  storageKeys: string[];
-}
-
-/** Canton-format EIP-1559 params (lowercase canonical hex, no 0x prefix). Daml validates shapes upstream. */
-export interface CantonEvmType2Params {
-  chainId: string;
-  nonce: string;
-  maxPriorityFeePerGas: string;
-  maxFeePerGas: string;
-  gasLimit: string;
-  to: string | null;
+/** Canton-format EVM transaction params (hex strings without 0x prefix) */
+export interface CantonEvmParams {
+  to: string;
+  functionSignature: string;
+  args: string[];
   value: string;
-  calldata: string;
-  accessList: CantonEvmAccessListEntry[];
+  nonce: string;
+  gasLimit: string;
+  maxFeePerGas: string;
+  maxPriorityFee: string;
+  chainId: string;
 }
 
-/** Decoded EIP-1559 fields. chainId is bigint to admit the full Canton uint256 domain (viem narrows to number). */
-export interface Eip1559TxFields {
-  type: "eip1559";
-  chainId: bigint;
-  nonce: bigint;
-  maxPriorityFeePerGas: bigint;
-  maxFeePerGas: bigint;
-  gas: bigint;
-  to: Hex | null;
-  value: bigint;
-  data: Hex;
-  accessList: { address: Hex; storageKeys: Hex[] }[];
+/** Reconstruct calldata from functionSignature + args */
+export function buildCalldata(functionSignature: string, args: Hex[]): Hex {
+  const selector = toFunctionSelector(`function ${functionSignature}`);
+  // args are already ABI-encoded (32 bytes each), just concatenate
+  const encodedArgs =
+    args.length > 0 ? concat(args.map((a): Hex => (a.startsWith("0x") ? a : `0x${a}`))) : "0x";
+  return concat([selector, encodedArgs]);
 }
 
-const toBig = (hex: string): bigint => BigInt(`0x${hex || "0"}`);
-
-export function buildTxRequest(p: CantonEvmType2Params): Eip1559TxFields {
+/** Build a viem-compatible EIP-1559 tx request from CantonEvmParams */
+export function buildTxRequest(evmParams: CantonEvmParams): TransactionSerializableEIP1559 {
   return {
     type: "eip1559",
-    chainId: toBig(p.chainId),
-    nonce: toBig(p.nonce),
-    maxPriorityFeePerGas: toBig(p.maxPriorityFeePerGas),
-    maxFeePerGas: toBig(p.maxFeePerGas),
-    gas: toBig(p.gasLimit),
-    to: p.to === null ? null : `0x${p.to}`,
-    value: toBig(p.value),
-    data: cantonHexToHex(p.calldata),
-    accessList: p.accessList.map((e) => ({
-      address: `0x${e.address}`,
-      storageKeys: e.storageKeys.map((k): Hex => `0x${k}`),
-    })),
+    chainId: hexToNumber(`0x${evmParams.chainId}`),
+    nonce: hexToNumber(`0x${evmParams.nonce}`),
+    maxPriorityFeePerGas: hexToBigInt(`0x${evmParams.maxPriorityFee}`),
+    maxFeePerGas: hexToBigInt(`0x${evmParams.maxFeePerGas}`),
+    gas: hexToBigInt(`0x${evmParams.gasLimit}`),
+    to: `0x${evmParams.to}`,
+    value: hexToBigInt(`0x${evmParams.value}`),
+    data: buildCalldata(
+      evmParams.functionSignature,
+      evmParams.args.map((a): Hex => `0x${a}`),
+    ),
+    accessList: [],
   };
 }
 
-// viem's TS narrows chainId to `number`; runtime numberToHex accepts bigint, so casting at the call site is a pure type escape.
-export function serializeUnsignedTx(p: CantonEvmType2Params): Hex {
-  return serializeTransaction(buildTxRequest(p) as unknown as TransactionSerializableEIP1559);
+/** Serialize an unsigned EIP-1559 tx from CantonEvmParams */
+export function serializeUnsignedTx(evmParams: CantonEvmParams): Hex {
+  return serializeTransaction(buildTxRequest(evmParams));
 }
 
+/** Append signature to produce a signed EIP-1559 tx */
 export function reconstructSignedTx(
-  p: CantonEvmType2Params,
+  evmParams: CantonEvmParams,
   signature: { r: Hex; s: Hex; v: number },
 ): Hex {
-  if (signature.v !== 0 && signature.v !== 1) {
-    throw new Error("EIP-1559 yParity must be 0 or 1");
-  }
-  return serializeTransaction(buildTxRequest(p) as unknown as TransactionSerializableEIP1559, {
+  return serializeTransaction(buildTxRequest(evmParams), {
     r: signature.r,
     s: signature.s,
     yParity: signature.v,
   });
 }
 
+/** Submit raw signed tx to Ethereum RPC */
 export async function submitRawTransaction(rpcUrl: string, raw: Hex): Promise<Hex> {
-  const client = createPublicClient({ chain: sepolia, transport: http(rpcUrl) });
-  return client.sendRawTransaction({ serializedTransaction: raw });
+  const client = createPublicClient({
+    chain: sepolia,
+    transport: http(rpcUrl),
+  });
+  const hash = await client.request({
+    method: "eth_sendRawTransaction",
+    params: [raw],
+  });
+  return hash;
 }

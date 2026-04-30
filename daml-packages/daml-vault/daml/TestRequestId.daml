@@ -3,79 +3,73 @@ module TestRequestId where
 import DA.Crypto.Text (byteCount)
 import Daml.Script
 
-import Eip712 (eip712EncodeString, eip712EncodeBytesArray)
-import TxParams (TxParams(..))
-import RequestId (hashEvmType2Params, computeRequestId, computeResponseHash, computeOperatorsHash)
-import TestFixtures (sampleAccessListParams, sampleContractCreationParams, sampleEthTransferParams, sampleEvmType2Params)
+import Eip712 (domainSeparator, hashText, hashBytesList)
+import RequestId (evmParamsTypeHash, requestTypeHash, responseTypeHash, hashEvmParams, computeRequestId, computeResponseHash)
+import TestFixtures (sampleEvmParams)
 
 ------------------------------------------------------------------------
--- eip712EncodeString
+-- EIP-712 type hashes
+------------------------------------------------------------------------
+
+testTypeHashes : Script ()
+testTypeHashes = do
+  assertMsg "evmParamsTypeHash is 32 bytes" (byteCount evmParamsTypeHash == 32)
+  assertMsg "requestTypeHash is 32 bytes" (byteCount requestTypeHash == 32)
+  assertMsg "responseTypeHash is 32 bytes" (byteCount responseTypeHash == 32)
+  assertMsg "evmParams vs request" (evmParamsTypeHash /= requestTypeHash)
+  assertMsg "evmParams vs response" (evmParamsTypeHash /= responseTypeHash)
+  assertMsg "request vs response" (requestTypeHash /= responseTypeHash)
+
+------------------------------------------------------------------------
+-- hashText
 ------------------------------------------------------------------------
 
 testHashText : Script ()
 testHashText = do
-  let h1 = eip712EncodeString "hello"
-  let h2 = eip712EncodeString "hello"
-  assertMsg "eip712EncodeString is deterministic" (h1 == h2)
-  assertMsg "eip712EncodeString is 32 bytes" (byteCount h1 == 32)
-  assertMsg "eip712EncodeString 'hello' matches keccak256 known vector"
+  let h1 = hashText "hello"
+  let h2 = hashText "hello"
+  assertMsg "hashText is deterministic" (h1 == h2)
+  assertMsg "hashText is 32 bytes" (byteCount h1 == 32)
+  assertMsg "hashText 'hello' matches keccak256 known vector"
     (h1 == "1c8aff950685c2ed4bc3174f3472287b56d9517b9c948127319a09a7a36deac8")
-  let h3 = eip712EncodeString "world"
+  let h3 = hashText "world"
   assertMsg "different input -> different hash" (h1 /= h3)
-  let h4 = eip712EncodeString ""
+  let h4 = hashText ""
   assertMsg "empty string produces 32 bytes" (byteCount h4 == 32)
-  assertMsg "eip712EncodeString '' is keccak256 of empty bytes"
+  assertMsg "hashText '' is keccak256 of empty bytes"
     (h4 == "c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470")
 
 ------------------------------------------------------------------------
--- eip712EncodeBytesArray
+-- hashBytesList
 ------------------------------------------------------------------------
 
 testHashBytesList : Script ()
 testHashBytesList = do
-  let h1 = eip712EncodeBytesArray ["aa", "bb"]
-  let h2 = eip712EncodeBytesArray ["aa", "bb"]
-  assertMsg "eip712EncodeBytesArray is deterministic" (h1 == h2)
-  assertMsg "eip712EncodeBytesArray is 32 bytes" (byteCount h1 == 32)
-  let h3 = eip712EncodeBytesArray ["aa", "cc"]
+  let h1 = hashBytesList ["aa", "bb"]
+  let h2 = hashBytesList ["aa", "bb"]
+  assertMsg "hashBytesList is deterministic" (h1 == h2)
+  assertMsg "hashBytesList is 32 bytes" (byteCount h1 == 32)
+  let h3 = hashBytesList ["aa", "cc"]
   assertMsg "different elements -> different hash" (h1 /= h3)
-  let h4 = eip712EncodeBytesArray ["aabb"]
+  let h4 = hashBytesList ["aabb"]
   assertMsg "different list structure -> different hash" (h1 /= h4)
-  let hEmpty = eip712EncodeBytesArray []
+  let hEmpty = hashBytesList []
   assertMsg "empty array is keccak256 of empty bytes"
     (hEmpty == "c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470")
 
 ------------------------------------------------------------------------
--- hashEvmType2Params
+-- hashEvmParams
 ------------------------------------------------------------------------
 
-testHashEvmType2TxParams : Script ()
-testHashEvmType2TxParams = do
-  let h1 = hashEvmType2Params sampleEvmType2Params
-  let h2 = hashEvmType2Params sampleEvmType2Params
-  assertMsg "hashEvmType2Params is deterministic" (h1 == h2)
-  assertMsg "hashEvmType2Params is 32 bytes" (byteCount h1 == 32)
-  let modified = sampleEvmType2Params with calldata = sampleEvmType2Params.calldata <> "00"
-  let h3 = hashEvmType2Params modified
+testHashEvmParams : Script ()
+testHashEvmParams = do
+  let h1 = hashEvmParams sampleEvmParams
+  let h2 = hashEvmParams sampleEvmParams
+  assertMsg "hashEvmParams is deterministic" (h1 == h2)
+  assertMsg "hashEvmParams is 32 bytes" (byteCount h1 == 32)
+  let modified = sampleEvmParams with nonce = "0000000000000000000000000000000000000000000000000000000000000002"
+  let h3 = hashEvmParams modified
   assertMsg "different params -> different hash" (h1 /= h3)
-  let h4 = hashEvmType2Params sampleAccessListParams
-  assertMsg "access-list params hash differently" (h1 /= h4)
-
-------------------------------------------------------------------------
--- computeOperatorsHash
-------------------------------------------------------------------------
-
-testOperatorsHash : Script ()
-testOperatorsHash = do
-  let h1 = computeOperatorsHash ["Alice", "Bob"]
-  let h2 = computeOperatorsHash ["Alice", "Bob"]
-  assertMsg "computeOperatorsHash is deterministic" (h1 == h2)
-  assertMsg "computeOperatorsHash matches TS golden vector"
-    (h1 == "9b1a0a45cfdc60f45820808958c1895d44da61c8f804f5560020a373b23ad51e")
-  let h3 = computeOperatorsHash ["Bob", "Alice"]
-  assertMsg "computeOperatorsHash is order-independent" (h1 == h3)
-  let h4 = computeOperatorsHash ["Alice", "Charlie"]
-  assertMsg "different operators -> different hash" (h1 /= h4)
 
 ------------------------------------------------------------------------
 -- computeRequestId deterministic + 32 bytes
@@ -83,11 +77,11 @@ testOperatorsHash = do
 
 testRequestIdDeterministic : Script ()
 testRequestIdDeterministic = do
-  let predecessorId = computeOperatorsHash ["Operator1::1220aa", "Operator2::1220bb"]
+  let sender = "Issuer::1220abcdef"
   let caip2Id = "eip155:11155111"
   let path = "m/44/60/0/0"
-  let id1 = computeRequestId predecessorId (EvmType2TxParams sampleEvmType2Params) caip2Id 1 path "ECDSA" "ethereum" ""
-  let id2 = computeRequestId predecessorId (EvmType2TxParams sampleEvmType2Params) caip2Id 1 path "ECDSA" "ethereum" ""
+  let id1 = computeRequestId sender sampleEvmParams caip2Id 1 path "ECDSA" "ethereum" ""
+  let id2 = computeRequestId sender sampleEvmParams caip2Id 1 path "ECDSA" "ethereum" ""
   assertMsg "request_id must be deterministic" (id1 == id2)
   assertMsg ("request_id wrong length: " <> show (byteCount id1)) (byteCount id1 == 32)
 
@@ -97,10 +91,10 @@ testRequestIdDeterministic = do
 
 testResponseHash : Script ()
 testResponseHash = do
-  let predecessorId = computeOperatorsHash ["Operator1::1220aa", "Operator2::1220bb"]
+  let sender = "Issuer::1220abcdef"
   let caip2Id = "eip155:11155111"
   let path = "m/44/60/0/0"
-  let requestId = computeRequestId predecessorId (EvmType2TxParams sampleEvmType2Params) caip2Id 1 path "ECDSA" "ethereum" ""
+  let requestId = computeRequestId sender sampleEvmParams caip2Id 1 path "ECDSA" "ethereum" ""
   let output    = "00000000000000000000000000000000000000000000000000000000deadbeef"
   let hash1     = computeResponseHash requestId output
   let hash2     = computeResponseHash requestId output
@@ -115,65 +109,52 @@ testResponseHash = do
 
 testDomainSeparation : Script ()
 testDomainSeparation = do
-  let predecessorId = computeOperatorsHash ["Operator1::1220aa", "Operator2::1220bb"]
+  let sender = "Issuer::1220abcdef"
   let caip2Id = "eip155:11155111"
   let path = "m/44/60/0/0"
-  let requestId = computeRequestId predecessorId (EvmType2TxParams sampleEvmType2Params) caip2Id 1 path "ECDSA" "ethereum" ""
+  let requestId = computeRequestId sender sampleEvmParams caip2Id 1 path "ECDSA" "ethereum" ""
   let responseHash = computeResponseHash requestId "01"
   assertMsg "requestId != responseHash" (requestId /= responseHash)
 
 ------------------------------------------------------------------------
--- Cross-language vectors (oracle: TS keccak256(concat(encoded fields)))
+-- Cross-language vectors (oracle: viem hashTypedData)
 ------------------------------------------------------------------------
 
 testCrossLanguageVectors : Script ()
 testCrossLanguageVectors = do
-  assertMsg "hashEvmType2Params(sampleEvmType2Params) matches TS"
-    (hashEvmType2Params sampleEvmType2Params
-      == "f1ea0b772bfe36491fe76c2e6dc01500d1d450bf69de3452d7e6db0356568dbf")
+  assertMsg "domainSeparator matches TS"
+    (domainSeparator == "6399709c8eafb86e7ba1529eaf5519bf2667716e3c694e7868b652b7245ca80f")
 
-  let predecessorId = computeOperatorsHash ["Operator1::1220aa", "Operator2::1220bb"]
+  assertMsg "hashEvmParams matches TS"
+    (hashEvmParams sampleEvmParams == "d0764d6b66fc548fadceced13b66ed3b6c3737c020d116fb80d0dce85568613f")
+
+  let sender = "Issuer::1220abcdef"
   let caip2Id = "eip155:11155111"
   let path = "m/44/60/0/0"
+  assertMsg "computeRequestId(kv=1) matches TS"
+    (computeRequestId sender sampleEvmParams caip2Id 1 path "ECDSA" "ethereum" ""
+      == "767d52078eb4f558d2ad22df5c3daf3045fbaf96c4a18400357adbfdd25a8972")
 
-  let rid1 = computeRequestId predecessorId (EvmType2TxParams sampleEvmType2Params) caip2Id 1 path "ECDSA" "ethereum" ""
-  assertMsg "requestId(kv=1) matches TS"
-    (rid1 == "af5de812ffd1408db82f32b543c1b92f973c4280d7456efa032c2ace9725e1e7")
-
-  let rid256 = computeRequestId predecessorId (EvmType2TxParams sampleEvmType2Params) caip2Id 256 path "ECDSA" "ethereum" ""
-  assertMsg "requestId(kv=256) matches TS"
-    (rid256 == "d790759b0f32e12a2dce289a8a9caba39bfa7804dc8f39efab9480909e029457")
+  assertMsg "computeRequestId(kv=256) matches TS"
+    (computeRequestId sender sampleEvmParams caip2Id 256 path "ECDSA" "ethereum" ""
+      == "82becb6d088e399f2d92095d993890eaa548a9ce6338bd102eaf599b6aaed489")
 
   let knownId = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   assertMsg "computeResponseHash(knownId, 01) matches TS"
     (computeResponseHash knownId "01"
-      == "0344a8df5db02fe0579ff283081b60d9e6f3956594facfc6ea2befd5890366f4")
+      == "5773f12bd1f9c7a760461812f7a3fc96a2f5a0f041258dfa8feb43f7f8b3ebe2")
 
   assertMsg "computeResponseHash(knownId, empty) matches TS"
     (computeResponseHash knownId ""
-      == "20ee8f1366f06926e9e8771d8fb9007a8537c8dfdb6a3f8c2cfd64db19d2ec90")
+      == "af2ff87730133736cd5ad11131445277ced38a0762eaa9e62320a1ffc49de8da")
 
-  let rid0 = computeRequestId predecessorId (EvmType2TxParams sampleEvmType2Params) caip2Id 0 path "ECDSA" "ethereum" ""
-  assertMsg "requestId(kv=0) matches TS"
-    (rid0 == "c78bad85eb84c149611f8dbc20e179e2001f0b703b8199b1a31c8feec653301d")
+  assertMsg "computeRequestId(kv=0) matches TS"
+    (computeRequestId sender sampleEvmParams caip2Id 0 path "ECDSA" "ethereum" ""
+      == "43d221a4edee57c6a6f0c4606fd14b7fb73300be41e6a1ea09db42f6772699f3")
 
-  assertMsg "hashEvmType2Params(plain ETH transfer) matches TS"
-    (hashEvmType2Params sampleEthTransferParams
-      == "772a96f61e790006aea0170ce80be388d26f929ddaa670088946ee26b0103f92")
-  let ridEthTransfer = computeRequestId predecessorId (EvmType2TxParams sampleEthTransferParams) caip2Id 1 path "ECDSA" "ethereum" ""
-  assertMsg "requestId(plain ETH transfer) matches TS"
-    (ridEthTransfer == "10a0778a26f7eccfe5f3b987443ddf429a5cd246a5c0baf6c893fbdd0b66256c")
-
-  assertMsg "hashEvmType2Params(access list) matches TS"
-    (hashEvmType2Params sampleAccessListParams
-      == "1958cd3129ac47587cc671edcd0dbee65fa18bca4c97e6c959a30d15ba9994e9")
-  let ridAccessList = computeRequestId predecessorId (EvmType2TxParams sampleAccessListParams) caip2Id 1 path "ECDSA" "ethereum" ""
-  assertMsg "requestId(access list) matches TS"
-    (ridAccessList == "a8b7453df8b0739b5a8ceb121ed6ffcda2230e92e703e814ca842ef3604aaadc")
-
-  assertMsg "hashEvmType2Params(contract creation) matches TS"
-    (hashEvmType2Params sampleContractCreationParams
-      == "ea05c872b41f323538651c9661ebdc4404e4c934b548eb49c7f0ddbf6ba03667")
-  let ridContractCreation = computeRequestId predecessorId (EvmType2TxParams sampleContractCreationParams) caip2Id 1 path "ECDSA" "ethereum" ""
-  assertMsg "requestId(contract creation) matches TS"
-    (ridContractCreation == "79bf70f52ac4f67dcbfd2711bd72de792a899e4167fbdadba44bf6493d3b6ed6")
+  let emptyArgsParams = sampleEvmParams with args = []
+  assertMsg "hashEvmParams(emptyArgs) matches TS"
+    (hashEvmParams emptyArgsParams == "6e2af85ef5f8770dc382c8fa9a1cdbb4560c6e18a4d14ec9d266af538f2a37bc")
+  assertMsg "computeRequestId(emptyArgs) matches TS"
+    (computeRequestId sender emptyArgsParams caip2Id 1 path "ECDSA" "ethereum" ""
+      == "0892f934734c6280aa92fdf8d8ff9bf7edb918f748c1833cc6fc15e96c0da1ab")

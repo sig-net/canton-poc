@@ -44,7 +44,7 @@ jobs:
       - name: Build DAR, run Daml tests & generate codegen
         run: |
           dpm build --all
-          for pkg in daml-abi daml-uint256 daml-eip712 daml-signer daml-vault; do
+          for pkg in daml-abi daml-uint256 daml-evm-types daml-eip712 daml-vault; do
             echo "Testing daml-packages/$pkg..."
             (cd daml-packages/$pkg && dpm test)
           done

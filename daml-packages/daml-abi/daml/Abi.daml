@@ -1,42 +1,12 @@
 module Abi where
 
+import DA.Optional (fromSomeNote)
 import qualified DA.Text
 import DA.Crypto.Text
   ( BytesHex
   , byteCount
   , fromHex
-  , isHex
-  , keccak256
-  , toHex
   )
-
--- ---------------------------------------------------------------------------
--- Constants
--- ---------------------------------------------------------------------------
-
--- | Hex chars per 32-byte ABI slot.
-slotHexChars : Int
-slotHexChars = 64
-
--- | Bytes per ABI slot.
-slotBytes : Int
-slotBytes = 32
-
--- | Hex chars for the 4-byte function selector.
-selectorHexChars : Int
-selectorHexChars = 8
-
--- | Hex chars for the 12-byte zero-padding before a 20-byte address.
-addressPadHexChars : Int
-addressPadHexChars = 24
-
--- | 32-byte zero slot (for bool comparison).
-zeroSlot : BytesHex
-zeroSlot = "0000000000000000000000000000000000000000000000000000000000000000"
-
--- | 12-byte zero-padding prefix used by canonical ABI address slots.
-abiAddressPadding : BytesHex
-abiAddressPadding = DA.Text.take addressPadHexChars zeroSlot
 
 -- ---------------------------------------------------------------------------
 -- Core — slot access
@@ -47,22 +17,14 @@ abiAddressPadding = DA.Text.take addressPadHexChars zeroSlot
 abiSlot : BytesHex -> Int -> BytesHex
 abiSlot hex i =
   let hexLen = DA.Text.length hex
-      start = i * slotHexChars
-  in if start < 0 || start + slotHexChars > hexLen
+      start = i * 64
+  in if start < 0 || start + 64 > hexLen
      then error ("abiSlot: slot " <> show i <> " out of bounds (data is " <> show (hexLen / 2) <> " bytes)")
-     else DA.Text.take slotHexChars (DA.Text.drop start hex)
+     else DA.Text.take 64 (DA.Text.drop start hex)
 
 -- | Number of 32-byte slots in the ABI-encoded data.
 abiSlotCount : BytesHex -> Int
-abiSlotCount hex = byteCount hex / slotBytes
-
--- | True when the payload is valid hex and contains exactly n complete ABI slots.
--- Unlike abiSlotCount, this rejects partial trailing data.
-abiHasExactSlotCount : Int -> BytesHex -> Bool
-abiHasExactSlotCount expected hex =
-  expected >= 0
-    && DA.Text.length hex == expected * slotHexChars
-    && (hex == "" || isHex hex)
+abiSlotCount hex = byteCount hex / 32
 
 -- ---------------------------------------------------------------------------
 -- Calldata helpers
@@ -72,28 +34,18 @@ abiHasExactSlotCount expected hex =
 abiSelector : BytesHex -> BytesHex
 abiSelector hex =
   let hexLen = DA.Text.length hex
-  in if hexLen < selectorHexChars
+  in if hexLen < 8
      then error ("abiSelector: data too short (" <> show (hexLen / 2) <> " bytes)")
-     else DA.Text.take selectorHexChars hex
-
--- | Compute the canonical 4-byte selector for a Solidity function signature.
-functionSelector : Text -> BytesHex
-functionSelector functionSignature =
-  DA.Text.take selectorHexChars (keccak256 (toHex functionSignature))
-
--- | Check a calldata selector against a Solidity function signature.
-abiSelectorMatches : Text -> BytesHex -> Bool
-abiSelectorMatches functionSignature calldata =
-  DA.Text.asciiToLower (abiSelector calldata) == functionSelector functionSignature
+     else DA.Text.take 8 hex
 
 -- | Strip the 4-byte (8 hex char) function selector from calldata.
 -- After stripping, the result can be decoded with abiSlot/abiDecode* at slot 0.
 abiStripSelector : BytesHex -> BytesHex
 abiStripSelector hex =
   let hexLen = DA.Text.length hex
-  in if hexLen < selectorHexChars
+  in if hexLen < 8
      then error ("abiStripSelector: data too short (" <> show (hexLen / 2) <> " bytes)")
-     else DA.Text.drop selectorHexChars hex
+     else DA.Text.drop 8 hex
 
 -- ---------------------------------------------------------------------------
 -- Static type decoders
@@ -113,38 +65,18 @@ abiDecodeInt = abiSlot
 -- | Decode bool at slot i. Any non-zero 32-byte slot is true.
 abiDecodeBool : BytesHex -> Int -> Bool
 abiDecodeBool hex i =
-  abiSlot hex i /= zeroSlot
+  abiSlot hex i /= "0000000000000000000000000000000000000000000000000000000000000000"
 
--- | Decode address at slot i (20 bytes, validates 12-byte zero padding).
+-- | Decode address at slot i (20 bytes, strips 12-byte zero padding).
 abiDecodeAddress : BytesHex -> Int -> BytesHex
 abiDecodeAddress hex i =
-  let slot = abiSlot hex i
-  in if not (isAbiAddressSlot slot)
-     then error ("abiDecodeAddress: non-zero padding at slot " <> show i)
-     else abiAddressSlotToAddress slot
-
--- | True when the value is exactly one canonical ABI-encoded address slot.
--- ABI addresses occupy the low 20 bytes of a 32-byte slot, with zero high bytes.
-isAbiAddressSlot : BytesHex -> Bool
-isAbiAddressSlot value =
-  DA.Text.length value == slotHexChars
-    && isHex value
-    && DA.Text.take addressPadHexChars value == abiAddressPadding
-
--- | Extract the 20-byte address payload from a canonical ABI address slot.
-abiAddressSlotToAddress : BytesHex -> BytesHex
-abiAddressSlotToAddress value =
-  if isAbiAddressSlot value
-  then DA.Text.drop addressPadHexChars value
-  else error "abiAddressSlotToAddress: expected canonical ABI address slot"
+  DA.Text.drop 24 (abiSlot hex i)
 
 -- | Decode bytesN at slot i. bytesN is left-aligned (right-padded).
 -- Returns the first n bytes of the slot.
 abiDecodeBytesN : BytesHex -> Int -> Int -> BytesHex
 abiDecodeBytesN hex i n =
-  if n < 0 || n > slotBytes
-  then error ("abiDecodeBytesN: n must be 0..32, got " <> show n)
-  else DA.Text.take (n * 2) (abiSlot hex i)
+  DA.Text.take (n * 2) (abiSlot hex i)
 
 -- Note: Solidity's `function` type (bytes24 = address + selector) is not
 -- supported. It is largely abandoned in practice — use address + interface instead.
@@ -156,22 +88,10 @@ abiDecodeBytesN hex i n =
 -- | Internal: decode uint at slot as Int (for offsets and lengths only).
 -- Errors on overflow — only use for values known to fit in Int64.
 abiSlotToInt : BytesHex -> Int -> Int
-abiSlotToInt hex i = case fromHex (abiSlot hex i) of
-  Some n | n >= 0 -> n
-  Some _ -> error ("abiSlotToInt: negative value at slot " <> show i)
-  None -> error ("abiSlotToInt: overflow at slot " <> show i)
-
--- | Internal: validate that a byte offset is non-negative and slot-aligned.
--- Well-formed ABI always places dynamic payloads at multiples of 32; a
--- non-aligned offset indicates corrupt or adversarial input. Returns the
--- offset unchanged on success; errors otherwise.
-requireAlignedOffset : Text -> Int -> Int
-requireAlignedOffset fnName byteOffset =
-  if byteOffset < 0
-  then error (fnName <> ": negative byte offset " <> show byteOffset)
-  else if byteOffset % slotBytes /= 0
-  then error (fnName <> ": byte offset " <> show byteOffset <> " must be a multiple of 32")
-  else byteOffset
+abiSlotToInt hex i =
+  let slot = abiSlot hex i
+      result : Optional Int = fromHex slot
+  in fromSomeNote ("abiSlotToInt: overflow at slot " <> show i) result
 
 -- ---------------------------------------------------------------------------
 -- Dynamic type decoders
@@ -183,20 +103,13 @@ abiReadOffset = abiSlotToInt
 
 -- | Decode dynamic bytes at the given byte offset.
 -- Layout: uint256 length at offset, then raw data bytes.
--- Errors if byteOffset is negative or not a multiple of 32.
 abiDecodeBytes : BytesHex -> Int -> BytesHex
 abiDecodeBytes hex byteOffset =
-  let off = requireAlignedOffset "abiDecodeBytes" byteOffset
-      hexLen = DA.Text.length hex
-      len = abiSlotToInt hex (off / slotBytes)
-      dataStartChar = (off + slotBytes) * 2
+  let len = abiSlotToInt hex (byteOffset / 32)
+      dataStartChar = (byteOffset + 32) * 2
   in if len == 0
      then ""
-     else
-       let availableBytes = (hexLen - dataStartChar) / 2
-       in if len < 0 || len > availableBytes
-          then error ("abiDecodeBytes: claimed " <> show len <> " bytes but only " <> show availableBytes <> " available at offset " <> show off)
-          else DA.Text.take (len * 2) (DA.Text.drop dataStartChar hex)
+     else DA.Text.take (len * 2) (DA.Text.drop dataStartChar hex)
 
 -- | Decode dynamic string at the given byte offset (UTF-8).
 -- Returns "" for zero-length strings.
@@ -205,59 +118,40 @@ abiDecodeString hex byteOffset =
   let raw = abiDecodeBytes hex byteOffset
   in if raw == ""
      then ""
-     else case fromHex raw of
-       Some t -> t
-       None -> error ("abiDecodeString: invalid UTF-8 at offset " <> show byteOffset)
+     else
+       let result : Optional Text = fromHex raw
+       in fromSomeNote ("abiDecodeString: invalid UTF-8 at offset " <> show byteOffset) result
 
 -- | Read dynamic array length at the given byte offset.
--- Errors if byteOffset is negative or not a multiple of 32.
 abiDecodeArrayLen : BytesHex -> Int -> Int
-abiDecodeArrayLen hex byteOffset =
-  let off = requireAlignedOffset "abiDecodeArrayLen" byteOffset
-  in abiSlotToInt hex (off / slotBytes)
+abiDecodeArrayLen hex byteOffset = abiSlotToInt hex (byteOffset / 32)
 
 -- | Read the j-th element (0-indexed) of a dynamic array of static 32-byte
 -- elements at the given byte offset. Returns raw 32-byte slot.
--- Errors if byteOffset is negative or not a multiple of 32.
 abiDecodeArrayElem : BytesHex -> Int -> Int -> BytesHex
 abiDecodeArrayElem hex byteOffset j =
-  let off = requireAlignedOffset "abiDecodeArrayElem" byteOffset
-      len = abiSlotToInt hex (off / slotBytes)
-  in if j < 0 || j >= len
-     then error ("abiDecodeArrayElem: index " <> show j <> " out of bounds (length " <> show len <> ")")
-     else abiSlot hex (off / slotBytes + 1 + j)
+  abiSlot hex (byteOffset / 32 + 1 + j)
 
 -- | Resolve the j-th element of a dynamic array of dynamic types
 -- (string[], bytes[], tuple[] with dynamic members) at the given byte offset.
 -- Returns the absolute byte offset of the element's data, suitable for
 -- passing to abiDecodeBytes, abiDecodeString, etc.
--- Errors if byteOffset is negative or not a multiple of 32.
 abiDecodeArrayDynElem : BytesHex -> Int -> Int -> Int
 abiDecodeArrayDynElem hex byteOffset j =
-  let off = requireAlignedOffset "abiDecodeArrayDynElem" byteOffset
-      len = abiSlotToInt hex (off / slotBytes)
-  in if j < 0 || j >= len
-     then error ("abiDecodeArrayDynElem: index " <> show j <> " out of bounds (length " <> show len <> ")")
-     else
-       let dataAreaOffset = off + slotBytes
-           elemOffsetSlot = dataAreaOffset / slotBytes + j
-           relativeOffset = abiSlotToInt hex elemOffsetSlot
-       in dataAreaOffset + relativeOffset
+  let dataAreaOffset = byteOffset + 32  -- skip length slot
+      elemOffsetSlot = dataAreaOffset / 32 + j
+      relativeOffset = abiSlotToInt hex elemOffsetSlot
+  in dataAreaOffset + relativeOffset
 
 -- | Resolve the j-th element of a fixed-size array of dynamic types
 -- (T[k] where T is dynamic, e.g. string[2]). No length prefix — the data
 -- area starts at the array's base position directly.
 -- Returns the absolute byte offset of the element's data.
--- Errors if byteOffset is negative or not a multiple of 32.
 abiDecodeFixedArrayDynElem : BytesHex -> Int -> Int -> Int
 abiDecodeFixedArrayDynElem hex byteOffset j =
-  let off = requireAlignedOffset "abiDecodeFixedArrayDynElem" byteOffset
-  in if j < 0
-     then error ("abiDecodeFixedArrayDynElem: negative index " <> show j)
-     else
-       let elemOffsetSlot = off / slotBytes + j
-           relativeOffset = abiSlotToInt hex elemOffsetSlot
-       in off + relativeOffset
+  let elemOffsetSlot = byteOffset / 32 + j
+      relativeOffset = abiSlotToInt hex elemOffsetSlot
+  in byteOffset + relativeOffset
 
 -- ---------------------------------------------------------------------------
 -- Dynamic tuple decoders
@@ -272,15 +166,10 @@ abiDecodeFixedArrayDynElem hex byteOffset j =
 --   strOff = abiDecodeTupleDynMember hex B 1
 --   str    = abiDecodeString hex strOff
 --   flag   = abiDecodeBool hex (B / 32 + 2)
--- Errors if tupleBaseOffset is negative or not a multiple of 32.
 abiDecodeTupleDynMember : BytesHex -> Int -> Int -> Int
 abiDecodeTupleDynMember hex tupleBaseOffset memberSlotIndex =
-  let off = requireAlignedOffset "abiDecodeTupleDynMember" tupleBaseOffset
-  in if memberSlotIndex < 0
-     then error ("abiDecodeTupleDynMember: negative member index " <> show memberSlotIndex)
-     else
-       let relativeOffset = abiSlotToInt hex (off / slotBytes + memberSlotIndex)
-       in off + relativeOffset
+  let relativeOffset = abiSlotToInt hex (tupleBaseOffset / 32 + memberSlotIndex)
+  in tupleBaseOffset + relativeOffset
 
 -- ---------------------------------------------------------------------------
 -- Multi-dimensional array patterns (documentation)
@@ -298,8 +187,8 @@ abiDecodeTupleDynMember hex tupleBaseOffset memberSlotIndex =
 --   arrOff = abiReadOffset hex 0
 --   arrLen = abiDecodeArrayLen hex arrOff
 --   -- each element is N contiguous static slots starting at:
---   elemBase = arrOff + slotBytes + j * N * slotBytes
---   value    = abiDecodeUint hex (elemBase / slotBytes + k)
+--   elemBase = arrOff + 32 + j * N * 32
+--   value    = abiDecodeUint hex (elemBase / 32 + k)
 --
 -- T[][N] (fixed array of dynamic arrays):
 --   innerOff = abiDecodeFixedArrayDynElem hex baseOffset j
@@ -312,19 +201,9 @@ abiDecodeTupleDynMember hex tupleBaseOffset memberSlotIndex =
 
 -- | Check if a hex-encoded response starts with the 4-byte error magic prefix.
 -- Used to distinguish tx-level failures from successful return data.
--- Case-insensitive: accepts "deadbeef", "DEADBEEF", or any mixed case since
--- BytesHex legitimately allows both A–F and a–f.
-abiHasErrorPrefix : BytesHex -> Bool
-abiHasErrorPrefix hex =
-  DA.Text.length hex >= selectorHexChars
-  && DA.Text.asciiToLower (DA.Text.take selectorHexChars hex) == "deadbeef"
+hasErrorPrefix : BytesHex -> Bool
+hasErrorPrefix hex = DA.Text.length hex >= 8 && DA.Text.take 8 hex == "deadbeef"
 
 -- | Strip the 4-byte error prefix, leaving the ABI-encoded error payload.
--- Errors if the data is too short or the prefix is not the deadbeef magic.
-abiStripErrorPrefix : BytesHex -> BytesHex
-abiStripErrorPrefix hex =
-  if DA.Text.length hex < selectorHexChars
-  then error ("abiStripErrorPrefix: data too short (" <> show (DA.Text.length hex / 2) <> " bytes)")
-  else if DA.Text.asciiToLower (DA.Text.take selectorHexChars hex) /= "deadbeef"
-  then error "abiStripErrorPrefix: prefix is not the 0xdeadbeef error magic"
-  else DA.Text.drop selectorHexChars hex
+stripErrorPrefix : BytesHex -> BytesHex
+stripErrorPrefix hex = DA.Text.drop 8 hex

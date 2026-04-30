@@ -1,12 +1,10 @@
 sdk-version: 3.4.11
-name: daml-signer
+name: daml-evm-types
 version: 0.0.1
 source: daml
 dependencies:
   - daml-prim
   - daml-stdlib
   - daml-script
-data-dependencies:
-  - ../daml-eip712/.daml/dist/daml-eip712-0.0.1.dar
 build-options:
   - -Wno-crypto-text-is-alpha

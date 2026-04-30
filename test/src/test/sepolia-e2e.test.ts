@@ -12,34 +12,28 @@ const env = tryLoadEnv();
 const describeIf = env ? describe : describe.skip;
 
 describeIf("sepolia e2e deposit lifecycle", () => {
-  let setup: VaultSetup | undefined;
-
-  const requireSetup = (): VaultSetup => {
-    if (setup === undefined) throw new Error("setupVault did not complete");
-    return setup;
-  };
+  let setup: VaultSetup;
 
   beforeAll(async () => {
     setup = await setupVault(env!, "sepolia-e2e", "");
   }, 60_000);
 
   afterAll(() => {
-    setup?.mpcServer.shutdown();
+    setup.mpcServer.shutdown();
   });
 
   it("completes full deposit flow through Sepolia", async () => {
-    const setup = requireSetup();
     const result = await executeDepositFlow(env!, setup);
 
     expect(result.mpcOutput).toBe(
       "0000000000000000000000000000000000000000000000000000000000000001",
     );
     expect(result.holdingArgs.owner).toBe(setup.requester);
-    expect(result.holdingArgs.operators).toEqual([setup.operator]);
+    expect(result.holdingArgs.issuer).toBe(setup.issuer);
     expect(result.holdingArgs.amount).toBe(result.amountPadded);
 
     const activeHoldings = await setup.canton.getActiveContracts(
-      [setup.operator, setup.requester],
+      [setup.issuer, setup.requester],
       ERC20_HOLDING,
     );
     expect(

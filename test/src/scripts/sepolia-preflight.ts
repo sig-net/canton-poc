@@ -11,7 +11,6 @@
  *   - .env with MPC_ROOT_PUBLIC_KEY, SEPOLIA_RPC_URL, etc.
  */
 
-import "dotenv/config";
 import { createPublicClient, http, parseAbi } from "viem";
 import { sepolia } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";

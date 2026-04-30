@@ -1,6 +1,6 @@
 packages:
   - daml-packages/daml-abi
   - daml-packages/daml-uint256
+  - daml-packages/daml-evm-types
   - daml-packages/daml-eip712
-  - daml-packages/daml-signer
   - daml-packages/daml-vault

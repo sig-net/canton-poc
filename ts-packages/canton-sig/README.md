@@ -138,30 +138,31 @@ Absolute path to the bundled `daml-vault-0.0.1.dar`. Pass to `canton.uploadDar()
 
 ### Utilities
 
-| Export                                                                                         | Description                                                    |
-| ---------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| `deriveDepositAddress(rootPubKey, predecessorId, path, keyVersion?)`                           | Derive an EVM deposit address from MPC root key                |
-| `computeRequestId(sender, evmType2Params, caip2Id, keyVersion, path, algo, dest, authCidText)` | Compute the EIP-712 request ID for an EVM type-2 transaction   |
-| `computeResponseHash(requestId, mpcOutput)`                                                    | Compute the EIP-712 response hash for an MPC outcome           |
-| `toSpkiPublicKey(uncompressedPubKey)`                                                          | Convert uncompressed public key to SPKI format                 |
-| `derivePublicKey(privateKey)`                                                                  | Derive the uncompressed public key from a private key          |
-| `deriveChildPrivateKey(rootPrivateKey, predecessorId, path)`                                   | Derive a child signing key                                     |
-| `signEvmTxHash(privateKey, txHash)`                                                            | Sign an EVM transaction hash (ECDSA, returns `{ r, s, v }`)    |
-| `signMpcResponse(rootPrivateKey, requestId, mpcOutput)`                                        | Sign an MPC response hash (compact 64-byte signature)          |
-| `reconstructSignedTx(evmType2Params, signature)`                                               | Reconstruct a signed EVM type-2 transaction                    |
-| `submitRawTransaction(rpcUrl, raw)`                                                            | Submit a raw transaction to an EVM RPC                         |
-| `buildTxRequest(evmType2Params)`                                                               | Build a viem transaction request from Canton EVM type-2 params |
-| `serializeUnsignedTx(evmType2Params)`                                                          | Serialize an unsigned EVM type-2 transaction                   |
-| `findCreated(events, templateFragment)`                                                        | Find a created event by template name                          |
-| `firstCreated(events)`                                                                         | Get the first created event from a list                        |
-| `getCreatedEvent(event)`                                                                       | Extract the `CreatedEvent` from an event envelope              |
-| `createLedgerStream(options)`                                                                  | Create a WebSocket ledger update stream with auto-reconnect    |
-| `canActAsRight(party)`                                                                         | Build a `CanActAs` user right payload                          |
-| `canReadAsRight(party)`                                                                        | Build a `CanReadAs` user right payload                         |
-| `chainIdHexToCaip2(chainIdHex)`                                                                | Convert a hex chain ID to a CAIP-2 identifier                  |
-| `KEY_VERSION`                                                                                  | Default key derivation version constant (`1`)                  |
-| `eip712Types`                                                                                  | EIP-712 type definitions used for request signing              |
-| `eip712Domain`                                                                                 | EIP-712 domain used for request signing                        |
+| Export                                                                                    | Description                                                 |
+| ----------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| `deriveDepositAddress(rootPubKey, predecessorId, path, keyVersion?)`                      | Derive an EVM deposit address from MPC root key             |
+| `computeRequestId(sender, evmParams, caip2Id, keyVersion, path, algo, dest, authCidText)` | Compute the EIP-712 request ID for a transaction            |
+| `computeResponseHash(requestId, mpcOutput)`                                               | Compute the EIP-712 response hash for an MPC outcome        |
+| `toSpkiPublicKey(uncompressedPubKey)`                                                     | Convert uncompressed public key to SPKI format              |
+| `derivePublicKey(privateKey)`                                                             | Derive the uncompressed public key from a private key       |
+| `deriveChildPrivateKey(rootPrivateKey, predecessorId, path)`                              | Derive a child signing key                                  |
+| `signEvmTxHash(privateKey, txHash)`                                                       | Sign an EVM transaction hash (ECDSA, returns `{ r, s, v }`) |
+| `signMpcResponse(rootPrivateKey, requestId, mpcOutput)`                                   | Sign an MPC response hash (compact 64-byte signature)       |
+| `reconstructSignedTx(evmParams, signature)`                                               | Reconstruct a signed EVM transaction                        |
+| `submitRawTransaction(rpcUrl, raw)`                                                       | Submit a raw transaction to an EVM RPC                      |
+| `buildCalldata(functionSignature, args)`                                                  | Build EVM calldata from function signature and hex args     |
+| `buildTxRequest(evmParams)`                                                               | Build a viem transaction request from Canton EVM params     |
+| `serializeUnsignedTx(evmParams)`                                                          | Serialize an unsigned EVM transaction                       |
+| `findCreated(events, templateFragment)`                                                   | Find a created event by template name                       |
+| `firstCreated(events)`                                                                    | Get the first created event from a list                     |
+| `getCreatedEvent(event)`                                                                  | Extract the `CreatedEvent` from an event envelope           |
+| `createLedgerStream(options)`                                                             | Create a WebSocket ledger update stream with auto-reconnect |
+| `canActAsRight(party)`                                                                    | Build a `CanActAs` user right payload                       |
+| `canReadAsRight(party)`                                                                   | Build a `CanReadAs` user right payload                      |
+| `chainIdHexToCaip2(chainIdHex)`                                                           | Convert a hex chain ID to a CAIP-2 identifier               |
+| `KEY_VERSION`                                                                             | Default key derivation version constant (`1`)               |
+| `eip712Types`                                                                             | EIP-712 type definitions used for request signing           |
+| `eip712Domain`                                                                            | EIP-712 domain used for request signing                     |
 
 ### Daml Templates
 
@@ -171,7 +172,7 @@ Re-exported from the bundled DAR for consumer convenience:
 
 ### Types
 
-`MpcServerConfig`, `CreatedEvent`, `Event`, `UserRight`, `DisclosedContract`, `TransactionResponse`, `JsGetUpdatesResponse`, `StreamHandle`, `EvmType2TransactionParams`, `CantonEvmType2Params`
+`MpcServerConfig`, `CreatedEvent`, `Event`, `UserRight`, `DisclosedContract`, `TransactionResponse`, `JsGetUpdatesResponse`, `StreamHandle`, `EvmTransactionParams`, `CantonEvmParams`
 
 ## Limitations
 

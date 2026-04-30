@@ -55,8 +55,13 @@ export function createLedgerStream(opts: LedgerStreamOptions): StreamHandle {
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let hasConnectedOnce = false;
 
-  const buildFilter = (): Record<string, Record<string, never>> =>
-    Object.fromEntries(opts.parties.map((p) => [p, {}]));
+  function buildFilter(): Record<string, Record<string, never>> {
+    const filtersByParty: Record<string, Record<string, never>> = {};
+    for (const party of opts.parties) {
+      filtersByParty[party] = {};
+    }
+    return filtersByParty;
+  }
 
   function extractOffset(item: JsGetUpdatesResponse): number | undefined {
     const update = item.update;
@@ -108,20 +113,11 @@ export function createLedgerStream(opts: LedgerStreamOptions): StreamHandle {
       hasConnectedOnce = true;
       reconnectAttempt = 0;
 
-      // Use updateFormat (Canton 3.4+) instead of deprecated filter/verbose
-      // (removed from gRPC proto, will be removed from JSON API in 3.5).
       ws!.send(
         JSON.stringify({
           beginExclusive: currentOffset,
-          updateFormat: {
-            includeTransactions: {
-              transactionShape: "TRANSACTION_SHAPE_ACS_DELTA",
-              eventFormat: {
-                filtersByParty: buildFilter(),
-                verbose: true,
-              },
-            },
-          },
+          verbose: true,
+          filter: { filtersByParty: buildFilter() },
         }),
       );
 

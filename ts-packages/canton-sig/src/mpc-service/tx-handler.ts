@@ -1,35 +1,41 @@
-import { keccak256, createPublicClient, http, encodeAbiParameters, type Hex } from "viem";
-import { DER } from "@noble/curves/abstract/weierstrass.js";
+import {
+  keccak256,
+  createPublicClient,
+  http,
+  hexToNumber,
+  encodeAbiParameters,
+  type Hex,
+} from "viem";
 import { privateKeyToAddress } from "viem/accounts";
 import { sepolia } from "viem/chains";
 import {
   serializeUnsignedTx,
   reconstructSignedTx,
-  type CantonEvmType2Params,
+  buildCalldata,
+  type CantonEvmParams,
 } from "../evm/tx-builder.js";
-import { cantonHexToHex } from "../evm/hex.js";
 import { deriveChildPrivateKey, signEvmTxHash, signMpcResponse } from "./signer.js";
 import {
   CantonClient,
   type CreatedEvent,
   type TransactionResponse,
 } from "../infra/canton-client.js";
-import { computeRequestId } from "../mpc/crypto.js";
+import { computeRequestId, type EvmTransactionParams } from "../mpc/crypto.js";
 import { chainIdHexToCaip2 } from "../mpc/address-derivation.js";
-import { type SignBidirectionalEvent, Signer } from "@daml.js/daml-signer-0.0.1/lib/Signer/module";
+import {
+  VaultOrchestrator,
+  type PendingEvmTx,
+} from "@daml.js/daml-vault-0.0.1/lib/Erc20Vault/module";
 
-const sepoliaClient = (rpcUrl: string) =>
-  createPublicClient({ chain: sepolia, transport: http(rpcUrl) });
+const VAULT_ORCHESTRATOR = VaultOrchestrator.templateId;
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-const SIGNER_TEMPLATE = Signer.templateId;
-
 export interface MpcServiceConfig {
   canton: CantonClient;
-  signerCid: string;
+  orchCid: string;
   userId: string;
   actAs: string[];
   rootPrivateKey: Hex;
@@ -38,12 +44,12 @@ export interface MpcServiceConfig {
 
 export interface PendingTx {
   requestId: string;
-  signEventCid: string;
+  requester: string;
   signedTxHash: Hex;
   fromAddress: Hex;
-  nonce: bigint;
+  nonce: number;
   checkCount: number;
-  evmParams: CantonEvmType2Params;
+  evmParams: CantonEvmParams;
 }
 
 type CheckResult = "pending" | "done" | "failed";
@@ -112,107 +118,79 @@ export async function signAndEnqueue(
   config: MpcServiceConfig,
   event: CreatedEvent,
 ): Promise<PendingTx> {
-  const { canton, signerCid, userId, actAs, rootPrivateKey } = config;
-  const arg = event.createArgument as SignBidirectionalEvent;
+  const { canton, orchCid, userId, actAs, rootPrivateKey } = config;
   const {
     requester,
-    sender,
-    operators,
-    txParams,
+    path: requestPath,
+    requestId: contractRequestId,
+    evmParams,
+    issuer,
+    vaultId,
+    nonceCidText,
     keyVersion,
     algo,
     dest,
-    params,
-    path: requestPath,
-  } = arg;
+  } = event.createArgument as PendingEvmTx;
 
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- guard for future BTC/SOL variants
-  if (txParams.tag !== "EvmType2TxParams") {
-    // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
-    throw new Error(`Unsupported chain params: ${txParams.tag}`);
-  }
-  const evmTxParams = txParams.value;
+  const predecessorId = `${vaultId}${issuer}`;
 
-  // sender is operatorsHash, computed on-ledger by SignRequest.Execute from the actual operator signatories — feeds KDF + requestId
-  const predecessorId = sender;
-
-  // ---------------------------------------------------------------------------
-  // Validate Canton transaction metadata (defense-in-depth).
-  // WHY validate here: MPC signs + tx lands on EVM BEFORE any Canton-side claim —
-  // damage happens at signing time, not claim time, so we must catch forgery up front.
-  // In single-participant mode a malicious participant could forge both payload
-  // AND metadata. In multi-participant mode, signatories are populated from the
-  // actual confirmation protocol (each signatory's CPN must confirm), making
-  // forgery detectable.
-  // ---------------------------------------------------------------------------
-
-  // 1. Check CreatedEvent.signatories — operators must be actual signatories
-  const onLedgerSignatories = new Set(event.signatories ?? []);
-  for (const op of operators) {
-    if (!onLedgerSignatories.has(op)) {
-      throw new Error(
-        `Operator ${op} is in contract payload but not in ` +
-          `CreatedEvent.signatories — possible forgery`,
-      );
-    }
-  }
-
-  // 2. Cross-reference: requester must also be a signatory (SignBidirectionalEvent
-  //    has signatory operators, requester)
-  if (!onLedgerSignatories.has(requester)) {
-    throw new Error(`Requester ${requester} is not in CreatedEvent.signatories — possible forgery`);
-  }
-
-  // Validate requestId via re-computation
-  // caip2Id is the DESTINATION chain (used in requestId); KDF uses SOURCE (canton:global) — they differ
-  const caip2Id = chainIdHexToCaip2(evmTxParams.chainId);
+  // Validate requestId
+  const caip2Id = chainIdHexToCaip2(evmParams.chainId);
   const computedRequestId = computeRequestId(
-    sender,
-    txParams,
+    requester,
+    evmParams as EvmTransactionParams,
     caip2Id,
     Number(keyVersion),
     requestPath,
     algo,
     dest,
-    params,
+    nonceCidText,
   );
-
-  console.log(`[MPC] Processing SignBidirectionalEvent requestId=${computedRequestId.slice(2)}`);
+  if (computedRequestId.slice(2) !== contractRequestId) {
+    throw new Error(
+      `requestId mismatch: computed=${computedRequestId.slice(2)} contract=${contractRequestId}`,
+    );
+  }
   const requestId = computedRequestId.slice(2);
+
+  console.log(`[MPC] Processing PendingEvmTx requestId=${requestId}`);
 
   // Derive child key and sender address
   const childPrivateKey = deriveChildPrivateKey(rootPrivateKey, predecessorId, requestPath);
   const fromAddress = privateKeyToAddress(childPrivateKey);
-  const txNonce = BigInt(`0x${evmTxParams.nonce}`);
+  const txNonce = hexToNumber(`0x${evmParams.nonce}`);
 
   // Sign EVM transaction
-  const serializedUnsigned = serializeUnsignedTx(evmTxParams);
+  const serializedUnsigned = serializeUnsignedTx(evmParams);
   const txHash = keccak256(serializedUnsigned);
-  const { r, s, v } = await signEvmTxHash(childPrivateKey, txHash);
+  const { r, s, v } = signEvmTxHash(childPrivateKey, txHash);
 
-  // DER-encode the ECDSA signature for the Respond choice
-  const derSignature = DER.hexFromSig({ r: BigInt(`0x${r}`), s: BigInt(`0x${s}`) });
-
-  console.log(`[MPC] Signing EVM tx, exercising Respond`);
-  await exerciseChoiceWithRetry(canton, userId, actAs, SIGNER_TEMPLATE, signerCid, "Respond", {
-    signEventCid: event.contractId,
+  console.log(`[MPC] Signing EVM tx, exercising SignEvmTx`);
+  await exerciseChoiceWithRetry(canton, userId, actAs, VAULT_ORCHESTRATOR, orchCid, "SignEvmTx", {
+    requester,
     requestId,
-    signature: { tag: "EcdsaSig", value: { der: derSignature, recoveryId: v } },
+    r,
+    s,
+    v,
   });
-  console.log(`[MPC] Respond exercised`);
+  console.log(`[MPC] SignEvmTx exercised`);
 
   // Compute signed tx hash for monitoring
-  const signedTx = reconstructSignedTx(evmTxParams, { r: `0x${r}`, s: `0x${s}`, v });
+  const signedTx = reconstructSignedTx(evmParams, {
+    r: `0x${r}`,
+    s: `0x${s}`,
+    v,
+  });
   const signedTxHash = keccak256(signedTx);
 
   return {
     requestId,
-    signEventCid: event.contractId,
+    requester,
     signedTxHash,
     fromAddress,
     nonce: txNonce,
     checkCount: 0,
-    evmParams: evmTxParams,
+    evmParams,
   };
 }
 
@@ -225,24 +203,22 @@ async function extractReturnData(
   tx: PendingTx,
   receipt: { blockNumber: bigint },
 ): Promise<string> {
-  if (tx.evmParams.to === null) return encodeBoolOutput(true);
-
-  const result = await sepoliaClient(rpcUrl).call({
+  const client = createPublicClient({ chain: sepolia, transport: http(rpcUrl) });
+  const calldata = buildCalldata(
+    tx.evmParams.functionSignature,
+    tx.evmParams.args.map((a): Hex => `0x${a}`),
+  );
+  const result = await client.call({
     to: `0x${tx.evmParams.to}`,
-    data: cantonHexToHex(tx.evmParams.calldata),
+    data: calldata,
     account: tx.fromAddress,
     blockNumber: receipt.blockNumber - 1n,
   });
-  const returnData = result.data ?? "0x";
-  return returnData === "0x" ? encodeBoolOutput(true) : returnData.slice(2);
-}
-
-function encodeBoolOutput(value: boolean): string {
-  return encodeAbiParameters([{ type: "bool" }], [value]).slice(2);
+  return result.data!.slice(2);
 }
 
 function encodeErrorOutput(): string {
-  return "deadbeef" + encodeBoolOutput(true);
+  return "deadbeef" + encodeAbiParameters([{ type: "bool" }], [true]).slice(2);
 }
 
 // ---------------------------------------------------------------------------
@@ -253,7 +229,7 @@ export async function checkPendingTx(
   config: MpcServiceConfig,
   tx: PendingTx,
 ): Promise<CheckResult> {
-  const client = sepoliaClient(config.rpcUrl);
+  const client = createPublicClient({ chain: sepolia, transport: http(config.rpcUrl) });
 
   let mpcOutput: string | null = null;
 
@@ -271,7 +247,7 @@ export async function checkPendingTx(
     // No receipt yet — check if nonce was consumed (tx replaced)
     try {
       const currentNonce = await client.getTransactionCount({ address: tx.fromAddress });
-      if (BigInt(currentNonce) > tx.nonce) {
+      if (currentNonce > tx.nonce) {
         // Double-check: maybe the receipt just appeared
         try {
           await client.getTransactionReceipt({ hash: tx.signedTxHash });
@@ -301,26 +277,26 @@ async function reportOutcome(
   tx: PendingTx,
   mpcOutput: string,
 ): Promise<CheckResult> {
-  const signature = await signMpcResponse(config.rootPrivateKey, tx.requestId, mpcOutput);
+  const signature = signMpcResponse(config.rootPrivateKey, tx.requestId, mpcOutput);
 
   try {
-    console.log(`[MPC] Exercising RespondBidirectional for requestId=${tx.requestId}`);
+    console.log(`[MPC] Exercising ProvideEvmOutcomeSig for requestId=${tx.requestId}`);
     await exerciseChoiceWithRetry(
       config.canton,
       config.userId,
       config.actAs,
-      SIGNER_TEMPLATE,
-      config.signerCid,
-      "RespondBidirectional",
+      VAULT_ORCHESTRATOR,
+      config.orchCid,
+      "ProvideEvmOutcomeSig",
       {
-        signEventCid: tx.signEventCid,
+        requester: tx.requester,
         requestId: tx.requestId,
-        serializedOutput: mpcOutput,
         signature,
+        mpcOutput,
       },
     );
     console.log(
-      `[MPC] RespondBidirectional exercised for requestId=${tx.requestId} (output=${mpcOutput})`,
+      `[MPC] ProvideEvmOutcomeSig exercised for requestId=${tx.requestId} (output=${mpcOutput})`,
     );
     return "done";
   } catch (err) {

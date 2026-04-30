@@ -32,17 +32,6 @@ export type TransactionResponse = components["schemas"]["JsSubmitAndWaitForTrans
 /** A single update item from the `POST /v2/updates` response. */
 export type JsGetUpdatesResponse = components["schemas"]["JsGetUpdatesResponse"];
 
-/** Throw on openapi-fetch error envelopes; otherwise unwrap the typed `data`. */
-function unwrap<T>(op: string, result: { data?: T; error?: unknown }): T {
-  if (result.error !== undefined) {
-    throw new Error(`${op} failed: ${JSON.stringify(result.error)}`);
-  }
-  if (result.data === undefined) {
-    throw new Error(`${op}: server returned no data`);
-  }
-  return result.data;
-}
-
 // ---------------------------------------------------------------------------
 // Pure utility functions (no client dependency)
 // ---------------------------------------------------------------------------
@@ -105,7 +94,7 @@ export class CantonClient {
    * @see {@link https://docs.digitalasset.com/build/3.4/reference/json-api/openapi.html | POST /v2/parties}
    */
   async allocateParty(hint: string): Promise<string> {
-    const result = await this.client.POST("/v2/parties", {
+    const { data, error } = await this.client.POST("/v2/parties", {
       body: {
         partyIdHint: hint,
         identityProviderId: "",
@@ -113,17 +102,18 @@ export class CantonClient {
         userId: "",
       },
     });
-    if (result.error !== undefined) {
-      const msg = JSON.stringify(result.error);
+    if (error) {
+      const msg = JSON.stringify(error);
       if (msg.includes("Party already exists")) {
         const existing = await this.findPartyByHint(hint);
         if (existing) return existing;
       }
       throw new Error(`allocateParty failed: ${msg}`);
     }
-    const party = result.data.partyDetails?.party;
-    if (!party) throw new Error("allocateParty: unexpected empty response");
-    return party;
+    if (!data?.partyDetails?.party) {
+      throw new Error("allocateParty: unexpected empty response");
+    }
+    return data.partyDetails.party;
   }
 
   /**
@@ -198,10 +188,11 @@ export class CantonClient {
         rights,
       } as components["schemas"]["CreateUserRequest"],
     });
-    if (error === undefined) return;
-    const msg = JSON.stringify(error);
-    if (msg.includes("USER_ALREADY_EXISTS")) return;
-    throw new Error(`createUser failed: ${msg}`);
+    if (error) {
+      const msg = JSON.stringify(error);
+      if (msg.includes("USER_ALREADY_EXISTS")) return;
+      throw new Error(`createUser failed: ${msg}`);
+    }
   }
 
   /**
@@ -214,13 +205,11 @@ export class CantonClient {
    * @see {@link https://docs.digitalasset.com/build/3.4/reference/json-api/openapi.html | GET /v2/users/\{user-id\}/rights}
    */
   async listUserRights(userId: string): Promise<UserRight[]> {
-    const data = unwrap(
-      "listUserRights",
-      await this.client.GET("/v2/users/{user-id}/rights", {
-        params: { path: { "user-id": userId } },
-      }),
-    );
-    return data.rights ?? [];
+    const { data, error } = await this.client.GET("/v2/users/{user-id}/rights", {
+      params: { path: { "user-id": userId } },
+    });
+    if (error) throw new Error(`listUserRights failed: ${JSON.stringify(error)}`);
+    return data?.rights ?? [];
   }
 
   // ---------------------------------------------------------------------------
@@ -306,21 +295,20 @@ export class CantonClient {
     readAs?: string[],
     disclosedContracts?: DisclosedContract[],
   ): Promise<TransactionResponse> {
-    return unwrap(
-      "submitAndWait",
-      await this.client.POST("/v2/commands/submit-and-wait-for-transaction", {
-        body: {
-          commands: {
-            commands,
-            commandId: crypto.randomUUID(),
-            userId,
-            actAs,
-            readAs: readAs ?? actAs,
-            disclosedContracts,
-          },
-        } as components["schemas"]["JsSubmitAndWaitForTransactionRequest"],
-      }),
-    );
+    const { data, error } = await this.client.POST("/v2/commands/submit-and-wait-for-transaction", {
+      body: {
+        commands: {
+          commands,
+          commandId: crypto.randomUUID(),
+          userId,
+          actAs,
+          readAs: readAs ?? actAs,
+          disclosedContracts,
+        },
+      } as components["schemas"]["JsSubmitAndWaitForTransactionRequest"],
+    });
+    if (error) throw new Error(`submitAndWait failed: ${JSON.stringify(error)}`);
+    return data!;
   }
 
   /**
@@ -399,7 +387,9 @@ export class CantonClient {
    * @see {@link https://docs.digitalasset.com/build/3.4/reference/json-api/openapi.html | GET /v2/state/ledger-end}
    */
   async getLedgerEnd(): Promise<number> {
-    return unwrap("getLedgerEnd", await this.client.GET("/v2/state/ledger-end")).offset;
+    const { data, error } = await this.client.GET("/v2/state/ledger-end");
+    if (error) throw new Error(`getLedgerEnd failed: ${JSON.stringify(error)}`);
+    return data!.offset;
   }
 
   /**
@@ -428,26 +418,21 @@ export class CantonClient {
     parties: string[],
     idleTimeoutMs = 2000,
   ): Promise<JsGetUpdatesResponse[]> {
-    return unwrap(
-      "getUpdates",
-      await this.client.POST("/v2/updates", {
-        params: { query: { stream_idle_timeout_ms: idleTimeoutMs } },
-        body: {
-          beginExclusive,
-          // Use updateFormat (Canton 3.4+) — legacy filter/verbose removed in 3.5
-          verbose: true, // required by TS types for backwards compat, ignored when updateFormat is set
-          updateFormat: {
-            includeTransactions: {
-              transactionShape: "TRANSACTION_SHAPE_ACS_DELTA",
-              eventFormat: {
-                filtersByParty: Object.fromEntries(parties.map((p) => [p, {}])),
-                verbose: true,
-              },
-            },
-          },
-        },
-      }),
-    );
+    const filtersByParty: Record<string, components["schemas"]["Filters"]> = {};
+    for (const party of parties) {
+      filtersByParty[party] = {};
+    }
+
+    const { data, error } = await this.client.POST("/v2/updates", {
+      params: { query: { stream_idle_timeout_ms: idleTimeoutMs } },
+      body: {
+        beginExclusive,
+        verbose: true,
+        filter: { filtersByParty },
+      },
+    });
+    if (error) throw new Error(`getUpdates failed: ${JSON.stringify(error)}`);
+    return data!;
   }
 
   /**
@@ -471,37 +456,40 @@ export class CantonClient {
   ): Promise<ActiveContractEntry[]> {
     const ledgerEnd = await this.getLedgerEnd();
 
-    const partyFilter: components["schemas"]["Filters"] = {
-      cumulative: [
-        {
-          identifierFilter: { TemplateFilter: { value: { templateId, includeCreatedEventBlob } } },
-        },
-      ],
-    };
-
-    const data = unwrap(
-      "fetchActiveContracts",
-      await this.client.POST("/v2/state/active-contracts", {
-        body: {
-          activeAtOffset: ledgerEnd,
-          eventFormat: {
-            filtersByParty: Object.fromEntries(parties.map((p) => [p, partyFilter])),
-            verbose: true,
-          },
-        } as components["schemas"]["GetActiveContractsRequest"],
-      }),
-    );
-
-    return data.flatMap((item) =>
-      "JsActiveContract" in item.contractEntry
-        ? [
-            {
-              createdEvent: item.contractEntry.JsActiveContract.createdEvent,
-              synchronizerId: item.contractEntry.JsActiveContract.synchronizerId,
+    const filtersByParty: Record<string, components["schemas"]["Filters"]> = {};
+    for (const party of parties) {
+      filtersByParty[party] = {
+        cumulative: [
+          {
+            identifierFilter: {
+              TemplateFilter: {
+                value: { templateId, includeCreatedEventBlob },
+              },
             },
-          ]
-        : [],
-    );
+          },
+        ],
+      };
+    }
+
+    const { data, error } = await this.client.POST("/v2/state/active-contracts", {
+      body: {
+        activeAtOffset: ledgerEnd,
+        eventFormat: {
+          filtersByParty,
+          verbose: true,
+        },
+      } as components["schemas"]["GetActiveContractsRequest"],
+    });
+    if (error) throw new Error(`fetchActiveContracts failed: ${JSON.stringify(error)}`);
+
+    const results: ActiveContractEntry[] = [];
+    for (const item of data ?? []) {
+      if ("JsActiveContract" in item.contractEntry) {
+        const ac = item.contractEntry.JsActiveContract;
+        results.push({ createdEvent: ac.createdEvent, synchronizerId: ac.synchronizerId });
+      }
+    }
+    return results;
   }
 
   /**

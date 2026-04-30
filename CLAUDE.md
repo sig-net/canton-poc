@@ -6,7 +6,7 @@
 
 ```bash
 dpm build --all
-for pkg in daml-abi daml-uint256 daml-eip712 daml-signer daml-vault; do
+for pkg in daml-abi daml-uint256 daml-evm-types daml-eip712 daml-vault; do
   (cd daml-packages/$pkg && dpm test)
 done
 ```
@@ -18,7 +18,7 @@ done
 Co-located TS tests that verify Daml logic against reference implementations (viem, etc.):
 
 ```bash
-pnpm -r --filter='@canton/*' --filter='canton-sig' run test
+pnpm -r --filter='@canton/*' run test
 ```
 
 ### Canton sandbox
@@ -50,7 +50,7 @@ cd test && pnpm test
 
 ### Sepolia E2E tests
 
-Requires `test/.env` with `SEPOLIA_RPC_URL`, `MPC_ROOT_PRIVATE_KEY`, `MPC_ROOT_PUBLIC_KEY`, and a funded faucet. `FAUCET_PRIVATE_KEY` can be set separately; it defaults to `MPC_ROOT_PRIVATE_KEY` if unset. These tests run alongside integration tests when env vars are set.
+Requires `test/.env` with `SEPOLIA_RPC_URL`, `MPC_ROOT_PRIVATE_KEY`, `MPC_ROOT_PUBLIC_KEY`, and a funded faucet. These tests run alongside integration tests when env vars are set.
 
 ```bash
 cd test
@@ -60,6 +60,6 @@ pnpm test                 # runs all tests including Sepolia e2e when env is set
 
 ## Project layout
 
-- `daml-packages/` -- Daml source packages (`daml-signer` + `daml-vault` DARs, plus shared libs)
+- `daml-packages/` -- Daml source packages (DAR built from `daml-packages/daml-vault/`)
 - `ts-packages/` -- TypeScript packages (`canton-sig` library)
 - `test/` -- Integration & e2e tests

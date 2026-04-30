@@ -1,61 +1,59 @@
 import { describe, it, expect, beforeAll } from "vitest";
-import { encodeAbiParameters, parseAbiParameters, type Hex } from "viem";
+import { type Hex } from "viem";
 import {
   CantonClient,
   type CreatedEvent,
   type DisclosedContract,
-  type CantonEvmType2Params,
   findCreated,
   firstCreated,
   deriveDepositAddress,
   signMpcResponse,
-  toSpkiPublicKey,
   DAR_PATH,
-  Signer,
-  Vault,
-  PendingDeposit,
-  SignatureRespondedEvent,
-  RespondBidirectionalEvent,
+  VaultOrchestrator,
+  DepositAuthProposal,
+  DepositAuthorization,
+  PendingEvmTx,
+  EcdsaSignature,
+  EvmTxOutcomeSignature,
   Erc20Holding,
 } from "canton-sig";
-import { computeOperatorsHash } from "./helpers/e2e-setup.js";
 
 const VAULT_ID = "test-vault";
 const canton = new CantonClient();
 
-const SIGNER_TEMPLATE = Signer.templateId;
-const VAULT_TEMPLATE = Vault.templateId;
-const PENDING_DEPOSIT_TEMPLATE = PendingDeposit.templateId;
-const SIG_RESPONDED_TEMPLATE = SignatureRespondedEvent.templateId;
-const RESPOND_BIDIR_TEMPLATE = RespondBidirectionalEvent.templateId;
+const VAULT_ORCHESTRATOR = VaultOrchestrator.templateId;
+const DEPOSIT_AUTH_PROPOSAL = DepositAuthProposal.templateId;
+const DEPOSIT_AUTHORIZATION = DepositAuthorization.templateId;
+const PENDING_EVM_TX = PendingEvmTx.templateId;
+const ECDSA_SIGNATURE = EcdsaSignature.templateId;
+const EVM_TX_OUTCOME_SIG = EvmTxOutcomeSignature.templateId;
 const ERC20_HOLDING = Erc20Holding.templateId;
 
 const MPC_ROOT_PRIVATE_KEY =
   "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef" as Hex;
 const MPC_ROOT_PUBLIC_KEY =
   "04bb50e2d89a4ed70663d080659fe0ad4b9bc3e06c17a227433966cb59ceee020decddbf6e00192011648d13b1c00af770c0c1bb609d4d3a5c98a43772e0e18ef4";
+const MPC_PUB_KEY_SPKI =
+  "3056301006072a8648ce3d020106052b8104000a03420004bb50e2d89a4ed70663d080659fe0ad4b9bc3e06c17a227433966cb59ceee020decddbf6e00192011648d13b1c00af770c0c1bb609d4d3a5c98a43772e0e18ef4";
 
 const KEY_VERSION = 1;
 const ALGO = "ECDSA";
 const DEST = "ethereum";
-const ERC20_TRANSFER_SELECTOR = "a9059cbb";
 
-function buildSampleEvmParams(vaultAddress: Hex): CantonEvmType2Params {
-  const encodedArgs = encodeAbiParameters(parseAbiParameters("address, uint256"), [
-    vaultAddress,
-    100_000_000n,
-  ]).slice(2);
-
+function buildSampleEvmParams(vaultAddress: Hex) {
   return {
     to: "a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
-    calldata: `${ERC20_TRANSFER_SELECTOR}${encodedArgs}`,
-    accessList: [],
-    value: "0".repeat(64),
-    nonce: "0".repeat(64),
-    gasLimit: "0".repeat(64),
-    maxFeePerGas: "0".repeat(64),
-    maxPriorityFeePerGas: "0".repeat(64),
-    chainId: "0".repeat(62) + "01",
+    functionSignature: "transfer(address,uint256)",
+    args: [
+      vaultAddress.slice(2).padStart(64, "0"),
+      "0000000000000000000000000000000000000000000000000000000005f5e100",
+    ],
+    value: "0000000000000000000000000000000000000000000000000000000000000000",
+    nonce: "0000000000000000000000000000000000000000000000000000000000000001",
+    gasLimit: "000000000000000000000000000000000000000000000000000000000000c350",
+    maxFeePerGas: "00000000000000000000000000000000000000000000000000000001dcd65000",
+    maxPriorityFee: "000000000000000000000000000000000000000000000000000000003b9aca00",
+    chainId: "0000000000000000000000000000000000000000000000000000000000aa36a7",
   };
 }
 
@@ -85,257 +83,240 @@ async function assertVisibility(
 
 describe("ledger visibility + permission model", () => {
   const RUN_ID = Math.random().toString(36).slice(2, 8);
-  const SIGNETWORK_USER = `signetwork-user-${RUN_ID}`;
-  const OPERATOR_USER = `operator-user-${RUN_ID}`;
+  const ISSUER_USER = `issuer-user-${RUN_ID}`;
   const REQUESTER_USER = `requester-user-${RUN_ID}`;
-  let sigNetwork: string;
-  let operator: string;
+  let issuer: string;
   let requester: string;
-  let signerCid: string;
-  let vaultCid: string;
-  let signerDisclosure: DisclosedContract;
-  let vaultDisclosure: DisclosedContract;
+  let mpc: string;
+  let orchCid: string;
+  let orchDisclosure: DisclosedContract;
   let vaultAddress: Hex;
-  let predecessorId: string;
 
   beforeAll(async () => {
     await canton.uploadDar(DAR_PATH);
 
-    sigNetwork = await canton.allocateParty(`SigNetPerm_${RUN_ID}`);
-    operator = await canton.allocateParty(`OperatorPerm_${RUN_ID}`);
+    issuer = await canton.allocateParty(`IssuerPerm_${RUN_ID}`);
     requester = await canton.allocateParty(`RequesterPerm_${RUN_ID}`);
+    mpc = await canton.allocateParty(`MpcPerm_${RUN_ID}`);
 
-    await canton.createUser(SIGNETWORK_USER, sigNetwork);
-    await canton.createUser(OPERATOR_USER, operator);
+    await canton.createUser(ISSUER_USER, issuer);
     await canton.createUser(REQUESTER_USER, requester);
 
-    // predecessorId is operatorsHash; vaultId is folded into path by the Vault.
-    predecessorId = computeOperatorsHash([operator]);
-    vaultAddress = deriveDepositAddress(MPC_ROOT_PUBLIC_KEY, predecessorId, `${VAULT_ID},root`);
+    vaultAddress = deriveDepositAddress(MPC_ROOT_PUBLIC_KEY, `${VAULT_ID}${issuer}`, "root");
 
-    // Create Signer (signatory: sigNetwork)
-    const signerResult = await canton.createContract(
-      SIGNETWORK_USER,
-      [sigNetwork],
-      SIGNER_TEMPLATE,
-      {
-        sigNetwork,
-      },
-    );
-    signerCid = firstCreated(signerResult.transaction.events).contractId;
-    signerDisclosure = await canton.getDisclosedContract([sigNetwork], SIGNER_TEMPLATE, signerCid);
-
-    // Create Vault (signatory: operators=[operator])
-    const mpcPubKeySpki = toSpkiPublicKey(MPC_ROOT_PUBLIC_KEY);
-    const vaultResult = await canton.createContract(OPERATOR_USER, [operator], VAULT_TEMPLATE, {
-      operators: [operator],
-      sigNetwork,
-      evmVaultAddress: vaultAddress.slice(2).toLowerCase().padStart(64, "0"),
-      evmMpcPublicKey: mpcPubKeySpki,
+    const orchResult = await canton.createContract(ISSUER_USER, [issuer], VAULT_ORCHESTRATOR, {
+      issuer,
+      mpc,
+      mpcPublicKey: MPC_PUB_KEY_SPKI,
+      vaultAddress: vaultAddress.slice(2).padStart(64, "0"),
       vaultId: VAULT_ID,
     });
-    vaultCid = firstCreated(vaultResult.transaction.events).contractId;
+    orchCid = firstCreated(orchResult.transaction.events).contractId;
 
-    // Operator fetches the createdEventBlob and shares it off-chain with requesters
-    vaultDisclosure = await canton.getDisclosedContract([operator], VAULT_TEMPLATE, vaultCid);
+    // Issuer fetches the createdEventBlob and shares it off-chain with requesters
+    orchDisclosure = await canton.getDisclosedContract([issuer], VAULT_ORCHESTRATOR, orchCid);
   }, 40_000);
 
   it("disclosure grants visibility without authorization", async () => {
-    // Without disclosure, requester has no visibility into Vault
+    // Without disclosure, requester has no visibility into VaultOrchestrator
     await expect(
       canton.exerciseChoice(
         REQUESTER_USER,
         [requester],
-        VAULT_TEMPLATE,
-        vaultCid,
-        "RequestDeposit",
-        {
-          requester,
-          signerCid,
-          path: requester,
-          evmTxParams: buildSampleEvmParams(vaultAddress),
-          keyVersion: KEY_VERSION,
-          algo: ALGO,
-          dest: DEST,
-          params: "",
-          outputDeserializationSchema: '[{"name":"","type":"bool"}]',
-          respondSerializationSchema: '[{"name":"","type":"bool"}]',
-        },
+        VAULT_ORCHESTRATOR,
+        orchCid,
+        "RequestDepositAuth",
+        { requester },
       ),
     ).rejects.toThrow();
 
-    // With disclosure, requester can exercise RequestDeposit via the disclosed Vault.
-    // (Vault contract is the disclosed entity; SignBidirectionalEvent is created internally
-    //  through Signer.SignBidirectional → SignRequest.Execute, which the disclosed Signer
-    //  enables. Both disclosures are required.)
-    const depositResult = await canton.exerciseChoice(
+    // With disclosed blob, requester can exercise requester-controlled choices
+    const requestResult = await canton.exerciseChoice(
       REQUESTER_USER,
       [requester],
-      VAULT_TEMPLATE,
-      vaultCid,
-      "RequestDeposit",
-      {
-        requester,
-        signerCid,
-        path: requester,
-        evmTxParams: buildSampleEvmParams(vaultAddress),
-        keyVersion: KEY_VERSION,
-        algo: ALGO,
-        dest: DEST,
-        params: "",
-        outputDeserializationSchema: '[{"name":"","type":"bool"}]',
-        respondSerializationSchema: '[{"name":"","type":"bool"}]',
-      },
+      VAULT_ORCHESTRATOR,
+      orchCid,
+      "RequestDepositAuth",
+      { requester },
       undefined,
-      [vaultDisclosure, signerDisclosure],
+      [orchDisclosure],
     );
-    const pendingDeposit = findCreated(depositResult.transaction.events, "PendingDeposit");
-    expect(pendingDeposit.contractId).toBeDefined();
-  });
+    const proposal = findCreated(requestResult.transaction.events, "DepositAuthProposal");
+    const proposalArgs = proposal.createArgument as DepositAuthProposal;
+    expect(proposalArgs.issuer).toBe(issuer);
+    expect(proposalArgs.owner).toBe(requester);
 
-  it("full lifecycle: controller permissions and observer visibility", async () => {
-    // -- Signer visibility: signatory=sigNetwork
-    await assertVisibility(SIGNER_TEMPLATE, signerCid, [sigNetwork], [operator, requester]);
-
-    // -- Vault visibility: signatory=operators, observer=sigNetwork
-    await assertVisibility(VAULT_TEMPLATE, vaultCid, [operator, sigNetwork], [requester]);
-
-    // -- Step 1: RequestDeposit (controller=requester)
-    const evmTxParams = buildSampleEvmParams(vaultAddress);
-    const pendingResult = await canton.exerciseChoice(
-      REQUESTER_USER,
-      [requester],
-      VAULT_TEMPLATE,
-      vaultCid,
-      "RequestDeposit",
-      {
-        requester,
-        signerCid,
-        path: requester,
-        evmTxParams,
-        keyVersion: KEY_VERSION,
-        algo: ALGO,
-        dest: DEST,
-        params: "",
-        outputDeserializationSchema: '[{"name":"","type":"bool"}]',
-        respondSerializationSchema: '[{"name":"","type":"bool"}]',
-      },
-      undefined,
-      [vaultDisclosure, signerDisclosure],
-    );
-    const pending = findCreated(pendingResult.transaction.events, "PendingDeposit");
-    const signEvent = findCreated(pendingResult.transaction.events, "SignBidirectionalEvent");
-    const signEventCid = signEvent.contractId;
-    const pendingCid = pending.contractId;
-    const { requestId } = pending.createArgument as PendingDeposit;
-
-    // PendingDeposit: signatory=operators, observer=requester,sigNetwork
-    await assertVisibility(
-      PENDING_DEPOSIT_TEMPLATE,
-      pendingCid,
-      [operator, requester, sigNetwork],
-      [],
-    );
-
-    // -- Step 2: Respond (controller=sigNetwork) — creates SignatureRespondedEvent
-    // Requester cannot exercise sigNetwork-controlled choices
+    // Disclosure does NOT grant authorization — requester cannot exercise issuer-controlled choices
     await expect(
       canton.exerciseChoice(
         REQUESTER_USER,
         [requester],
-        SIGNER_TEMPLATE,
-        signerCid,
-        "Respond",
-        {
-          signEventCid,
-          requestId,
-          signature: { tag: "EcdsaSig", value: { der: "00", recoveryId: 0 } },
-        },
+        VAULT_ORCHESTRATOR,
+        orchCid,
+        "ApproveDepositAuth",
+        { proposalCid: proposal.contractId, remainingUses: 1 },
         undefined,
-        [signerDisclosure],
+        [orchDisclosure],
+      ),
+    ).rejects.toThrow();
+
+    // Issuer approves (signatory, no disclosure needed)
+    await canton.exerciseChoice(
+      ISSUER_USER,
+      [issuer],
+      VAULT_ORCHESTRATOR,
+      orchCid,
+      "ApproveDepositAuth",
+      {
+        proposalCid: proposal.contractId,
+        remainingUses: 1,
+      },
+    );
+  });
+
+  it("full lifecycle: controller permissions and observer visibility", async () => {
+    // -- VaultOrchestrator visibility: signatory=issuer, observer=mpc
+    await assertVisibility(VAULT_ORCHESTRATOR, orchCid, [issuer, mpc], [requester]);
+
+    // -- Step 1: RequestDepositAuth (controller=requester)
+    const proposalResult = await canton.exerciseChoice(
+      REQUESTER_USER,
+      [requester],
+      VAULT_ORCHESTRATOR,
+      orchCid,
+      "RequestDepositAuth",
+      { requester },
+      undefined,
+      [orchDisclosure],
+    );
+    const proposalCid = findCreated(
+      proposalResult.transaction.events,
+      "DepositAuthProposal",
+    ).contractId;
+
+    // DepositAuthProposal: signatory=issuer, observer=owner(requester)
+    await assertVisibility(DEPOSIT_AUTH_PROPOSAL, proposalCid, [issuer, requester], [mpc]);
+
+    // -- Step 2: ApproveDepositAuth (controller=issuer)
+    const approveResult = await canton.exerciseChoice(
+      ISSUER_USER,
+      [issuer],
+      VAULT_ORCHESTRATOR,
+      orchCid,
+      "ApproveDepositAuth",
+      { proposalCid, remainingUses: 2 },
+    );
+    const authCid = findCreated(
+      approveResult.transaction.events,
+      "DepositAuthorization",
+    ).contractId;
+
+    // DepositAuthorization: signatory=issuer, observer=mpc,owner
+    await assertVisibility(DEPOSIT_AUTHORIZATION, authCid, [issuer, requester, mpc], []);
+
+    // -- Step 4: RequestEvmDeposit (controller=requester)
+    const evmParams = buildSampleEvmParams(vaultAddress);
+    const pendingResult = await canton.exerciseChoice(
+      REQUESTER_USER,
+      [requester],
+      VAULT_ORCHESTRATOR,
+      orchCid,
+      "RequestEvmDeposit",
+      {
+        requester,
+        path: requester,
+        evmParams,
+        authCidText: authCid,
+        keyVersion: KEY_VERSION,
+        algo: ALGO,
+        dest: DEST,
+        authCid,
+        outputDeserializationSchema: '[{"name":"","type":"bool"}]',
+        respondSerializationSchema: '[{"name":"","type":"bool"}]',
+      },
+      undefined,
+      [orchDisclosure],
+    );
+    const pending = findCreated(pendingResult.transaction.events, "PendingEvmTx");
+    const pendingCid = pending.contractId;
+    const { requestId } = pending.createArgument as PendingEvmTx;
+
+    // PendingEvmTx: signatory=issuer, observer=mpc,requester
+    await assertVisibility(PENDING_EVM_TX, pendingCid, [issuer, requester, mpc], []);
+
+    // -- Step 7: SignEvmTx (controller=issuer)
+    // Requester cannot exercise issuer-controlled choices
+    await expect(
+      canton.exerciseChoice(
+        REQUESTER_USER,
+        [requester],
+        VAULT_ORCHESTRATOR,
+        orchCid,
+        "SignEvmTx",
+        { requester, requestId, r: "00", s: "00", v: 0 },
+        undefined,
+        [orchDisclosure],
       ),
     ).rejects.toThrow();
 
     const signResult = await canton.exerciseChoice(
-      SIGNETWORK_USER,
-      [sigNetwork],
-      SIGNER_TEMPLATE,
-      signerCid,
-      "Respond",
-      {
-        signEventCid,
-        requestId,
-        signature: { tag: "EcdsaSig", value: { der: "00", recoveryId: 0 } },
-      },
+      ISSUER_USER,
+      [issuer],
+      VAULT_ORCHESTRATOR,
+      orchCid,
+      "SignEvmTx",
+      { requester, requestId, r: "00", s: "00", v: 0 },
     );
-    const signatureRespondedEventCid = findCreated(
-      signResult.transaction.events,
-      "SignatureRespondedEvent",
-    ).contractId;
+    const ecdsaCid = findCreated(signResult.transaction.events, "EcdsaSignature").contractId;
 
-    // SignatureRespondedEvent: signatory=sigNetwork, observer=operators,requester
-    await assertVisibility(
-      SIG_RESPONDED_TEMPLATE,
-      signatureRespondedEventCid,
-      [sigNetwork, operator, requester],
-      [],
-    );
+    // EcdsaSignature: signatory=issuer, observer=requester
+    await assertVisibility(ECDSA_SIGNATURE, ecdsaCid, [issuer, requester], [mpc]);
 
-    // -- Step 3: RespondBidirectional (controller=sigNetwork) — creates RespondBidirectionalEvent
+    // -- Step 10: ProvideEvmOutcomeSig (controller=issuer)
     await expect(
       canton.exerciseChoice(
         REQUESTER_USER,
         [requester],
-        SIGNER_TEMPLATE,
-        signerCid,
-        "RespondBidirectional",
+        VAULT_ORCHESTRATOR,
+        orchCid,
+        "ProvideEvmOutcomeSig",
         {
-          signEventCid,
+          requester,
           requestId,
-          signature: { tag: "EcdsaSig", value: { der: "00", recoveryId: 0 } },
-          serializedOutput: "0000000000000000000000000000000000000000000000000000000000000001",
+          signature: "00",
+          mpcOutput: "0000000000000000000000000000000000000000000000000000000000000001",
         },
         undefined,
-        [signerDisclosure],
+        [orchDisclosure],
       ),
     ).rejects.toThrow();
 
     const mpcOutput = "0000000000000000000000000000000000000000000000000000000000000001";
-    const mpcSignature = await signMpcResponse(MPC_ROOT_PRIVATE_KEY, requestId, mpcOutput);
+    const mpcSignature = signMpcResponse(MPC_ROOT_PRIVATE_KEY, requestId, mpcOutput);
     const outcomeResult = await canton.exerciseChoice(
-      SIGNETWORK_USER,
-      [sigNetwork],
-      SIGNER_TEMPLATE,
-      signerCid,
-      "RespondBidirectional",
-      {
-        signEventCid,
-        requestId,
-        serializedOutput: mpcOutput,
-        signature: mpcSignature,
-      },
+      ISSUER_USER,
+      [issuer],
+      VAULT_ORCHESTRATOR,
+      orchCid,
+      "ProvideEvmOutcomeSig",
+      { requester, requestId, signature: mpcSignature, mpcOutput },
     );
-    const respondBidirectionalEventCid = findCreated(
+    const outcomeCid = findCreated(
       outcomeResult.transaction.events,
-      "RespondBidirectionalEvent",
+      "EvmTxOutcomeSignature",
     ).contractId;
 
-    // RespondBidirectionalEvent: signatory=sigNetwork, observer=operators,requester
-    await assertVisibility(
-      RESPOND_BIDIR_TEMPLATE,
-      respondBidirectionalEventCid,
-      [sigNetwork, operator, requester],
-      [],
-    );
+    // EvmTxOutcomeSignature: signatory=issuer, observer=requester
+    await assertVisibility(EVM_TX_OUTCOME_SIG, outcomeCid, [issuer, requester], [mpc]);
 
-    // -- Step 4: ClaimDeposit (controller=requester)
-    // Operator cannot claim (controller is requester, not operator)
+    // -- Step 11: ClaimEvmDeposit (controller=requester)
+    // Issuer cannot claim (controller is requester, not issuer)
     await expect(
-      canton.exerciseChoice(OPERATOR_USER, [operator], VAULT_TEMPLATE, vaultCid, "ClaimDeposit", {
+      canton.exerciseChoice(ISSUER_USER, [issuer], VAULT_ORCHESTRATOR, orchCid, "ClaimEvmDeposit", {
         requester,
-        pendingDepositCid: pendingCid,
-        respondBidirectionalEventCid,
-        signatureRespondedEventCid,
+        pendingCid,
+        outcomeCid,
+        ecdsaCid,
       }),
     ).rejects.toThrow();
 
@@ -343,32 +324,27 @@ describe("ledger visibility + permission model", () => {
     const claimResult = await canton.exerciseChoice(
       REQUESTER_USER,
       [requester],
-      VAULT_TEMPLATE,
-      vaultCid,
-      "ClaimDeposit",
-      {
-        requester,
-        pendingDepositCid: pendingCid,
-        respondBidirectionalEventCid,
-        signatureRespondedEventCid,
-      },
+      VAULT_ORCHESTRATOR,
+      orchCid,
+      "ClaimEvmDeposit",
+      { requester, pendingCid, outcomeCid, ecdsaCid },
       undefined,
-      [vaultDisclosure],
+      [orchDisclosure],
     );
     const holding = findCreated(claimResult.transaction.events, "Erc20Holding");
     const holdingArgs = holding.createArgument as Erc20Holding;
     expect(holdingArgs.owner).toBe(requester);
-    expect(holdingArgs.operators).toEqual([operator]);
+    expect(holdingArgs.issuer).toBe(issuer);
 
-    // Erc20Holding: signatory=operators, observer=owner(requester) — sigNetwork NOT observer
-    await assertVisibility(ERC20_HOLDING, holding.contractId, [operator, requester], [sigNetwork]);
+    // Erc20Holding: signatory=issuer, observer=owner(requester)
+    await assertVisibility(ERC20_HOLDING, holding.contractId, [issuer, requester], [mpc]);
 
     // Evidence contracts must be archived after claim
-    const remainingPending = await canton.getActiveContracts([operator], PENDING_DEPOSIT_TEMPLATE);
+    const remainingPending = await canton.getActiveContracts([issuer], PENDING_EVM_TX);
     expect(hasContract(remainingPending, pendingCid)).toBe(false);
-    const remainingSig = await canton.getActiveContracts([sigNetwork], SIG_RESPONDED_TEMPLATE);
-    expect(hasContract(remainingSig, signatureRespondedEventCid)).toBe(false);
-    const remainingOutcome = await canton.getActiveContracts([sigNetwork], RESPOND_BIDIR_TEMPLATE);
-    expect(hasContract(remainingOutcome, respondBidirectionalEventCid)).toBe(false);
+    const remainingEcdsa = await canton.getActiveContracts([issuer], ECDSA_SIGNATURE);
+    expect(hasContract(remainingEcdsa, ecdsaCid)).toBe(false);
+    const remainingOutcome = await canton.getActiveContracts([issuer], EVM_TX_OUTCOME_SIG);
+    expect(hasContract(remainingOutcome, outcomeCid)).toBe(false);
   }, 60_000);
 });
